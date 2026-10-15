@@ -1,0 +1,10 @@
+[Unit]
+Description=BlindSight local vision and TTS server
+After=network-online.target
+[Service]
+User=pi
+WorkingDirectory=/home/pi/blindsight/pi_server
+ExecStart=/usr/bin/python3 /home/pi/blindsight/pi_server/server.py
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
