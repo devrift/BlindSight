@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Secrets & Credentials
 .env
 .env.*
@@ -37,3 +38,18 @@ uploads/*
 # OS Noise
 .DS_Store
 Thumbs.db
+=======
+# Device-specific credentials and build output
+blindsight/main_esp32/include/secrets.h
+blindsight/camera_esp32cam/include/secrets.h
+**/.pio/
+**/.vscode/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Runtime artefacts created by the Pi service
+runtime/
+*.wav
+*.jpg
+>>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23
