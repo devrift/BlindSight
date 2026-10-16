@@ -5,12 +5,16 @@
 #include <LittleFS.h>
 #include <driver/i2s.h>
 
-// ===== CHANGE THESE =====
-const char *WIFI_SSID = "BlindSight";
-const char *WIFI_PASSWORD = "CHANGE_ME";
-const char *PI_URL = "http://192.168.4.1:5000";
-uint8_t CAMERA_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF}; // printed by camera
-// ========================
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#error "Copy include/secrets.example.h to include/secrets.h and configure the device."
+#endif
+
+const char *WIFI_SSID = BLINDSIGHT_WIFI_SSID;
+const char *WIFI_PASSWORD = BLINDSIGHT_WIFI_PASSWORD;
+const String PI_BASE_URL = String("http://") + BLINDSIGHT_PI_HOST + ":" + BLINDSIGHT_PI_PORT;
+const uint8_t CAMERA_MAC[6] = BLINDSIGHT_CAMERA_MAC;
 
 #define TRIG_L 13
 #define TRIG_C 14
@@ -24,16 +28,20 @@ uint8_t CAMERA_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF}; // printed by camera
 #define I2S_DIN 22
 constexpr uint16_t MAGIC=0xB517; constexpr size_t CHUNK=220; constexpr size_t MAX_JPEG=66000;
 struct __attribute__((packed)) ImagePacket { uint16_t magic,imageId,index,count,bytes,checksum; uint8_t data[CHUNK]; };
-uint8_t imageBuf[MAX_JPEG]; bool received[300]; volatile bool imageReady=false;
+uint8_t imageBuf[MAX_JPEG]; bool received[300]; volatile bool imageReady=false, acceptingFrame=true;
 uint16_t activeId=0, expectedCount=0, receivedCount=0; size_t imageLen=0;
+uint32_t lastPacketAt=0;
 
 uint16_t sum16(const uint8_t *d,size_t n){uint32_t s=0;for(size_t i=0;i<n;i++)s+=d[i];return s&0xffff;}
-void onData(const esp_now_recv_info_t*, const uint8_t *data, int len) {
+bool isCamera(const uint8_t *mac) { return mac && memcmp(mac, CAMERA_MAC, 6) == 0; }
+void onData(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (!acceptingFrame || !isCamera(info->src_addr)) return;
   if (len != sizeof(ImagePacket)) return; auto *p=(const ImagePacket*)data;
   if(p->magic!=MAGIC || p->count==0 || p->count>300 || p->index>=p->count || p->bytes>CHUNK || p->checksum!=sum16(p->data,p->bytes)) return;
   if (p->imageId != activeId) { activeId=p->imageId; expectedCount=p->count; receivedCount=0; imageLen=0; memset(received,0,sizeof(received)); }
   size_t off=p->index*CHUNK; if(off+p->bytes>MAX_JPEG || p->count!=expectedCount) return;
   if(!received[p->index]) { memcpy(imageBuf+off,p->data,p->bytes); received[p->index]=true; receivedCount++; if(p->index==p->count-1) imageLen=off+p->bytes; }
+  lastPacketAt=millis();
   if(receivedCount==expectedCount && imageLen>0) imageReady=true;
 }
 
@@ -51,14 +59,25 @@ void playFile(const char *path){ File f=LittleFS.open(path,"r"); if(!f)return; u
 
 float distanceCM(int t,int e){digitalWrite(t,LOW);delayMicroseconds(3);digitalWrite(t,HIGH);delayMicroseconds(10);digitalWrite(t,LOW);long d=pulseIn(e,HIGH,30000);return d?d*.0343/2:999;}
 const char* quickRule(){ float l=distanceCM(TRIG_L,ECHO_L);delay(55);float c=distanceCM(TRIG_C,ECHO_C);delay(55);float r=distanceCM(TRIG_R,ECHO_R); if(c<45)return l>r?"Obstacle ahead. Move left.":"Obstacle ahead. Move right.";if(l<45)return "Obstacle on left. Move right.";if(r<45)return "Obstacle on right. Move left.";if(c<100)return "Object ahead. Proceed carefully.";return "Path clear."; }
-void uploadAndPlay(){
- Serial.printf("Uploading %u bytes\n",imageLen); playFile("/analysing.wav");
- HTTPClient http; http.begin(String(PI_URL)+"/analyse"); String boundary="BlindSightBoundary"; http.addHeader("Content-Type","multipart/form-data; boundary="+boundary);
- String pre="--"+boundary+"\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n", post="\r\n--"+boundary+"--\r\n";
- size_t total=pre.length()+imageLen+post.length(); uint8_t *body=(uint8_t*)malloc(total); if(!body){http.end();return;} memcpy(body,pre.c_str(),pre.length());memcpy(body+pre.length(),imageBuf,imageLen);memcpy(body+pre.length()+imageLen,post.c_str(),post.length()); int code=http.POST(body,total);free(body);String reply=http.getString();http.end();Serial.printf("AI %d: %s\n",code,reply.c_str());if(code!=200)return;
- HTTPClient audio; audio.begin(String(PI_URL)+"/audio"); if(audio.GET()==200)playWavStream(audio);audio.end();
+String audioPathFromReply(const String &reply) {
+  const char *key = "\"audio_url\":\"";
+  int start = reply.indexOf(key);
+  if (start < 0) return String();
+  start += strlen(key);
+  int end = reply.indexOf('"', start);
+  return end > start ? reply.substring(start, end) : String();
 }
-void setup(){Serial.begin(115200);pinMode(TRIG_L,OUTPUT);pinMode(TRIG_C,OUTPUT);pinMode(TRIG_R,OUTPUT);pinMode(ECHO_L,INPUT);pinMode(ECHO_C,INPUT);pinMode(ECHO_R,INPUT);pinMode(BUTTON,INPUT_PULLUP);LittleFS.begin(true);initI2S();WiFi.mode(WIFI_STA);WiFi.begin(WIFI_SSID,WIFI_PASSWORD);while(WiFi.status()!=WL_CONNECTED){delay(300);Serial.print('.');}Serial.printf("\nMAIN MAC: %s\n",WiFi.macAddress().c_str());esp_now_init();esp_now_register_recv_cb(onData);}
+void uploadAndPlay(){
+ acceptingFrame=false;
+ Serial.printf("Uploading %u bytes\n",imageLen); playFile("/analysing.wav");
+ HTTPClient http; http.setTimeout(30000); http.begin(PI_BASE_URL+"/analyse"); String boundary="BlindSightBoundary"; http.addHeader("Content-Type","multipart/form-data; boundary="+boundary);
+ String pre="--"+boundary+"\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n", post="\r\n--"+boundary+"--\r\n";
+ size_t total=pre.length()+imageLen+post.length(); uint8_t *body=(uint8_t*)malloc(total); if(!body){http.end(); acceptingFrame=true; return;} memcpy(body,pre.c_str(),pre.length());memcpy(body+pre.length(),imageBuf,imageLen);memcpy(body+pre.length()+imageLen,post.c_str(),post.length()); int code=http.POST(body,total);free(body);String reply=http.getString();http.end();Serial.printf("AI %d: %s\n",code,reply.c_str());
+ String audioPath = code == 200 ? audioPathFromReply(reply) : String();
+ if(audioPath.length()){ HTTPClient audio; audio.setTimeout(30000); audio.begin(PI_BASE_URL+audioPath); if(audio.GET()==200)playWavStream(audio); audio.end(); }
+ acceptingFrame=true;
+}
+void setup(){Serial.begin(115200);pinMode(TRIG_L,OUTPUT);pinMode(TRIG_C,OUTPUT);pinMode(TRIG_R,OUTPUT);pinMode(ECHO_L,INPUT);pinMode(ECHO_C,INPUT);pinMode(ECHO_R,INPUT);pinMode(BUTTON,INPUT_PULLUP);LittleFS.begin(true);initI2S();WiFi.mode(WIFI_STA);WiFi.begin(WIFI_SSID,WIFI_PASSWORD);while(WiFi.status()!=WL_CONNECTED){delay(300);Serial.print('.');}Serial.printf("\nMAIN MAC: %s\n",WiFi.macAddress().c_str());if(esp_now_init()!=ESP_OK){Serial.println("ESP-NOW init failed");return;}esp_now_register_recv_cb(onData);}
 void loop(){if(digitalRead(BUTTON)==LOW){
   const char *rule=quickRule(); Serial.println(rule);
   // Pre-recorded local clips make this path independent of Pi/model latency.
@@ -68,4 +87,4 @@ void loop(){if(digitalRead(BUTTON)==LOW){
   else if (strstr(rule, "carefully")) playFile("/careful.wav");
   else playFile("/clear.wav");
   delay(500);
-}if(imageReady){imageReady=false;uploadAndPlay();}}
+}if(expectedCount && !imageReady && millis()-lastPacketAt>3000){expectedCount=receivedCount=imageLen=0; memset(received,0,sizeof(received));}if(imageReady){imageReady=false;uploadAndPlay();}}
