@@ -1,0 +1,18 @@
+{
+  "name": "BlindSight AI Companion",
+  "short_name": "BlindSight",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
+  "description": "Accessible real-time voice and vision companion for low-vision navigation and awareness.",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

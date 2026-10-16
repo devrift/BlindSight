@@ -3,12 +3,15 @@
 #include <esp_now.h>
 #include "esp_camera.h"
 
-// ===== CHANGE THESE =====
-const char *WIFI_SSID = "BlindSight";
-const char *WIFI_PASSWORD = "CHANGE_ME";
-uint8_t MAIN_ESP_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF}; // printed by main ESP32
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#error "Copy include/secrets.example.h to include/secrets.h and configure the device."
+#endif
+const char *WIFI_SSID = BLINDSIGHT_WIFI_SSID;
+const char *WIFI_PASSWORD = BLINDSIGHT_WIFI_PASSWORD;
+uint8_t MAIN_ESP_MAC[6] = BLINDSIGHT_MAIN_ESP_MAC;
 const uint32_t CAPTURE_EVERY_MS = 10000;
-// ========================
 
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1

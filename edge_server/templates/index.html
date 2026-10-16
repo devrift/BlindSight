@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <title>BlindSight AI Companion</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --card-bg: #141824;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #f59e0b;
+      --accent-active: #d97706;
+      --bubble-user: #1e293b;
+      --bubble-bot: #0369a1;
+      --focus-ring: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      line-height: 1.5;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 4px 14px;
+      border-bottom: 2px solid #1e293b;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    .badge {
+      background-color: #064e3b;
+      color: #6ee7b7;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .camera-card {
+      background: var(--card-bg);
+      border-radius: 14px;
+      padding: 12px;
+      margin: 12px 0;
+      border: 1px solid #1e293b;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .card-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .camera-preview {
+      width: 100%;
+      height: 160px;
+      border-radius: 10px;
+      object-fit: cover;
+      background-color: #020617;
+      border: 1px solid #334155;
+      display: block;
+    }
+
+    .options-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-size: 0.95rem;
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle-label input {
+      width: 22px;
+      height: 22px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      padding: 8px 0;
+      min-height: 180px;
+      max-height: 40vh;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 1.05rem;
+      max-width: 88%;
+      word-break: break-word;
+    }
+
+    .bubble.user {
+      background-color: var(--bubble-user);
+      color: #e2e8f0;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble.bot {
+      background-color: var(--bubble-bot);
+      color: #ffffff;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .voice-control {
+      margin-top: auto;
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-mic {
+      width: 100%;
+      min-height: 80px;
+      background: var(--accent);
+      color: #000000;
+      border: none;
+      border-radius: 18px;
+      font-size: 1.35rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+
+    .btn-mic:active, .btn-mic.listening {
+      background: #ef4444;
+      color: #ffffff;
+      transform: scale(0.98);
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.7);
+    }
+
+    .status-text {
+      text-align: center;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      min-height: 22px;
+      font-weight: 600;
+    }
+
+    .text-input-form {
+      display: flex;
+      gap: 8px;
+    }
+
+    .text-input {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #fff;
+      font-size: 1rem;
+    }
+
+    .text-input:focus {
+      outline: 2px solid var(--focus-ring);
+      border-color: transparent;
+    }
+
+    .btn-send {
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: none;
+      background: #334155;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-send:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="/static/icon.svg" class="brand-icon" alt="BlindSight Logo">
+      <h1>BlindSight</h1>
+    </div>
+    <span class="badge" id="conn-status">Online</span>
+  </header>
+
+  <div class="camera-card">
+    <div class="card-header">
+      <span class="card-title">Live Vision Feed</span>
+      <button class="btn-send" style="padding: 4px 10px; font-size: 0.8rem;" onclick="refreshFrame()">Refresh</button>
+    </div>
+    <img id="camera-frame" class="camera-preview" src="/api/latest-frame" alt="Latest camera frame view" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'320\' height=\'240\'><rect width=\'100%\' height=\'100%\' fill=\'%230f172a\'/><text x=\'50%\' y=\'50%\' fill=\'%2364748b\' font-size=\'14\' font-family=\'sans-serif\' text-anchor=\'middle\' dominant-baseline=\'middle\'>Waiting for camera stream...</text></svg>'">
+    <div class="options-row">
+      <label class="toggle-label">
+        <input type="checkbox" id="use-camera-toggle" checked>
+        <span>Include camera view with question</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="chat-container" id="chat-feed" role="log" aria-live="polite">
+    <div class="bubble bot">
+      Hello! I'm BlindSight. Tap the big button below and ask me anything about what's around you.
+    </div>
+  </div>
+
+  <div class="voice-control">
+    <div class="status-text" id="status-display">Ready. Tap &amp; Speak.</div>
+    <button class="btn-mic" id="mic-btn" aria-label="Tap to speak your question">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+      <span id="btn-label">Tap &amp; Speak</span>
+    </button>
+
+    <form class="text-input-form" id="chat-form" onsubmit="handleTextSubmit(event)">
+      <input type="text" class="text-input" id="prompt-input" placeholder="Or type a question here..." aria-label="Question text">
+      <button type="submit" class="btn-send">Ask</button>
+    </form>
+  </div>
+
+  <script>
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js').catch(err => {
+          console.debug('ServiceWorker error:', err);
+        });
+      });
+    }
+
+    // Haptic feedback utility for low-vision tactile response
+    function triggerHaptic(pattern = [30]) {
+      if ('vibrate' in navigator) {
+        try {
+          navigator.vibrate(pattern);
+        } catch (e) {}
+      }
+    }
+
+    const micBtn = document.getElementById('mic-btn');
+    const btnLabel = document.getElementById('btn-label');
+    const statusDisplay = document.getElementById('status-display');
+    const chatFeed = document.getElementById('chat-feed');
+    const promptInput = document.getElementById('prompt-input');
+    const useCameraToggle = document.getElementById('use-camera-toggle');
+    const cameraFrame = document.getElementById('camera-frame');
+
+    let isListening = false;
+    let recognition = null;
+
+    // Refresh camera snapshot periodically
+    function refreshFrame() {
+      triggerHaptic([15]);
+      cameraFrame.src = '/api/latest-frame?t=' + Date.now();
+    }
+    setInterval(refreshFrame, 5000);
+
+    // Initialize Web Speech API
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        isListening = true;
+        triggerHaptic([40]);
+        micBtn.classList.add('listening');
+        btnLabel.textContent = 'Listening...';
+        statusDisplay.textContent = 'Listening to your voice...';
+      };
+
+      recognition.onresult = (event) => {
+        triggerHaptic([20, 40, 20]);
+        const transcript = event.results[0][0].transcript;
+        statusDisplay.textContent = 'Processing: "' + transcript + '"';
+        sendPrompt(transcript);
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('Speech error:', event.error);
+        triggerHaptic([60]);
+        statusDisplay.textContent = 'Could not hear voice. Tap to try again.';
+        stopListening();
+      };
+
+      recognition.onend = () => {
+        stopListening();
+      };
+    } else {
+      btnLabel.textContent = 'Speech Not Supported';
+      micBtn.disabled = true;
+      statusDisplay.textContent = 'Speech API not supported on this browser. Use text input.';
+    }
+
+    function toggleListening() {
+      triggerHaptic([30]);
+      if (!recognition) return;
+      if (isListening) {
+        recognition.stop();
+        stopListening();
+      } else {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+
+    function stopListening() {
+      isListening = false;
+      micBtn.classList.remove('listening');
+      btnLabel.textContent = 'Tap & Speak';
+    }
+
+    micBtn.addEventListener('click', toggleListening);
+
+    function addMessage(role, text) {
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + role;
+      bubble.textContent = text;
+      chatFeed.appendChild(bubble);
+      chatFeed.scrollTop = chatFeed.scrollHeight;
+    }
+
+    function speakText(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    async function sendPrompt(text) {
+      if (!text || !text.trim()) return;
+      triggerHaptic([25]);
+      addMessage('user', text);
+      statusDisplay.textContent = 'Asking BlindSight...';
+
+      const payload = {
+        prompt: text.trim(),
+        use_camera: useCameraToggle.checked
+      };
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          triggerHaptic([30, 50, 30]);
+          const data = await res.json();
+          const reply = data.reply || "I didn't receive a response.";
+          addMessage('bot', reply);
+          speakText(reply);
+          statusDisplay.textContent = 'Ready. Tap & Speak.';
+        } else {
+          triggerHaptic([80]);
+          const errReply = "I'm having trouble connecting to my vision brain right now.";
+          addMessage('bot', errReply);
+          speakText(errReply);
+          statusDisplay.textContent = 'Server error. Please retry.';
+        }
+      } catch (err) {
+        triggerHaptic([100]);
+        console.error(err);
+        const errReply = "Connection error. Please check your network.";
+        addMessage('bot', errReply);
+        speakText(errReply);
+        statusDisplay.textContent = 'Connection error.';
+      }
+    }
+
+    function handleTextSubmit(e) {
+      e.preventDefault();
+      const val = promptInput.value;
+      if (val) {
+        sendPrompt(val);
+        promptInput.value = '';
+      }
+    }
+  </script>
+</body>
+</html>

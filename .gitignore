@@ -1,0 +1,39 @@
+# Secrets & Credentials
+.env
+.env.*
+*.env
+*.key
+*.pem
+secrets.h
+**/include/secrets.h
+
+# Python Cache & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Hardware Build Artifacts & IDEs
+**/.pio/
+**/.vscode/
+.idea/
+
+# Heavy Weights & Models
+*.pt
+*.onnx
+edge_server/models/*.onnx
+
+# Runtime Uploads & Generated Audio
+runtime/*
+!runtime/.gitkeep
+uploads/*
+!uploads/.gitkeep
+*.wav
+*.pcm
+
+# OS Noise
+.DS_Store
+Thumbs.db
