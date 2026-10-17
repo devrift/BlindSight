@@ -4,11 +4,13 @@
 // `Service-Worker-Allowed: /` header. Without that, a worker living at
 // /static/sw.js is scoped to /static/ only and never controls the page at /,
 // which made the precache list and the offline navigation fallback inert.
-const CACHE_NAME = 'blindsight-v2';
+const CACHE_NAME = 'blindsight-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/manifest.json',
-  '/static/icon.svg'
+  '/static/icon.svg',
+  '/static/app.css',
+  '/static/app.js'
 ];
 
 self.addEventListener('install', (event) => {
