@@ -166,7 +166,7 @@ Pre-generated 16-bit 22050 Hz WAV clips are shipped in `firmware/esp32_main/data
 To generate or re-verify these files:
 ```bash
 cd /path/to/BlindSight
-./firmware/esp32_main/data/generate_clips.sh
+./firmware/esp32_main/data/tools/generate_clips.py
 ```
 
 The script runs exactly those `espeak-ng` commands for you and then verifies

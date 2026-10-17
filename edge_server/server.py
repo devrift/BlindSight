@@ -93,6 +93,9 @@ FRAME_MAX_AGE_SECONDS = float(os.getenv("BLINDSIGHT_FRAME_MAX_AGE", "30"))
 # Runtime frames and their audio are deleted after this long. Without a sweep
 # the Pi's SD card fills, and every spoken response stays replayable forever.
 RUNTIME_TTL_SECONDS = float(os.getenv("BLINDSIGHT_RUNTIME_TTL", "3600"))
+# Hard cap on the runtime folder: TTL alone cannot stop a chatty day
+# from filling a small Pi SD card (ported from the antigravity remediation).
+RUNTIME_MAX_BYTES = 50 * 1024 * 1024
 RUNTIME_SWEEP_SECONDS = 300.0
 
 # Simple in-process rate limit for the cloud endpoint, which spends real money.
@@ -410,7 +413,12 @@ class VisionService:
             time.sleep(RUNTIME_SWEEP_SECONDS)
 
     def sweep_runtime(self) -> int:
-        """Delete per-request frames and audio older than the TTL. Returns count removed."""
+        """Delete per-request frames and audio older than the TTL. Returns count removed.
+
+        Also enforces a hard folder quota: even inside the TTL window a chatty
+        day must not fill a small Pi SD card, so once the folder exceeds
+        RUNTIME_MAX_BYTES the oldest files go first.
+        """
         cutoff = time.time() - RUNTIME_TTL_SECONDS
         removed = 0
         for path in self.settings.data_dir.iterdir():
@@ -422,6 +430,27 @@ class VisionService:
                     removed += 1
             except OSError:
                 continue
+        remaining = []
+        total = 0
+        for path in self.settings.data_dir.iterdir():
+            if path.name == ".gitkeep" or path.is_dir():
+                continue
+            try:
+                stat = path.stat()
+                remaining.append((stat.st_mtime, stat.st_size, path))
+                total += stat.st_size
+            except OSError:
+                continue
+        if total > RUNTIME_MAX_BYTES:
+            for _mtime, size, path in sorted(remaining):
+                if total <= RUNTIME_MAX_BYTES:
+                    break
+                try:
+                    path.unlink()
+                    total -= size
+                    removed += 1
+                except OSError:
+                    continue
         if removed:
             print(f"runtime sweep: removed {removed} expired file(s)", flush=True)
         return removed
@@ -463,6 +492,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     def index():
         return render_template("index.html")
 
+    @app.get("/sw.js")  # root alias: registrations at either path work
     @app.get("/static/sw.js")
     def service_worker():
         """Serve the service worker from /static/ with an widened scope.
@@ -508,8 +538,6 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     @app.post("/analyse")
     def analyse():
-        cleanup_runtime_dir(settings.data_dir)
-
         photo = request.files.get("image")
         if photo is None or not photo.filename:
             return jsonify(error="missing multipart field: image"), 400

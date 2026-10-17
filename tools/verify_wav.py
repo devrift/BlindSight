@@ -194,8 +194,8 @@ def main(argv: list[str]) -> int:
         if missing:
             print(
                 f"ERROR: missing clips in {CLIP_DIR}: {', '.join(m + '.wav' for m in missing)}\n"
-                "Run firmware/esp32_main/data/generate_clips.sh to create them; the\n"
-                "firmware's offline fallback is silent without them.",
+                "Run tools/generate_clips.py to create them (and tools/verify_wav.py\n"
+                "afterwards); the firmware's offline fallback is silent without them.",
                 file=sys.stderr,
             )
             return 1

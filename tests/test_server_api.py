@@ -149,3 +149,30 @@ def test_runtime_sweeper_removes_old_files(client):
     removed = server.app.config["SERVICE"].sweep_runtime()
     assert removed >= 1
     assert not stale.exists()
+
+
+def test_sw_js_root_alias_serves_worker_with_scope_header(client):
+    # The antigravity remediation registered the worker at /sw.js; this branch
+    # registers /static/sw.js. Both paths must keep working after the merge.
+    for path in ("/sw.js", "/static/sw.js"):
+        res = client.get(path)
+        assert res.status_code == 200, path
+        assert res.headers.get("Service-Worker-Allowed") == "/", path
+        assert "javascript" in res.headers["Content-Type"]
+
+
+def test_api_chat_auth_token_enforced_when_set(client, monkeypatch):
+    # With BLINDSIGHT_API_TOKEN configured, /api/chat must reject bearer-less
+    # calls and accept the right token (then fail honestly on the missing key).
+    monkeypatch.setenv("BLINDSIGHT_API_TOKEN", "secret123")
+    import server as server_module
+
+    settings = server_module.load_settings()
+    app = server_module.create_app(settings)
+    test_client = app.test_client()
+    denied = test_client.post("/api/chat", json={"prompt": "hi"})
+    assert denied.status_code == 401
+    allowed = test_client.post(
+        "/api/chat", json={"prompt": "hi"}, headers={"Authorization": "Bearer secret123"}
+    )
+    assert allowed.status_code != 401

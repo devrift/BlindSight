@@ -57,8 +57,9 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
    * **Tier 2 (Cloud Multimodal Companion)**: Accessible via phone PWA or API. Powered by OpenRouter (`google/gemini-2.5-flash` with `openai/gpt-4o-mini` fallback), giving users descriptive contextual answers to questions like *"What color is this shirt?"* or *"Read the sign in front of me"*.
    * **Conversation, memory and language**: the companion keeps the recent turns of each conversation, so follow-up questions ("and on the left?") have context. It also keeps a small persistent memory and a reply-language preference in `state/companion.json` (git-ignored, capped at 20 facts / 24 turns, atomic writes, corrupt files quarantined). Voice or text commands, all working **without** any API key: `remember that my dog is Bruno`, `what do you remember?`, `forget bruno`, `forget everything`, `language hindi` (or `switch language to hindi`), `start over`. The language switch changes both the model's reply language and the espeak-ng voice; the PWA also offers a Reply-language selector. The ESP32 LittleFS offline clips remain English-only.
 2. **Deterministic Fallback Safety**:
-   * If Wi-Fi drops, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
-   * The clips are generated, not authored: run `firmware/esp32_main/data/generate_clips.sh` once (needs `espeak-ng`) and upload the filesystem image. Without them this fallback is silent — the firmware reports that clearly on the serial monitor.
+   * If Wi-Fi drops, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips
+     (inside 25 cm the reflex says stop instead of steer: "Obstacle critical. Stop." plays `/stop.wav`) over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
+   * The clips are generated, not authored: run `tools/generate_clips.py` once (espeak-ng on Linux, built-in SAPI voice on Windows) and check the result with `tools/verify_wav.py` and upload the filesystem image. Without them this fallback is silent — the firmware reports that clearly on the serial monitor.
 3. **PWA Mobile Phone Companion**:
    * Fully installable standalone web application with high-contrast UI, large tactile touch targets, Web Speech voice input, and native device speech synthesis (zero Pi CPU load).
    * Tactile haptic vibration cues (`navigator.vibrate`) for low-vision users.
@@ -195,8 +196,10 @@ Honest status as of this revision. These are tracked, not aspirations:
   worker (model loaded once, frames queued) is the planned fix and is the only
   route to a sub-second reflex tier.
 * **Voice clips.** The offline ultrasonic fallback needs generated LittleFS
-  clips (`firmware/esp32_main/data/generate_clips.sh`). A fresh clone is silent
-  until you run it and upload the filesystem image.
+  clips (`tools/generate_clips.py`: espeak-ng on Linux, built-in SAPI voice on
+  Windows). Verify with `tools/verify_wav.py` - it rejects wrong formats, implausible
+  durations and harmonic-tone fakes. A fresh clone is silent until you run it and
+  upload the filesystem image.
 * **Authentication.** Set `BLINDSIGHT_API_TOKEN` in `edge_server/.env`. Until you
   do, `/api/chat` is reachable by anyone on your LAN and spends your OpenRouter
   key; the server prints a loud warning at startup when the token is absent.

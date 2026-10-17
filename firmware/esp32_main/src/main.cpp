@@ -237,6 +237,10 @@ const char *quickRule() {
   delay(55);
   float r = distanceCM(TRIG_R, ECHO_R);
   Serial.printf("L=%.0f C=%.0f R=%.0f cm\n", l, c, r);
+  // Audited obstacle band (documented in README + FIRMWARE_VARIANTS): inside
+  // 25 cm steering is the wrong advice, so the reflex says stop; /stop.wav
+  // exists for exactly this clip now.
+  if (c < 25) return "Obstacle critical. Stop.";
   if (c < 45) return l > r ? "Obstacle ahead. Move left." : "Obstacle ahead. Move right.";
   if (l < 45) return "Obstacle on left. Move right.";
   if (r < 45) return "Obstacle on right. Move left.";
@@ -346,9 +350,8 @@ void loop() {
     const char *rule = quickRule();
     Serial.println(rule);
     // Pre-recorded local clips keep this path independent of Pi/model latency.
-    // (There is deliberately no "Stop" branch: quickRule() never returns a
-    // string containing it, so it was dead code and /stop.wav never existed.)
-    if (strstr(rule, "Move left")) playFile("/left.wav");
+    if (strstr(rule, "Stop")) playFile("/stop.wav");
+    else if (strstr(rule, "Move left")) playFile("/left.wav");
     else if (strstr(rule, "Move right")) playFile("/right.wav");
     else if (strstr(rule, "carefully")) playFile("/careful.wav");
     else playFile("/clear.wav");

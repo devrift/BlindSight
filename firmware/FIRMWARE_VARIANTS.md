@@ -66,3 +66,11 @@ Both `platformio.ini` files pin `platform = espressif32@6.13.0`
 (Arduino core 2.0.17 / IDF 4.4). The `#if` guards above mean the code also
 compiles on core 3.x; the comments in each `platformio.ini` document the
 one-line change to move there. Do not unpin without re-reading those comments.
+
+
+## Audited close-range stop band (2026-10-17)
+
+`quickRule()` returns "Obstacle critical. Stop." when the centre sensor reads
+under 25 cm, and `loop()` maps any rule containing "Stop" to `/stop.wav`.
+All three main-firmware copies carry both halves; changing the threshold means
+re-benching the ultrasonic readings and updating README plus this file.

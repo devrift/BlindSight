@@ -181,6 +181,8 @@ const char* quickRule(){
   float c=distanceCM(TRIG_C,ECHO_C);delay(55);
   float r=distanceCM(TRIG_R,ECHO_R);
   Serial.printf("L=%.0f C=%.0f R=%.0f cm\n",l,c,r);
+  // Audited band: inside 25 cm steering is wrong advice; stop instead.
+  if(c<25)return "Obstacle critical. Stop.";
   if(c<45)return l>r?"Obstacle ahead. Move left.":"Obstacle ahead. Move right.";
   if(l<45)return "Obstacle on left. Move right.";
   if(r<45)return "Obstacle on right. Move left.";
@@ -245,7 +247,8 @@ void setup(){
 void loop(){
   if(digitalRead(BUTTON)==LOW){
     const char *rule=quickRule(); Serial.println(rule);
-    if(strstr(rule,"Move left"))playFile("/left.wav");
+    if(strstr(rule,"Stop"))playFile("/stop.wav");
+    else if(strstr(rule,"Move left"))playFile("/left.wav");
     else if(strstr(rule,"Move right"))playFile("/right.wav");
     else if(strstr(rule,"carefully"))playFile("/careful.wav");
     else playFile("/clear.wav");

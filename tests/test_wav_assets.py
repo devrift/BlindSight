@@ -33,12 +33,12 @@ def clips() -> list[Path]:
     if not present:
         pytest.skip(
             "no LittleFS voice clips generated yet; run "
-            "firmware/esp32_main/data/generate_clips.sh on a machine with espeak-ng. "
+            "tools/generate_clips.py (espeak-ng on Linux, SAPI on Windows). "
             "Until then the firmware's offline fallback is silent."
         )
     assert not missing, (
         f"partial clip set: missing {missing}. Either generate all of them with "
-        "firmware/esp32_main/data/generate_clips.sh or remove the partial clips."
+        "tools/generate_clips.py or remove the partial clips."
     )
     return present
 
