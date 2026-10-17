@@ -1,3 +1,10 @@
+> **SUPERSEDED FOR POWER.** This chart's *signal* pins (which GPIO goes where,
+> the 1 kΩ / 2 kΩ ECHO dividers, the DAC wiring) are still correct. Its *power*
+> arrangement — two separate Uno 5 V rails that must never be joined — is the
+> v1 design and is **superseded by `WIRING_V2_BUCK_AND_TTL.md`**, which uses one
+> 5 V 3 A buck converter and a single common ground. Use this page for pins and
+> WIRING_V2 for power.
+
 # BlindSight — pin-by-pin connection chart
 
 ## Main ESP32 DevKit V1
