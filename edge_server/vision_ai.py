@@ -12,12 +12,18 @@ Success prints exactly one navigation message on stdout and exits 0.
 Any failure (no model, unreadable image, backend error) exits non-zero with
 the reason on stderr, so server.py speaks its safe fallback instead of
 announcing a clear path. --verbose adds timing and detections on stderr.
+
+SAFETY CONTRACT (do not break this):
+    stdout is only ever a sentence the model actually produced. An empty
+    detection list means "the model ran and saw nothing", which is a real
+    observation. A failure means "we do not know", which must never be
+    spoken as "the path is clear". tests/test_vision_fail_closed.py
+    enforces both halves of that rule.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from dataclasses import dataclass
@@ -37,10 +43,15 @@ COCO_CLASSES = [
     "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
 
-# Simplify select object names for voice synthesis
+# Simplify select object names for voice synthesis.
+# Only include entries that actually change the spoken phrase; a label mapping
+# to itself is dead weight and hides the intent of the table.
 LABEL_REPLACEMENTS = {
     "dining table": "table",
     "potted plant": "plant",
+    "cell phone": "phone",
+    "teddy bear": "toy",
+    "hair drier": "hair dryer",
 }
 
 CONF_THRESHOLD = 0.35
@@ -60,11 +71,6 @@ class Detection:
 
 def get_model_path() -> Path | None:
     """Finds available YOLOv8n ONNX model weights in standard search paths."""
-    env_path = os.getenv("BLINDSIGHT_MODEL_PATH")
-    if env_path:
-        p = Path(env_path)
-        return p if p.is_file() else None
-
     server_dir = Path(__file__).resolve().parent
     root_dir = server_dir.parent
     candidates = [
@@ -72,7 +78,6 @@ def get_model_path() -> Path | None:
         str(server_dir / "models" / "yolov8n_int8.onnx"),
         str(root_dir / "edge_server" / "models" / "yolov8n.onnx"),
         "/home/pi/BlindSight/edge_server/models/yolov8n.onnx",
-        "/home/pi/blindsight/pi_server/models/yolov8n.onnx",
         "edge_server/models/yolov8n.onnx",
         "models/yolov8n.onnx",
         "yolov8n.onnx",
@@ -148,6 +153,8 @@ def run_inference(image_path: Path, model_path: Path, stats: dict) -> list[Detec
         sess_opts.intra_op_num_threads = 2
         sess_opts.inter_op_num_threads = 1
         sess_opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        # ORT_ENABLE_BASIC, not ORT_ENABLE_ALL: on a 1GB Pi 3B+ the extra graph
+        # optimizations cost load time and RAM for no measurable gain at 320x320.
         sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
 
         session = ort.InferenceSession(str(model_path), sess_opts, providers=["CPUExecutionProvider"])
@@ -310,8 +317,11 @@ def generate_sentence(detections: list[Detection], orig_w: float = 320.0, orig_h
             prefix = f"Caution: {target.label.capitalize()} ahead."
 
         # Dynamic escape path evaluation: assess lateral bounding box density
-        left_density = sum(d.norm_h * ((d.box[2] - d.box[0]) / orig_w) for d in left_hazards)
-        right_density = sum(d.norm_h * ((d.box[2] - d.box[0]) / orig_w) for d in right_hazards)
+        # rather than a simple present/absent test, so a wide but distant
+        # obstacle on one side does not outweigh a narrow close one.
+        span = orig_w if orig_w > 0 else 1.0
+        left_density = sum(d.norm_h * ((d.box[2] - d.box[0]) / span) for d in left_hazards)
+        right_density = sum(d.norm_h * ((d.box[2] - d.box[0]) / span) for d in right_hazards)
 
         if not left_hazards and not right_hazards:
             return f"{prefix} Path clear on your left and right."
@@ -320,6 +330,7 @@ def generate_sentence(detections: list[Detection], orig_w: float = 320.0, orig_h
         elif not left_hazards or left_density < right_density:
             return f"{prefix} Path clear on your left."
         else:
+            # Both flanks carry equal obstacle density: no escape path to offer.
             return f"{prefix} Caution, all paths obstructed."
 
     # 2. Side hazards when central path is clear
@@ -373,13 +384,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true", help="timing and detections on stderr")
     args = parser.parse_args(argv)
 
+    # FAIL CLOSED. Every branch below returns non-zero with the reason on
+    # stderr and prints NOTHING on stdout, so server.py falls back to
+    # SAFE_FALLBACK. Printing "Path ahead appears clear." here would tell a
+    # blind user the path is safe when the model never ran.
     if not args.image.is_file():
         print(f"vision_ai: image not found: {args.image}", file=sys.stderr)
         return 1
 
     model_path = get_model_path()
     if model_path is None:
-        print("vision_ai: yolov8n.onnx not found (see models/README.md or set BLINDSIGHT_MODEL_PATH)", file=sys.stderr)
+        print(
+            "vision_ai: yolov8n.onnx not found (see models/README.md or set BLINDSIGHT_MODEL_PATH)",
+            file=sys.stderr,
+        )
         return 1
 
     stats: dict = {}

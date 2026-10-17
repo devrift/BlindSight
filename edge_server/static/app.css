@@ -1,0 +1,330 @@
+/* BlindSight voice-first PWA design system.
+   Built for blind and low-vision users first, sighted users second:
+   - WCAG AAA contrast (near-black ground, white text, amber accent >7:1)
+   - every interactive target >= 56px, the mic is 112px
+   - visible 3px focus rings, logical tab order, skip link
+   - three text sizes, reduced-motion respected
+   The screen is a secondary display: every state change is also spoken and
+   announced to screen readers, so nothing important is visual-only. */
+
+:root {
+  --bg: #05070c;
+  --card: #0f172a;
+  --card-edge: #1e293b;
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --accent: #f59e0b;
+  --accent-strong: #fbbf24;
+  --ok: #34d399;
+  --bad: #f87171;
+  --focus: #fde68a;
+  --radius: 18px;
+  --font-scale: 1;
+}
+
+html[data-text-size="lg"] { --font-scale: 1.2; }
+html[data-text-size="xl"] { --font-scale: 1.45; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: calc(17px * var(--font-scale));
+  line-height: 1.5;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 14px 28px;
+  gap: 14px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
+  overflow: hidden; white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  padding: 12px 18px;
+  border-radius: 0 0 12px 12px;
+  z-index: 50;
+}
+.skip-link:focus { left: 12px; }
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 2px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand img { width: 40px; height: 40px; }
+.brand h1 {
+  margin: 0;
+  font-size: calc(1.35rem * var(--font-scale));
+  letter-spacing: 0.04em;
+}
+
+.badge {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  color: var(--muted);
+  font-size: calc(0.85rem * var(--font-scale));
+  font-weight: 600;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
+.badge.ok { color: var(--ok); border-color: var(--ok); }
+.badge.bad { color: var(--bad); border-color: var(--bad); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+/* ---- status ---- */
+.status-card { text-align: center; }
+#mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: calc(0.8rem * var(--font-scale));
+  color: var(--accent-strong);
+  min-height: 28px;
+}
+#mode-badge .dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+}
+#status-line {
+  margin: 8px 0 0;
+  font-size: calc(1.15rem * var(--font-scale));
+  color: var(--text);
+  min-height: 2.6em;
+}
+
+/* ---- mic ---- */
+.mic-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 16px;
+}
+#mic-btn {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: 4px solid var(--accent);
+  background: radial-gradient(circle at 50% 35%, #1f2937, #0b1220 70%);
+  color: var(--accent-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35);
+}
+#mic-btn:active { transform: scale(0.96); }
+#mic-btn.listening {
+  border-color: var(--ok);
+  color: var(--ok);
+  box-shadow: 0 0 0 14px rgba(52, 211, 153, 0.15);
+}
+#mic-btn.speaking {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 14px rgba(251, 191, 36, 0.12);
+}
+#mic-hint {
+  color: var(--muted);
+  font-size: calc(0.95rem * var(--font-scale));
+  text-align: center;
+  min-height: 1.4em;
+}
+
+/* ---- controls ---- */
+.controls-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+}
+@media (max-width: 480px) {
+  .controls-card { grid-template-columns: 1fr; }
+}
+.control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 56px;
+  background: #0b1220;
+  border: 1px solid var(--card-edge);
+  border-radius: 12px;
+  padding: 8px 14px;
+}
+.control label, .control .group-label {
+  color: var(--text);
+  font-weight: 600;
+  font-size: calc(1rem * var(--font-scale));
+}
+.control select, .control button {
+  min-height: 44px;
+  font-size: calc(1rem * var(--font-scale));
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.control select { max-width: 46%; }
+.control button { cursor: pointer; font-weight: 600; }
+.control button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* switch-style checkbox, big enough for shaky hands */
+.switch {
+  position: relative;
+  width: 64px;
+  height: 36px;
+  flex: 0 0 64px;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #1e293b;
+  border: 1px solid var(--card-edge);
+  transition: background 0.15s ease;
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.switch input:checked + .track { background: #78350f; }
+.switch input:checked + .track::after { transform: translateX(28px); background: var(--accent-strong); }
+.switch input:focus-visible + .track { outline: 3px solid var(--focus); outline-offset: 3px; }
+
+.text-size-group { display: inline-flex; gap: 6px; }
+.text-size-group button { min-width: 44px; }
+
+/* ---- conversation log ---- */
+#chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 38vh;
+  overflow-y: auto;
+  padding: 14px;
+}
+.bubble {
+  border-radius: 14px;
+  padding: 12px 14px;
+  max-width: 92%;
+  font-size: calc(1rem * var(--font-scale));
+}
+.bubble.user {
+  align-self: flex-end;
+  background: #1e293b;
+  border: 1px solid var(--card-edge);
+}
+.bubble.bot {
+  align-self: flex-start;
+  background: #0b1220;
+  border: 1px solid var(--accent);
+}
+.bubble .who {
+  display: block;
+  font-size: calc(0.75rem * var(--font-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.bubble.degraded { border-color: var(--bad); }
+
+/* ---- text fallback ---- */
+.text-input-form {
+  display: flex;
+  gap: 10px;
+}
+.text-input-form input {
+  flex: 1;
+  min-height: 56px;
+  border-radius: 12px;
+  border: 1px solid var(--card-edge);
+  background: #0b1220;
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: calc(1.05rem * var(--font-scale));
+}
+.text-input-form button {
+  min-height: 56px;
+  min-width: 88px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  font-size: calc(1.05rem * var(--font-scale));
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

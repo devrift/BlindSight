@@ -1,17 +1,38 @@
 [Unit]
-Description=BlindSight Local Vision and Edge Gateway Server
-After=network-online.target
+Description=BlindSight local vision and TTS server
+Documentation=file:/home/pi/BlindSight/README.md
+# Without Wants=, After=network-online.target alone does not make systemd wait
+# for the network, so the service raced the Wi-Fi association on boot.
 Wants=network-online.target
+After=network-online.target
 
 [Service]
 User=pi
+Group=pi
+# The old unit pointed at /home/pi/blindsight/pi_server, a directory that no
+# longer exists since the repository reorganised into edge_server/. systemd
+# would have failed the unit outright.
 WorkingDirectory=/home/pi/BlindSight/edge_server
+ExecStart=/home/pi/BlindSight/.venv/bin/gunicorn \
+    --bind 0.0.0.0:5000 \
+    --workers 1 \
+    --threads 4 \
+    --timeout 90 \
+    --access-logfile - \
+    --error-logfile - \
+    server:app
+# A single worker is deliberate: onnxruntime sessions are not shared across
+# processes and the Pi 3B+ has 1GB RAM. Concurrency comes from --threads.
 Environment=PYTHONUNBUFFERED=1
-# Production WSGI server (gunicorn) with multi-threading for responsive audio and vision requests.
-# Fallback if running directly without gunicorn: ExecStart=/usr/bin/python3 /home/pi/BlindSight/edge_server/server.py
-ExecStart=/usr/bin/python3 -m gunicorn --workers 1 --threads 4 --bind 0.0.0.0:5000 server:app
+Environment=BLINDSIGHT_DATA=/home/pi/BlindSight/runtime
 Restart=on-failure
 RestartSec=3
+
+# Modest hardening for a device that sits on a home Wi-Fi network.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/pi/BlindSight/runtime /home/pi/BlindSight/uploads
 
 [Install]
 WantedBy=multi-user.target

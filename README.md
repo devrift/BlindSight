@@ -2,7 +2,7 @@
 
 > **A Dual-Tier Embedded Edge & Cloud Multimodal Mobility Assistant for the Visually Impaired.**
 
-BlindSight is an open-source assistive mobility wearable designed to provide real-time spatial navigation awareness and conversational scene understanding. It pairs local edge reflex detection on a Raspberry Pi 3B+ with a high-level cloud visual companion accessible directly via phone or earphone.
+BlindSight is an open-source assistive mobility wearable designed to provide real-time spatial navigation awareness and conversational scene understanding. It pairs local edge reflex detection on a Raspberry Pi 3B+ (about 1.5 s per frame end-to-end today; see [Known limitations](#-known-limitations--roadmap)) with a high-level cloud visual companion accessible directly via phone or earphone.
 
 ---
 
@@ -34,7 +34,7 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
    │  Tier 1: Offline Edge Reflex   │                                         │ Tier 2: Cloud Multimodal AI      │
    │  • YOLOv8n ONNX (320x320)      │                                         │ • OpenRouter API Gateway         │
    │  • onnxruntime (2-thread CPU)  │                                         │ • Gemini 2.5 Flash / GPT-4o-mini │
-   │  • ~1.5s Reflex (<150MB RAM)   │                                         │ • Visual Scene Q&A               │
+   │  • ~1.5s Inference (<150MB RAM)│                                         │ • Visual Scene Q&A               │
    │  • Spatial Sector Obstacle Nav │                                         │ • Natural Spoken Voice Output    │
    └────────────────────────────────┘                                         └────────────────┬─────────────────┘
                                                                                                │
@@ -53,10 +53,13 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
 ## ⚡ Core Features
 
 1. **Dual-Tier Intelligence**:
-   * **Tier 1 (Offline Edge Reflex)**: Operates without internet connectivity. Runs quantized YOLOv8n ONNX on the Raspberry Pi 3B+ CPU with an ultra-lean memory footprint (<150MB RAM) executing within ~1.5s per frame in an isolated process to guarantee clean memory reclamation on 1GB hardware. Generates concise directional spatial instructions (*"Warning: Chair close ahead. Path clear on your right."*).
+   * **Tier 1 (Offline Edge Reflex)**: Operates without internet connectivity. Runs quantized YOLOv8n ONNX on the Raspberry Pi 3B+ CPU with a lean memory footprint (<150MB) and roughly 1.5 s inference latency per frame, providing direct spatial instructions (*"Warning: Chair close ahead. Path clear on your right."*). When vision cannot run at all, the gateway says so and falls back to a generic safety message — it never claims the path is clear when it could not see.
    * **Tier 2 (Cloud Multimodal Companion)**: Accessible via phone PWA or API. Powered by OpenRouter (`google/gemini-2.5-flash` with `openai/gpt-4o-mini` fallback), giving users descriptive contextual answers to questions like *"What color is this shirt?"* or *"Read the sign in front of me"*.
+   * **Conversation, memory and language**: the companion keeps the recent turns of each conversation, so follow-up questions ("and on the left?") have context. It also keeps a small persistent memory and a reply-language preference in `state/companion.json` (git-ignored, capped at 20 facts / 24 turns, atomic writes, corrupt files quarantined). Voice or text commands, all working **without** any API key: `remember that my dog is Bruno`, `what do you remember?`, `forget bruno`, `forget everything`, `language hindi` (or `switch language to hindi`), `start over`. The language switch changes both the model's reply language and the espeak-ng voice; the PWA also offers a Reply-language selector. The ESP32 LittleFS offline clips remain English-only.
 2. **Deterministic Fallback Safety**:
-   * If Wi-Fi drops or the Pi gateway is unavailable, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
+   * If Wi-Fi drops, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips
+     (inside 25 cm the reflex says stop instead of steer: "Obstacle critical. Stop." plays `/stop.wav`) over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
+   * The clips are generated, not authored: run `tools/generate_clips.py` once (espeak-ng on Linux, built-in SAPI voice on Windows) and check the result with `tools/verify_wav.py` and upload the filesystem image. Without them this fallback is silent — the firmware reports that clearly on the serial monitor.
 3. **PWA Mobile Phone Companion**:
    * Fully installable standalone web application with high-contrast UI, large tactile touch targets, Web Speech voice input, and native device speech synthesis (zero Pi CPU load).
    * Tactile haptic vibration cues (`navigator.vibrate`) for low-vision users.
@@ -66,6 +69,11 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
 ## 🔌 Hardware Pinouts & Power Distribution
 
 ### Power Topology
+
+> Canonical wiring reference: [`docs/hardware/WIRING_V2_BUCK_AND_TTL.md`](docs/hardware/WIRING_V2_BUCK_AND_TTL.md).
+> `PIN_CONNECTION_CHART.md` and the click-by-click guide still carry the older
+> two-Arduino rail description for their signal tables; their power sections are
+> superseded by WIRING_V2.
 * **5V 3A Buck Rail**: Dedicated buck converter supplying 5.0–5.1V with a **shared common ground** for:
   * Main ESP32 (`VIN`)
   * ESP32-CAM (`5V` + 1000 µF low-ESR decoupling capacitor across 5V and GND)
@@ -105,6 +113,7 @@ cd BlindSight/edge_server
 pip install -r requirements.txt
 
 # Export or download the quantized YOLOv8n ONNX model (imgsz=320)
+# (ultralytics is in requirements.txt; export on a machine with enough RAM)
 python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=320, simplify=True)"
 mkdir -p models && mv yolov8n.onnx models/
 
@@ -115,6 +124,11 @@ nano .env  # Add your OPENROUTER_API_KEY
 # Start the server (or enable the systemd service)
 python3 server.py
 ```
+
+`GET /health` reports the real state of every component (`vision_ready`,
+`tts_ready`, `companion_ready`, plus an `issues` list). Until the model and
+`espeak-ng` are in place it returns `503` with reasons instead of pretending to
+be healthy — check it after any change.
 
 ### 2. Accessing the Mobile Phone Companion (PWA)
 
@@ -128,7 +142,20 @@ python3 server.py
 
 ### 3. Flashing the ESP32 Firmware
 
-See [firmware/FIRMWARE_VARIANTS.md](firmware/FIRMWARE_VARIANTS.md) for full details on the available toolchains (PlatformIO, Arduino IDE, or PowerShell one-click script).
+#### Step A: Main ESP32
+
+> The main firmware exists in three forms (PlatformIO `src/main.cpp`, the
+> Arduino `.ino`, and the sketch inside the PowerShell installer). They must
+> stay behaviourally identical — see
+> [`firmware/FIRMWARE_VARIANTS.md`](firmware/FIRMWARE_VARIANTS.md).
+
+1. Open [`firmware/esp32_main/BlindSight_Main_ESP32.ino`](file:///firmware/esp32_main/BlindSight_Main_ESP32.ino) in Arduino IDE or [`firmware/esp32_main`](file:///firmware/esp32_main) in PlatformIO.
+   Arduino IDE requires a sketch to live in a folder of its own name, so it will
+   offer to move the `.ino` into `BlindSight_Main_ESP32/` — accept that when
+   building from the IDE. The in-repo layout is arranged for PlatformIO.
+2. Set your Wi-Fi SSID, password, and the Raspberry Pi IP address.
+3. Select board `ESP32 Dev Module` and flash.
+4. Open the Serial Monitor (115200 baud) and note the printed `MAIN MAC: XX:XX:XX:XX:XX:XX`.
 
 #### Option A: Using PlatformIO (VS Code)
 1. **Main ESP32 DevKit**: Open `firmware/esp32_main`, copy `include/secrets.example.h` to `include/secrets.h`, configure credentials, and click **Upload**.
@@ -148,12 +175,36 @@ See [firmware/FIRMWARE_VARIANTS.md](firmware/FIRMWARE_VARIANTS.md) for full deta
 | Endpoint | Method | Payload / Params | Description |
 |---|---|---|---|
 | `/` | `GET` | None | Serves the Accessible Voice Companion PWA |
-| `/sw.js` | `GET` | None | Service worker script with offline app shell caching |
-| `/health` | `GET` | None | Honest system health: `status` (`ok`, `degraded`, `error`), `vision_script_ok`, `model_path`, `espeak_ok`, `last_vision_success` |
-| `/analyse` | `POST` | Multipart `image` (JPEG) | Ingests camera frame, executes YOLOv8n, generates speech WAV |
+| `/health` | `GET` | None | Per-component health report; `503` with an `issues` list when degraded |
+| `/api/config` | `GET` | None | Tells the PWA whether a bearer token is required (never returns the token) |
+| `/analyse` | `POST` | Multipart `image` (JPEG) | Ingests camera frame, executes YOLOv8n, generates speech |
 | `/audio/<id>` | `GET` | Request ID in URL | Streams 16-bit PCM WAV generated by `espeak-ng` |
-| `/api/chat` | `POST` | `{"prompt": str, "use_camera": bool}` | Multimodal voice query to OpenRouter assistant (rate-limited, optional token auth) |
-| `/api/latest-frame` | `GET` | None | Live JPEG snapshot from latest camera transmission (returns 404 if no frame captured) |
+| `/api/chat` | `POST` | `{"prompt": str, "use_camera": bool}`, optional `Authorization: Bearer <token>` | Multimodal voice query to the OpenRouter assistant with conversation history, memory and language context; `502` + `degraded:true` when the provider is unreachable; memory/language phrases are answered locally with `local_command:true` |
+| `/api/prefs` | `GET`/`POST` | `POST {"language": code}` | Reply-language preference and the supported language list; `POST` honours the optional access token |
+| `/api/latest-frame` | `GET` | None | JPEG of the most recent camera frame (≤30 s old); `404` when there is no fresh frame — never a placeholder |
+
+---
+
+## ⚠️ Known Limitations & Roadmap
+
+Honest status as of this revision. These are tracked, not aspirations:
+
+* **Latency.** `edge_server/server.py` spawns a fresh interpreter per `/analyse`
+  request, which re-imports NumPy/Pillow/onnxruntime and reloads the ONNX model
+  every frame. Budget ~1.5 s per frame on a Pi 3B+, not the millisecond figures
+  quoted in older revisions of this document. A persistent in-process inference
+  worker (model loaded once, frames queued) is the planned fix and is the only
+  route to a sub-second reflex tier.
+* **Voice clips.** The offline ultrasonic fallback needs generated LittleFS
+  clips (`tools/generate_clips.py`: espeak-ng on Linux, built-in SAPI voice on
+  Windows). Verify with `tools/verify_wav.py` - it rejects wrong formats, implausible
+  durations and harmonic-tone fakes. A fresh clone is silent until you run it and
+  upload the filesystem image.
+* **Authentication.** Set `BLINDSIGHT_API_TOKEN` in `edge_server/.env`. Until you
+  do, `/api/chat` is reachable by anyone on your LAN and spends your OpenRouter
+  key; the server prints a loud warning at startup when the token is absent.
+* **Not a certified aid.** BlindSight is a research prototype. Nothing here has
+  been validated as a mobility aid; treat every "path clear" as unverified.
 
 ---
 

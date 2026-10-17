@@ -1,47 +1,76 @@
-# BlindSight Firmware Variants Guide
+# BlindSight firmware entry points — keep these in sync
 
-This directory contains the firmware for the BlindSight wearable assistance device across two microcontrollers:
-1. **ESP32 DevKit V1 (Main Unit)** — located in `firmware/esp32_main/`
-2. **AI-Thinker ESP32-CAM (Vision Capture)** — located in `firmware/esp32_cam/`
+The main ESP32 firmware exists in **three** copies, for three different
+audiences. They have drifted apart in the past (the `.ino` and the PowerShell
+installer were missing five fixes that `src/main.cpp` already had, and the
+PowerShell copy called a route that returns 404), so this file is the contract.
 
----
+| # | File | For | Config style |
+|---|---|---|---|
+| 1 | `firmware/esp32_main/src/main.cpp` | PlatformIO / VS Code developers | `include/secrets.h` |
+| 2 | `firmware/esp32_main/BlindSight_Main_ESP32.ino` | Arduino IDE | literals at the top |
+| 3 | sketch embedded in `docs/hardware/Install_BlindSight_Main_ESP32.ps1` | non-technical builders, no terminal | injected by the installer |
 
-## Firmware Entry Points & Toolchains
+**Rule: any behaviour change lands in all three in the same commit.** If you fix
+a bug in one, you have fixed it in none until the other two match.
 
-The repository supports three workflows to accommodate developers, makers, and non-technical builders. All three variants implement identical safety contracts, network protocols, packetization schemes, and audio drivers:
+The ESP32-CAM has two copies with the same rule:
+`firmware/esp32_cam/src/main.cpp` and `firmware/esp32_cam/BlindSight_Camera.ino`.
 
-### 1. PlatformIO (Recommended for Production & CI)
-- **Files**:
-  - `firmware/esp32_main/src/main.cpp` + `firmware/esp32_main/platformio.ini`
-  - `firmware/esp32_cam/src/main.cpp` + `firmware/esp32_cam/platformio.ini`
-- **Configuration**: Copy `include/secrets.example.h` to `include/secrets.h` and fill in Wi-Fi SSID, password, Pi IP, and MAC addresses.
-- **Platform Pinning**: Pins `platform = espressif32@6.13.0` (Arduino-ESP32 2.0.17 / ESP-IDF 4.4) for reproducible deterministic builds.
-- **Dual-Core Guard**: Includes `#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3` so code compiles cleanly on both ESP32 Core 2.x and Core 3.x.
+## Behaviours that must match across all copies
 
-### 2. Arduino IDE (Beginner & Visual Workflow)
-- **Files**:
-  - `firmware/esp32_main/BlindSight_Main_ESP32.ino` (select `ESP32 Dev Module`)
-  - `firmware/esp32_cam/BlindSight_Camera.ino` (select `AI Thinker ESP32-CAM`)
-- **Configuration**: Edit the top 4 lines in each `.ino` sketch directly.
-- **Folder Convention**: When opening in Arduino IDE, ensure the `.ino` file is in a directory of the exact same name or open via Arduino IDE file picker.
+1. **Bounded Wi-Fi wait.** `while (WiFi.status() != WL_CONNECTED && millis() - started < WIFI_CONNECT_TIMEOUT_MS)`.
+   Never an unbounded loop: `loop()` must run without a hotspot so the button
+   and the HC-SR04 ultrasonic fallback work offline.
+2. **ESP-NOW callback version guard.** `#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3`
+   selects between the IDF 5.x (`esp_now_recv_info_t`) and IDF 4.x (`const uint8_t *mac`) signatures.
+3. **Sender MAC filtering** via `isCamera()` — ignore ESP-NOW frames from any
+   transmitter other than the camera. The camera MAC is configuration, not a
+   leftover: the `.ino`'s old comment ("You do NOT need the camera MAC here")
+   was wrong.
+4. **Audio URL from the `/analyse` JSON reply** (`audioPathFromReply`). The bare
+   `GET /audio` path is a 404; the route is `/audio/<16 hex chars>`.
+5. **HTTP timeouts ≥ 60 s** (`HTTP_TIMEOUT_MS`). The gateway may spend ~25 s on
+   inference plus ~20 s on TTS. The HTTPClient default of 5 s timed out on every
+   real request.
+6. **Stalled-frame recovery** after `FRAME_STALL_TIMEOUT_MS` (3 s) of chunk
+   silence, otherwise a lost final chunk plus a camera reboot uploads a corrupt
+   mixed JPEG.
+7. **`channels` guard in `playWavStream`** (`if (channels < 1) channels = 1; if (channels > 2) channels = 2;`).
+   Without it a header claiming 0 channels spins the decode loop forever while
+   overflowing the 512-sample stack buffer.
+8. **`memcpy` for WAV header fields**, never a cast through `uint32_t*`:
+   strict-aliasing UB and an unaligned access on Xtensa.
+9. **`playFile()` re-asserts `CLIP_SAMPLE_RATE` (22050 Hz)** so a streamed network
+   response at another rate cannot leave the DAC mis-clocked for the next clip.
+10. **No dead `"Stop"` branch.** `quickRule()` never returns a string containing
+    "Stop"; the branch and `/stop.wav` never existed. (The clip generator still
+    produces `stop.wav` for builds that add a stop condition later — harmless.)
+11. **`WiFi.setSleep(false)`** — modem sleep drops ESP-NOW frames.
+12. **Camera SCCB spelling**: `pin_sccb_sda` / `pin_sccb_scl` (current upstream
+    spelling; `pin_sscb_*` is a deprecated alias in an anonymous union, present
+    only in esp32-camera ≥ v2.0.2).
 
-### 3. PowerShell One-Click Script (Automated Windows Setup)
-- **File**: `docs/hardware/Install_BlindSight_Main_ESP32.ps1`
-- **Usage**: Automatically downloads `arduino-cli`, installs the ESP32 core, prompts securely for Wi-Fi credentials, compiles, and flashes the ESP32 via USB serial COM port.
-- **Security**: Cleans up temporary credential files from disk after upload.
+## Which entry point should a builder use?
 
----
+- **You have VS Code and want a debugger or serial plots:** `src/main.cpp` (PlatformIO).
+- **You have the Arduino IDE and no terminal:** the `.ino`. Open the *file*; the
+  IDE will offer to move it into a folder named `BlindSight_Main_ESP32` — accept,
+  then build from there. The folder layout in git is arranged for PlatformIO,
+  which requires the sketch in the project root's `src/`.
+- **You have neither and just want it on the board:** the PowerShell installer.
 
-## Core Safety Architecture Maintained Across All Variants
+## Platform pins
 
-1. **ESP-NOW Frame Reception**:
-   - 220-byte chunks with 16-bit packet checksum verification (`sum16`).
-   - Transmitter MAC filtering (`isCamera` / `CAMERA_MAC` checking) to reject rogue frames on the Wi-Fi channel.
-   - Partial-frame timeout (3-second silence reset via `lastPacketAt`) preventing corrupted partial JPEGs from reaching the inference engine.
-2. **Audio Streaming & I2S**:
-   - Bounded channel count (`channels < 1` guard) and alignment-safe header reading (`memcpy`).
-   - Dynamic `/audio/<request_id>` routing parsed from `/analyse` JSON reply (`audioPathFromReply`).
-   - 60-second HTTP client timeouts to allow edge model inference and espeak-ng generation to complete cleanly.
-3. **Fail-Closed Offline Ultrasonic Fallback**:
-   - Bounded 20-second Wi-Fi connection attempt in `setup()` with `WiFi.setSleep(false)`.
-   - Never hangs in setup: if Wi-Fi or gateway Pi is absent, HC-SR04 obstacle sensors and LittleFS pre-recorded WAV voice clips operate 100% locally and immediately on button press.
+Both `platformio.ini` files pin `platform = espressif32@6.13.0`
+(Arduino core 2.0.17 / IDF 4.4). The `#if` guards above mean the code also
+compiles on core 3.x; the comments in each `platformio.ini` document the
+one-line change to move there. Do not unpin without re-reading those comments.
+
+
+## Audited close-range stop band (2026-10-17)
+
+`quickRule()` returns "Obstacle critical. Stop." when the centre sensor reads
+under 25 cm, and `loop()` maps any rule containing "Stop" to `/stop.wav`.
+All three main-firmware copies carry both halves; changing the threshold means
+re-benching the ultrasonic readings and updating README plus this file.

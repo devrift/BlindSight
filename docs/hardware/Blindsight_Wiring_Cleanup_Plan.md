@@ -98,7 +98,7 @@ Do **Step B** (power bus) and nothing else. That single change removes most of t
 ---
 
 ## 5. What's left after wiring (for later, not today)
-1. Set up the Pi server (`pi_server/` — copy files, `pip install -r requirements.txt`, run)
+1. Set up the Pi server (`edge_server/` — `pip install -r edge_server/requirements.txt`, run `edge_server/server.py`)
 2. Run `Install_BlindSight_Main_ESP32.ps1` → uploads main ESP32 on COM4
 3. Note the **MAIN MAC** it prints, paste into the CAM sketch, upload CAM
 4. Upload the LittleFS WAV clips

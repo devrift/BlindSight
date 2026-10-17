@@ -1,13 +1,45 @@
+# Single project config: strict lint baseline (the old root ruff.toml lived
+# here after the merge so ruff and pytest read one file) plus pytest paths.
 [tool.ruff]
 line-length = 120
 target-version = "py39"
+extend-exclude = [
+    ".pio",
+    "runtime",
+    "uploads",
+    "state",
+]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+    "PLE", # pylint errors
+    "PLW", # pylint warnings
+    "S",   # flake8-bandit (this project shells out to a vision subprocess)
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+    "S104",  # binding 0.0.0.0 is intentional: the Pi must serve the LAN
+    "S110",  # try/except/pass is used deliberately for best-effort snapshot writes
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E402"]
+"tools/generate_clips.py" = [
+    "S603",  # invokes espeak-ng / powershell TTS backends with fixed argv lists
+    "S607",  # TTS binaries are resolved from PATH on purpose
+]
+"tests/*" = [
+    "S101",   # pytest asserts
+    "S603",   # tests deliberately execute the repo's own scripts
+    "S607",   # `git` and `sys.executable` are resolved from PATH on purpose
+    "PLW1510",  # tests assert on returncode, so check=False is the point
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

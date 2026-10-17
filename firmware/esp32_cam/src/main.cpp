@@ -13,6 +13,8 @@ const char *WIFI_SSID = BLINDSIGHT_WIFI_SSID;
 const char *WIFI_PASSWORD = BLINDSIGHT_WIFI_PASSWORD;
 uint8_t MAIN_ESP_MAC[6] = BLINDSIGHT_MAIN_ESP_MAC;
 const uint32_t CAPTURE_EVERY_MS = 10000;
+// Bounded association: an unreachable hotspot must not wedge setup() forever.
+const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
@@ -50,38 +52,36 @@ uint16_t checksum16(const uint8_t *d, size_t n) {
 
 bool initCamera() {
   camera_config_t c = {};
-  c.ledc_channel = LEDC_CHANNEL_0;
-  c.ledc_timer = LEDC_TIMER_0;
-  c.pin_d0 = Y2_GPIO_NUM;
-  c.pin_d1 = Y3_GPIO_NUM;
-  c.pin_d2 = Y4_GPIO_NUM;
-  c.pin_d3 = Y5_GPIO_NUM;
-  c.pin_d4 = Y6_GPIO_NUM;
-  c.pin_d5 = Y7_GPIO_NUM;
-  c.pin_d6 = Y8_GPIO_NUM;
-  c.pin_d7 = Y9_GPIO_NUM;
-  c.pin_xclk = XCLK_GPIO_NUM;
-  c.pin_pclk = PCLK_GPIO_NUM;
-  c.pin_vsync = VSYNC_GPIO_NUM;
-  c.pin_href = HREF_GPIO_NUM;
-  // Standard SCCB pin naming (replaces deprecated sscb alias in esp32-camera)
-  c.pin_sccb_sda = SIOD_GPIO_NUM;
-  c.pin_sccb_scl = SIOC_GPIO_NUM;
-  c.pin_pwdn = PWDN_GPIO_NUM;
-  c.pin_reset = RESET_GPIO_NUM;
-  c.xclk_freq_hz = 20000000;
-  c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size = FRAMESIZE_QVGA;
-  c.jpeg_quality = 14;
-  c.fb_count = 1;
+  c.ledc_channel = LEDC_CHANNEL_0; c.ledc_timer = LEDC_TIMER_0;
+  c.pin_d0=Y2_GPIO_NUM; c.pin_d1=Y3_GPIO_NUM; c.pin_d2=Y4_GPIO_NUM; c.pin_d3=Y5_GPIO_NUM;
+  c.pin_d4=Y6_GPIO_NUM; c.pin_d5=Y7_GPIO_NUM; c.pin_d6=Y8_GPIO_NUM; c.pin_d7=Y9_GPIO_NUM;
+  c.pin_xclk=XCLK_GPIO_NUM; c.pin_pclk=PCLK_GPIO_NUM; c.pin_vsync=VSYNC_GPIO_NUM; c.pin_href=HREF_GPIO_NUM;
+  // pin_sccb_* is the current upstream spelling; pin_sscb_* is a deprecated alias.
+  c.pin_sccb_sda=SIOD_GPIO_NUM; c.pin_sccb_scl=SIOC_GPIO_NUM; c.pin_pwdn=PWDN_GPIO_NUM; c.pin_reset=RESET_GPIO_NUM;
+  c.xclk_freq_hz=20000000; c.pixel_format=PIXFORMAT_JPEG;
+  c.frame_size=FRAMESIZE_QVGA; c.jpeg_quality=14; c.fb_count=1;
   return esp_camera_init(&c) == ESP_OK;
 }
 
 void sendPhoto() {
   camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("Camera capture failed");
-    return;
+  if (!fb) { Serial.println("Camera capture failed"); return; }
+  uint16_t count = (fb->len + CHUNK - 1) / CHUNK;
+  if (count == 0 || count > 300) { Serial.println("JPEG too large"); esp_camera_fb_return(fb); return; }
+  Serial.printf("Sending JPEG: %u bytes, %u packets\n", fb->len, count);
+  for (uint16_t i=0; i<count; i++) {
+    ImagePacket p = {};
+    size_t offset = i * CHUNK, n = min(CHUNK, fb->len - offset);
+    p.magic=MAGIC; p.imageId=imageId; p.index=i; p.count=count; p.bytes=n;
+    memcpy(p.data, fb->buf + offset, n); p.checksum=checksum16(p.data,n);
+    // Two sends reduce loss; receiver ignores duplicate numbered chunks.
+    // Two sends reduce loss; the receiver ignores duplicate numbered chunks.
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (esp_now_send(MAIN_ESP_MAC, (uint8_t*)&p, sizeof(p)) != ESP_OK) {
+        Serial.printf("esp_now_send failed for chunk %u\n", i);
+      }
+      delay(4);
+    }
   }
   uint16_t count = (fb->len + CHUNK - 1) / CHUNK;
   if (count == 0 || count > 300) {
@@ -112,44 +112,15 @@ void sendPhoto() {
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(300);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  int wifiAttempts = 0;
-  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 66) {
-    delay(300);
-    Serial.print('.');
-    wifiAttempts++;
-  }
-  WiFi.setSleep(false);
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\nCAM MAC: %s | WiFi channel: %d\n", WiFi.macAddress().c_str(), WiFi.channel());
-  } else {
-    Serial.printf("\nCAM MAC: %s | WiFi not connected, continuing offline.\n", WiFi.macAddress().c_str());
-  }
-
-  if (!initCamera()) {
-    Serial.println("Camera init failed");
-    while (true) delay(1000);
-  }
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW init failed");
-    while (true) delay(1000);
-  }
-  esp_now_peer_info_t peer = {};
-  memcpy(peer.peer_addr, MAIN_ESP_MAC, 6);
-  peer.channel = 0;
-  peer.encrypt = false;
-  if (esp_now_add_peer(&peer) != ESP_OK) {
-    Serial.println("Peer add failed");
-    while (true) delay(1000);
-  }
-}
-
-void loop() {
-  if (millis() - lastCapture > CAPTURE_EVERY_MS) {
-    lastCapture = millis();
-    sendPhoto();
-  }
+  Serial.begin(115200); delay(300);
+  WiFi.mode(WIFI_STA); WiFi.setSleep(false); WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  uint32_t started = millis();
+  while (WiFi.status()!=WL_CONNECTED && millis()-started < WIFI_CONNECT_TIMEOUT_MS) { delay(300); Serial.print('.'); }
+  Serial.println();
+  if (WiFi.status()!=WL_CONNECTED) Serial.println("Wi-Fi not connected; frames will not reach the main ESP32.");
+  Serial.printf("\nCAM MAC: %s; WiFi channel follows AP\n", WiFi.macAddress().c_str());
+  if (!initCamera()) { Serial.println("Camera init failed"); while(true) delay(1000); }
+  if (esp_now_init()!=ESP_OK) { Serial.println("ESP-NOW init failed"); while(true) delay(1000); }
+  esp_now_peer_info_t peer = {}; memcpy(peer.peer_addr,MAIN_ESP_MAC,6); peer.channel=0; peer.encrypt=false;
+  if (esp_now_add_peer(&peer)!=ESP_OK) { Serial.println("Peer add failed"); while(true) delay(1000); }
 }

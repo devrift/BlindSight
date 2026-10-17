@@ -73,6 +73,7 @@ def synthesize_windows_sapi(path: Path, text: str) -> bool:
                 str(path.resolve()),
             ],
             capture_output=True,
+                check=False,  # a missing TTS backend is a fallback, not a crash
             timeout=15,
         )
         if res.returncode == 0 and path.is_file() and path.stat().st_size > 44:
@@ -128,6 +129,7 @@ def generate_clips(output_dir: Path) -> None:
                 res = subprocess.run(
                     [espeak_bin, "-v", "en", "-s", "155", "-w", str(temp_path), spec["text"]],
                     capture_output=True,
+                check=False,  # a missing TTS backend is a fallback, not a crash
                     timeout=5,
                 )
                 if res.returncode == 0 and temp_path.stat().st_size > 44:

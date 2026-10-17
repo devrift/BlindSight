@@ -1,122 +1,178 @@
+"""Gateway API contracts (audit B2, B3, C11, D2-of-audit).
+
+Run with the sandbox's real (broken) environment: no ONNX model and no
+espeak-ng. The point is that the gateway reports that honestly instead of
+claiming a working vision pipeline or serving a placeholder as a live frame.
+"""
 from __future__ import annotations
 
-import io
-import sys
-from pathlib import Path
-
-import pytest
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT_DIR / "edge_server"))
-
-import server
 
 
-@pytest.fixture
-def client():
-    app = server.create_app()
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        yield client
+def test_health_is_honest_when_pipeline_broken(client):
+    response = client.get("/health")
+    body = response.get_json()
+    # No model and no espeak-ng in CI: this must NOT be reported as ok.
+    assert response.status_code == 503, body
+    assert body["status"] in ("degraded", "error")
+    assert body["vision_ready"] is False
+    assert isinstance(body["issues"], list) and body["issues"]
 
 
-def test_health_endpoint(client):
-    res = client.get("/health")
-    assert res.status_code in (200, 503)
-    data = res.get_json()
-    assert "status" in data
-    assert "vision_script_ok" in data
-    assert "model_path" in data
-    assert "espeak_ok" in data
-    assert "last_vision_success" in data
-    assert data["vision_script_ok"] is True
+def test_health_reports_component_fields(client):
+    body = client.get("/health").get_json()
+    for field in (
+        "status",
+        "vision_ready",
+        "vision_script_ok",
+        "model_path",
+        "tts_ready",
+        "companion_ready",
+        "last_vision_success",
+        "issues",
+    ):
+        assert field in body
 
 
-def test_health_reports_error_when_model_missing(client, monkeypatch):
-    monkeypatch.setenv("BLINDSIGHT_MODEL_PATH", "nonexistent_model.onnx")
-    res = client.get("/health")
-    data = res.get_json()
-    assert data["status"] in ("degraded", "error")
-    assert data["model_path"] is None
+def test_latest_frame_404_without_a_frame(client):
+    """Audit B3: no silent fallback to a bundled placeholder image."""
+    response = client.get("/api/latest-frame")
+    assert response.status_code == 404
+    assert "no fresh frame" in response.get_json()["error"]
 
 
-def test_latest_frame_404_when_empty(client, tmp_path, monkeypatch):
-    # Ensure fresh empty directories
-    test_settings = server.Settings(
-        data_dir=tmp_path / "runtime",
-        uploads_dir=tmp_path / "uploads",
-        models_dir=ROOT_DIR / "edge_server" / "models",
-        vision_script=ROOT_DIR / "edge_server" / "vision_ai.py",
-        vision_command=["python3", str(ROOT_DIR / "edge_server" / "vision_ai.py")],
-        espeak_binary="espeak-ng",
+def test_api_config_does_not_leak_token(client):
+    body = client.get("/api/config").get_json()
+    assert set(body) == {"auth_required", "frame_max_age_seconds"}, body
+    assert "auth_required" in body
+
+
+def test_service_worker_served_with_root_scope(client):
+    response = client.get("/static/sw.js")
+    assert response.status_code == 200
+    assert response.headers.get("Service-Worker-Allowed") == "/"
+
+
+def test_manifest_has_png_icons(client):
+    body = client.get("/static/manifest.json").get_json()
+    types = {icon["type"] for icon in body["icons"]}
+    assert "image/png" in types, "installability requires real PNG icons, not only SVG"
+    purposes = {icon.get("purpose") for icon in body["icons"]}
+    assert "maskable" in purposes
+
+
+def test_analyse_requires_multipart_image(client):
+    assert client.post("/analyse").status_code == 400
+
+
+def test_analyse_rejects_corrupt_bytes(client):
+    # espeak-ng is absent in CI, so the TTS pre-check answers first; either way
+    # the corrupt payload must never produce a 200.
+    response = client.post(
+        "/analyse",
+        data={"image": (__import__("io").BytesIO(b"not a jpeg"), "f.jpg")},
+        content_type="multipart/form-data",
     )
-    test_app = server.create_app(test_settings)
-    test_app.config["TESTING"] = True
-    c = test_app.test_client()
-
-    res = c.get("/api/latest-frame")
-    assert res.status_code == 404
-    data = res.get_json()
-    assert data.get("error") == "no frame captured yet"
+    assert response.status_code in (400, 503)
 
 
-def test_sw_js_served_at_root(client):
-    res = client.get("/sw.js")
-    assert res.status_code == 200
-    assert "javascript" in res.content_type.lower()
-    assert res.headers.get("Service-Worker-Allowed") == "/"
+def test_analyse_without_tts_does_not_leak_frame(client):
+    """The 503 path must not leave a per-request jpg behind (audit C11)."""
+    import io
+    from PIL import Image
 
+    import server
 
-def test_api_chat_missing_prompt(client):
-    res = client.post("/api/chat", json={})
-    assert res.status_code == 400
-    assert "prompt" in res.get_json().get("error", "").lower()
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (1, 2, 3)).save(buf, "JPEG")
 
-
-def test_api_chat_rate_limiting(client):
-    # Send requests to trigger rate limit (max 30 / min)
-    for _ in range(30):
-        res = client.post("/api/chat", json={"prompt": "hello"}, environ_base={"REMOTE_ADDR": "192.168.1.99"})
-        assert res.status_code != 429
-    # 31st request from same IP should get 429
-    res = client.post("/api/chat", json={"prompt": "hello"}, environ_base={"REMOTE_ADDR": "192.168.1.99"})
-    assert res.status_code == 429
-    assert "rate limit" in res.get_json().get("error", "").lower()
-
-
-def test_api_chat_auth_token(monkeypatch, tmp_path):
-    monkeypatch.setenv("BLINDSIGHT_API_TOKEN", "secret-test-token")
-    test_app = server.create_app()
-    test_app.config["TESTING"] = True
-    c = test_app.test_client()
-
-    # Unauthorized
-    res = c.post("/api/chat", json={"prompt": "hello"})
-    assert res.status_code == 401
-
-    # Authorized
-    res = c.post(
-        "/api/chat",
-        json={"prompt": "hello"},
-        headers={"Authorization": "Bearer secret-test-token"},
+    data_dir = server.app.config["SETTINGS"].data_dir
+    before = {p.name for p in data_dir.iterdir()}
+    response = client.post(
+        "/analyse",
+        data={"image": (io.BytesIO(buf.getvalue()), "f.jpg")},
+        content_type="multipart/form-data",
     )
-    # Token passed; returns assistant response or fallback
-    assert res.status_code in (200, 503)
+    assert response.status_code == 503
+    after = {p.name for p in data_dir.iterdir()}
+    assert after - before <= {"latest.jpg"}, f"unexpected leftovers: {after - before}"
 
 
-def test_analyse_missing_file(client):
-    res = client.post("/analyse", data={})
-    assert res.status_code == 400
-    assert "missing" in res.get_json().get("error", "")
+def test_audio_route_rejects_bad_ids(client):
+    assert client.get("/audio/").status_code == 404
+    assert client.get("/audio/zz").status_code == 404
+    assert client.get("/audio/" + "a" * 15).status_code == 404
+    assert client.get("/audio/" + "a" * 17).status_code == 404
+    assert client.get("/audio/" + "-" * 16).status_code == 404
 
 
-def test_analyse_corrupt_jpeg(client):
-    data = {"image": (io.BytesIO(b"not a valid jpeg"), "image.jpg")}
-    res = client.post("/analyse", data=data, content_type="multipart/form-data")
-    assert res.status_code == 400
-    assert "invalid" in res.get_json().get("error", "").lower()
+def test_chat_requires_prompt(client):
+    assert client.post("/api/chat", json={}).status_code == 400
 
 
-def test_audio_invalid_id(client):
-    res = client.get("/audio/invalid-id")
-    assert res.status_code == 404
+def test_chat_reports_degradation(client):
+    """Audit D2: a provider outage must be distinguishable from an answer."""
+    response = client.post("/api/chat", json={"prompt": "what is in front of me?", "use_camera": True})
+    # No OPENROUTER_API_KEY in CI: the gateway must say so, loudly.
+    assert response.status_code == 502
+    body = response.get_json()
+    assert body["degraded"] is True
+    assert body["reason"] == "missing_api_key"
+    assert body["frame_stale"] is True
+    assert body["image_attached"] is False
+
+
+def test_chat_rate_limit(client):
+    import server
+
+    service = server.app.config["SERVICE"]
+    original = service._rate_hits.copy()
+    try:
+        client_id = "rate-test-client"
+        for _ in range(server.CHAT_RATE_LIMIT):
+            assert service.allow_chat(client_id)
+        assert not service.allow_chat(client_id)
+    finally:
+        service._rate_hits = original
+
+
+def test_runtime_sweeper_removes_old_files(client):
+    import os
+    import time
+
+    import server
+
+    stale = server.app.config["SETTINGS"].data_dir / "stale.jpg"
+    stale.write_bytes(b"x")
+    old = time.time() - server.RUNTIME_TTL_SECONDS - 10
+    os.utime(stale, (old, old))
+
+    removed = server.app.config["SERVICE"].sweep_runtime()
+    assert removed >= 1
+    assert not stale.exists()
+
+
+def test_sw_js_root_alias_serves_worker_with_scope_header(client):
+    # The antigravity remediation registered the worker at /sw.js; this branch
+    # registers /static/sw.js. Both paths must keep working after the merge.
+    for path in ("/sw.js", "/static/sw.js"):
+        res = client.get(path)
+        assert res.status_code == 200, path
+        assert res.headers.get("Service-Worker-Allowed") == "/", path
+        assert "javascript" in res.headers["Content-Type"]
+
+
+def test_api_chat_auth_token_enforced_when_set(client, monkeypatch):
+    # With BLINDSIGHT_API_TOKEN configured, /api/chat must reject bearer-less
+    # calls and accept the right token (then fail honestly on the missing key).
+    monkeypatch.setenv("BLINDSIGHT_API_TOKEN", "secret123")
+    import server as server_module
+
+    settings = server_module.load_settings()
+    app = server_module.create_app(settings)
+    test_client = app.test_client()
+    denied = test_client.post("/api/chat", json={"prompt": "hi"})
+    assert denied.status_code == 401
+    allowed = test_client.post(
+        "/api/chat", json={"prompt": "hi"}, headers={"Authorization": "Bearer secret123"}
+    )
+    assert allowed.status_code != 401

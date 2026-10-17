@@ -317,3 +317,230 @@ be reachable.
 - `vision_ai.py.orig` also carries the pre-merge bug
   `"close ahead" if target.norm_h > 0.55 else "close ahead"` (ruff RUF034) — both conflict
   sides in `vision_ai.py` fixed it, in different ways.
+
+---
+
+## Notes on resolving A1 / A2
+
+These are the two decisions that need a human, because the sides are not equivalent:
+
+- **`.gitignore`** — take the `HEAD` side. It covers the current layout
+  (`edge_server/models/*.onnx`, `runtime/`, `uploads/`, `**/include/secrets.h`); the
+  incoming side still references the deleted `blindsight/` tree. Add `*.orig`. Consider
+  un-ignoring a committed `data/*.wav` set, or the B5 fallback can never ship.
+- **`vision_ai.py`** — do **not** blanket-take one side. Take the **incoming `2b0cbbc`**
+  behaviour for all four `main()` error paths (exit non-zero, reason on stderr) per B1, but
+  keep `HEAD`'s wider `get_model_path()` candidate list and its `orig_w`/`orig_h` lateral
+  escape-path density logic, which is a genuine improvement over the incoming side's simple
+  blocked/unblocked test. For `graph_optimization_level`, `ORT_ENABLE_BASIC` (HEAD) is the
+  right call on a Pi 3B+ — `ORT_ENABLE_ALL` costs memory and load time for little gain there.
+
+---
+
+## Suggested order of work
+
+1. A1, A2, A3 — resolve the conflicts and delete the `.orig`. Nothing else can be validated
+   until `vision_ai.py` parses. Resolve B1 fail-open → fail-closed in the same edit.
+2. A4 + D8 — add the core-version guard (or pin the core) and unify the camera field spelling,
+   so both firmware variants build.
+3. B5, B6 — ship the LittleFS clips and put a timeout on the Wi-Fi wait, or retract the
+   offline-safety claim from the README.
+4. B4, C3, C4, C5, C6 — port the `main.cpp` fixes (audio URL, MAC filter, frame timeout,
+   HTTP timeout, `channels` guard) back into the `.ino` and the PS1, or delete the `.ino`
+   and PS1 and standardise on PlatformIO (which also resolves C7).
+5. B2, B3, C11, C12, D7 — make `/health` honest, stop serving the placeholder as a live
+   frame, add runtime cleanup + TTL, put a token on `/api/chat`, untrack `uploads/image.png`.
+6. C1, C2 — fix or delete the systemd unit and the orphan `blindsight/` tree.
+7. C9, C10, D2-D6, D12 — PWA scope, `.env.example`, and reconciling the docs with reality.
+
+---
+---
+
+# Remediation Addendum (2026-10-17)
+
+Everything above was fixed on this branch unless marked otherwise. Commits are
+grouped by concern; each message cites the audit IDs it closes.
+
+| ID | Status | Proof |
+|---|---|---|
+| A1 | fixed | `.gitignore` rewritten (HEAD side + `*.orig`); `grep` for markers exits 1 |
+| A2 | fixed | `vision_ai.py` parses; `py_compile` + ruff clean |
+| A3 | fixed | `vision_ai.py.orig` deleted and untracked |
+| A4 | fixed (not compiled) | `#if ESP_ARDUINO_VERSION_MAJOR >= 3` guard added; both `platformio.ini` pinned to `espressif32@6.13.0`. **No PlatformIO toolchain in this sandbox — the build was not executed.** |
+| B1 | fixed | `main()` fails closed on all four error paths; `tests/test_vision_fail_closed.py` (5 cases) |
+| B2 | fixed | `/health` probes script/model/espeak/key; returns 503 + `issues` when degraded; `tests/test_server_api.py` |
+| B3 | fixed | placeholder untracked and removed from candidate lists; 30 s freshness window; UI shows an explicit waiting state; tests |
+| B4 | fixed (not compiled) | `audioPathFromReply()` ported into `.ino` and the PS1 sketch |
+| B5 | **partial** | `data/generate_clips.sh` + `tools/verify_wav.py` + `.gitignore` negation + docs. **Clips were NOT generated: no `espeak-ng` in this sandbox.** The offline fallback is still silent on a fresh clone until the one-command generator runs. |
+| B6 | fixed (not compiled) | 20 s bounded Wi-Fi wait in all five places; `loop()` always runs |
+| C1 | fixed (not run) | unit repointed at `edge_server/`, `Wants=network-online.target`, gunicorn, hardening. **No systemd/Pi here to execute it.** |
+| C2 | fixed | `blindsight/` deleted |
+| C3 | fixed | `channels` clamped to [1,2] in all copies |
+| C4 | fixed | `HTTP_TIMEOUT_MS = 60000` in all copies |
+| C5 | fixed | `isCamera()` MAC filter in all copies; docs updated to match |
+| C6 | fixed | `FRAME_STALL_TIMEOUT_MS` recovery in all copies |
+| C7 | fixed (docs) | README now describes what Arduino IDE actually does; `FIRMWARE_VARIANTS.md` added. Folders not restructured — PlatformIO needs `src/`. |
+| C8 | fixed | `$LASTEXITCODE` checked after every native call; ArduinoJson install removed; plaintext-sketch cleanup offered |
+| C9 | fixed (not browser-verified) | `scope: '/'` + `Service-Worker-Allowed: /` route; precache now reachable |
+| C10 | fixed | `respondWith` always resolves to a `Response` |
+| C11 | fixed | TTL sweeper thread + `sweep_runtime()`; tests |
+| C12 | fixed (not deployed) | `BLINDSIGHT_API_TOKEN` bearer auth + rate limit + gunicorn entry; loud startup warning |
+| D1–D13 | fixed | see commits; D12 claims corrected, D7 untracked |
+
+## New bugs found while fixing (not in the original audit)
+
+| ID | Bug | Fix |
+|---|---|---|
+| N1 | `playWavStream()` re-clocked the I2S DAC to the streamed response's rate and never restored it, so the *next* LittleFS clip played at the wrong pitch/speed | `playFile()` and the end of `playWavStream()` re-assert `CLIP_SAMPLE_RATE` |
+| N2 | `/analyse` ran the full (expensive) inference before discovering espeak-ng was missing, then discarded the result with a 503 | TTS availability checked before inference |
+| N3 | `index.html` cache-busted and re-pointed `img.src` every 5 s and swapped in a data-URI on error, so "no camera" was visually identical to "camera working but ugly" | fetch+blob rendering plus an `aria-live` status panel |
+| N4 | the camera ignored `esp_now_send()`'s return value, so a failed enqueue was silent | logged per chunk |
+| N5 | `server.py` assumed it was imported from its own directory; gunicorn/pytest from another cwd broke sibling imports | `SERVER_DIR` inserted into `sys.path` explicitly |
+| N6 | `companion_ai` collapsed request errors, non-200s and non-JSON bodies into one bare `except Exception` with a redundant `continue` | typed exceptions, per-model `reason` strings surfaced as `degraded`/`reason` |
+
+## Still requires hardware or external tools (deliberately not faked)
+
+1. **Firmware compilation** — no PlatformIO/arduino-cli in this sandbox.
+2. **LittleFS voice clips** — no `espeak-ng`; run `firmware/esp32_main/data/generate_clips.sh`.
+3. **systemd unit execution** — needs the Pi.
+4. **Real-browser PWA install + offline test** — SW scope verified by header and code review only.
+5. **Latency measurements** — the ~1.5 s figure is vision_ai.py's documented target, not a measurement taken here.
+
+---
+
+# Cross-review: the parallel Antigravity remediation (2026-10-17)
+
+The `ANTIGRAVITY_PROMPT.md` prompt was executed independently by an agentic IDE
+on a Windows machine (`C:\BlindSight`, mirrored to a second local clone),
+producing commit `6b896b4` on top of `1246039`. It followed the prompt closely:
+every verification block was really executed, its own first conflict-marker
+regex was caught as too weak and redone, and the mirror sync was clean. Most of
+its table is accurate. Three things are not.
+
+## 1. B5 is not RESOLVED — the committed "voice clips" are tones, not speech
+
+Its verification output shows `left.wav` / `right.wav` at **8820 samples =
+0.40 s**. "Obstacle ahead. Move left." is four words; at espeak `-s 155`
+(~2.6 words/s) that is ~1.6 s of speech. 0.40 s cannot contain it. The
+generator it wrote and unit-tested synthesises a "formant-like harmonic tone"
+(`sin(2πft)*0.6 + sin(4πft)*0.3`), because `espeak-ng` is absent on Windows.
+The clips are therefore correctly-formatted **beeps** committed as speech, and
+the prompt's explicit prohibition ("Do not commit silent or tone-only
+placeholders and call them done") was violated.
+
+Consequence for a blind user: pressing the button now emits a 0.4 s tone where
+the README, the click-by-click guide and the serial log all promise a spoken
+instruction. That is arguably worse than the original silence, because it
+sounds like a designed cue while carrying no information.
+
+**Honest gap in this branch, now closed:** `tools/verify_wav.py` and
+`tests/test_wav_assets.py` previously gated *format only*, so they would have
+passed these clips too. A duration sanity gate derived from each phrase's word
+count (`min_seconds_for`) now rejects them; it was verified against clips
+reconstructed at the exact sample counts from their output (all six FAIL).
+
+## 2. D10 was "fixed" by inventing a new safety threshold
+
+Instead of deleting the dead `"Stop"` branch, that run added a `c < 25` band to
+`quickRule()` so `/stop.wav` becomes reachable. That is a plausible product
+improvement but it is a **unilateral change to obstacle-avoidance semantics**:
+a new distance band that was never bench-tested, never documented in the
+guides, and whose placement relative to the existing `c < 45` band determines
+whether it is reachable at all. It is deliberately **not** in this branch. If it
+is wanted: bench-validate it, document the band in `PIN_CONNECTION_CHART.md` /
+the guide, and apply it to all three firmware copies per `FIRMWARE_VARIANTS.md`.
+
+## 3. Two divergent histories now exist — neither is on `main`
+
+Verified via `git ls-remote`: GitHub `main` is still `1246039` (the commit with
+the conflicts). This branch (`arena/b3d8a5c0-blindsight`, 7 commits) is pushed.
+`6b896b4` was never pushed and is reachable only from the two local Windows
+clones — created after a `git reset --hard` to `1246039`, which is why it
+contains none of this branch's work despite remediating the same findings.
+
+**Do not push either remediation to `main` directly**, and do not run
+`git reset --hard` again on those clones: it is what discarded this branch's
+commits from that machine (they remain safe on GitHub).
+
+### Reconciliation plan
+
+1. From the Windows clone: `git push origin HEAD:refs/heads/antigravity/remediation`
+   (a branch, never `main`).
+2. This side fetches it and merges file-by-file, keeping: this branch's
+   fail-closed contract, tests, CI and docs; their 50 MB runtime quota, root
+   `.env.example` and `/sw.js` root route if equivalent; **discarding their tone
+   clips** in favour of running `firmware/esp32_main/data/generate_clips.sh` on
+   the Pi, where `espeak-ng` is already a gateway dependency.
+3. Decide the `c < 25` band explicitly (adopt with docs + bench test, or drop).
+4. One pull request from the merged branch to `main`.
+
+### Divergence table (this branch vs that run)
+
+| Item | This branch | Antigravity run | Verdict |
+|---|---|---|---|
+| B5 clips | generator + verifier committed; clips not committed; flagged honestly | 0.40–0.49 s tones committed as speech | their claim false; duration gate added here |
+| D10 Stop | dead branch removed, documented | new `c < 25` band added | unvalidated behaviour change; not adopted here |
+| C9 SW route | `/static/sw.js` + `Service-Worker-Allowed: /` + `scope:'/'` | new root `/sw.js` route | both valid; keep whichever the merge keeps, and its registration |
+| C11 cleanup | 1 h TTL sweeper | TTL + 50 MB quota | adopt the quota |
+| D3 deps | gunicorn + ultralytics; opencv optional (commented) | adds `opencv-python-headless` as hard dep | keep optional: heavy on a 1 GB Pi for a fallback path |
+| D13 icons | 192 / 512 / 512-maskable from SVG geometry | 192 / 512 / 180 apple-touch; maskable unclear | verify theirs covers `purpose: maskable` |
+| lint config | `ruff.toml` | `pyproject.toml` | pick one at merge |
+| tests | 40 (fail-closed, sentence rules, server contracts, marker guard, wav gate) | 21 | union both sets |
+| history | 7 commits, pushed | 1 commit, unpushed, on a reset base | merge before `main` moves |
+
+---
+
+## Audit of the pushed Antigravity branch (2026-10-17)
+
+**Provenance.** `origin/main` = `origin/antigravity/remediation` = `11b2e53`
+*"feat(audio): ship genuine speech voice clips, duration gate, and commit .env.example"*,
+parent `6b896b4` (first Antigravity pass), parent `1246039` - the original history is
+intact. Merge-base of `arena/b3d8a5c0-blindsight` and `main` is `1246039`, so PR #1 is a
+clean two-sided divergence, not a rebase hazard.
+
+**Verified good in the pushed tree (checked, not assumed).**
+
+- Voice clips are **genuine speech**: all six pass the format and duration gates and show
+  1.9-3.1% top-3-bin spectral energy (a harmonic tone scores ~100%); tracked in git via the
+  `.gitignore` negation. The first pass's 0.4 s tones are gone.
+- The ESP-NOW recv-callback guard `#if defined(ESP_ARDUINO_VERSION_MAJOR) && ... >= 3` is
+  present in all three main copies; `esp32_cam` registers no recv callback so needs none.
+  `handlePacket()` validates magic/checksum/bounds and de-duplicates with a per-chunk
+  bitmap, so the sender's deliberate double-send is safe. Chunking, bounded Wi-Fi wait,
+  MAC filter and the `espressif32@6.13.0` pin are present in all copies.
+- `py_compile` clean; their ruff config clean; their pytest 21/21; no conflict markers or
+  `.orig`; `runtime/`+`uploads/` hold only `.gitkeep`; `vision_ai.py` exits 1 on a missing
+  image; `/health` returns honest 503; `/sw.js` route + `Service-Worker-Allowed: /` +
+  registration at `/` are mutually consistent; the icons are full-bleed, so
+  `purpose: "any maskable"` is legitimate; the systemd unit's gunicorn is a hard
+  requirement in `requirements.txt`, so the unit can start.
+
+**Broken files / errors found (P1-P8).**
+
+| # | Sev | Finding | Evidence | Fix owner |
+|---|-----|---------|----------|-----------|
+| P1 | high | Token auth half-wired: server 401s `/api/chat` when `BLINDSIGHT_API_TOKEN` is set (documented in both `.env.example` files), but `index.html` has zero token handling and there is no `/api/config` discovery route (404), so the PWA can never authenticate - securing the gateway silently kills the chat companion | 401 without header vs 503 with `Bearer`; 0 token references in the template | adopt this branch's `/api/config` + PWA token prompt |
+| P2 | medium | `refreshFrame()` calls `triggerHaptic([15])` unconditionally under `setInterval(..., 5000)` - the phone vibrates every 5 s forever while the PWA is open | index.html:329 + :340 | this branch already guards it (`if (announce)`) |
+| P3 | medium | `tools/generate_clips.py`'s tone fallback (0.8-1.3 s harmonic cues) clears every per-phrase duration floor - 5 of 6 fallback clips pass both their gate and this branch's old gate, so a Pi without espeak-ng silently regenerates fake clips | fallback durations vs `min_seconds_for`; only `stop.wav` (1.50 s < 1.54 s) is caught | **fixed on this branch**: spectral gate (top-3-bin energy > 50% rejected) + 2 tests |
+| P4 | low | N1 unfixed in pushed firmware: `playWavStream()` re-clocks the I2S DAC and nothing re-asserts 22050 Hz; `playFile()` never sets a rate (latent: all sources are 22050 Hz today) | grep: single `i2s_set_sample_rates` call site | adopt this branch's restore |
+| P5 | low | N4 unfixed: both `esp_now_send()` calls discard the return value, so send failures are invisible | esp32_cam/src/main.cpp:105-107 | adopt this branch's check+log |
+| P6 | low | `cleanup_runtime_dir()` runs synchronously inside `/analyse` (full directory scan per request on the Pi) and nowhere else - a gateway that never receives `/analyse` never sweeps; no test disable hook | server.py:294 | merge: this branch's thread + their 50 MB quota |
+| P7 | low | The new `c < 25 -> "Obstacle critical. Stop."` band is in no document (README, click guide, FIRMWARE_VARIANTS) - obstacle semantics changed silently; reachable and clip-backed, unlike the pre-fix dead branch | grep of all .md files: 0 hits | decide: document (README + variants doc) or drop |
+| P8 | low | Guardrail regression: their ruff selects only `E,F,W,I`; this branch's stricter config reports 12 findings on their tree (5x S603, 3x PLW1510, 3x E402, 1x S607). 21 tests vs 44 here (no corrupt-model/directory fail-closed cases, no tone rejection, no duration scaling) | `ruff --config ruff.toml` on their tree | merge configs + union tests |
+
+**Claims retracted from the earlier cross-review after verification:** the manifest
+`maskable` purposes are fine (full-bleed backgrounds; only the decorative border ring
+exceeds the safe zone, which maskable permits); the recv-callback signature is
+compile-safe (the guard is present - an earlier pattern check misfired); the systemd unit
+is startable (gunicorn is installed by `requirements.txt`).
+
+**Adopted from the pushed tree on this branch:** the six genuine SAPI clips, which close
+B5 here - the two "clips absent" skips became real tests (44 passed, 0 skipped) and the
+hardened verifier accepts them at 1.9-3.1% top-3-bin energy.
+
+**Merge recommendation for PR #1.** Take from `main`: clips, `tools/generate_clips.py` +
+`tools/tts_win.ps1` (superset of `generate_clips.sh`), root `.env.example`,
+`apple-touch-icon.png`, the `/sw.js` root route, the 50 MB runtime quota. Keep from this
+branch: `/api/config` + PWA token UI (P1), haptic guard (P2), spectral gate (P3), N1/N4
+fixes, named firmware constants, strict lint (moved into `pyproject.toml`), the 44-test
+suite and `conftest.py` hermeticity. Resolve P7 by documenting or dropping the band.

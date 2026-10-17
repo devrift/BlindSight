@@ -243,6 +243,6 @@ on a low-spec laptop. **This is a genuinely good choice for your machine.**
 
 1. ✅ Upload MAIN ESP32 → copy MAC
 2. ✅ Upload ESP32-CAM with that MAC
-3. ⬜ Set up the Pi server (`blindsight/pi_server/server.py`)
+3. ⬜ Set up the Pi server (`edge_server/server.py`, see README quickstart)
 4. ⬜ Point `PI_URL` at the Pi's real IP, re-upload main ESP32
 5. ⬜ Bench test everything before mounting on the wearable
