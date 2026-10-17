@@ -101,3 +101,47 @@ def test_duration_rule_accepts_plausible_speech_lengths():
 def test_min_seconds_scales_with_phrase_length():
     assert verify_wav.min_seconds_for("Analysing") < verify_wav.min_seconds_for("Stop. Obstacle very close ahead.")
     assert verify_wav.min_seconds_for("") == verify_wav.MIN_CLIP_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# Spectral gate: the duration rule has a hole a tone generator fits through.
+# The parallel remediation's generator (tools/generate_clips.py on origin/main,
+# slated for adoption in the merge) degrades to two-partial harmonic "cues" of
+# 0.8-1.3 s when neither espeak-ng nor Windows SAPI is available - long enough
+# to clear every per-phrase floor - so a Pi without espeak-ng would regenerate
+# fake clips that pass format and duration checks. Speech spreads energy over
+# hundreds of FFT bins; a tone piles ~100% of it into its few partials.
+# ---------------------------------------------------------------------------
+def test_plausible_length_tone_is_rejected_by_spectral_gate(tmp_path):
+    clip = tmp_path / "left.wav"
+    duration = 1.6  # clears the 1.15 s floor for "Obstacle ahead. Move left."
+    assert duration >= verify_wav.min_seconds_for(verify_wav.EXPECTED_TEXT["left"])
+    _write_tone(clip, int(duration * verify_wav.REQUIRED_RATE))
+    info = verify_wav.check_wav(clip)
+    assert verify_wav.top3_energy_ratio(info["pcm"]) > verify_wav.TONE_TOP3_ENERGY
+    assert verify_wav.main([str(clip)]) == 1  # end-to-end: the CLI must fail it
+
+
+def test_broadband_signal_passes_spectral_gate(tmp_path):
+    # Positive control: a noisy many-component signal must not trip the gate,
+    # otherwise genuine-but-rough speech (or espeak output) would be rejected.
+    rate = verify_wav.REQUIRED_RATE
+    samples = int(1.3 * rate)
+    partials = [(183.0, 0.20), (311.0, 0.15), (457.0, 0.12), (691.0, 0.10), (934.0, 0.08)]
+    state = 12345
+    with wave.open(str(clip := tmp_path / "left.wav"), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        frames = bytearray()
+        for i in range(samples):
+            t = i / rate
+            value = sum(amp * math.sin(2 * math.pi * freq * t) for freq, amp in partials)
+            state = (state * 1103515245 + 12345) % 2**31
+            value += 0.45 * (state / 2**31 - 0.5)
+            env = min(1.0, i / (rate * 0.05), (samples - i) / (rate * 0.05))
+            frames.extend(struct.pack("<h", int(value * env * 12000)))
+        handle.writeframes(bytes(frames))
+    info = verify_wav.check_wav(clip)
+    assert verify_wav.top3_energy_ratio(info["pcm"]) < verify_wav.TONE_TOP3_ENERGY
+    assert verify_wav.main([str(clip)]) == 0

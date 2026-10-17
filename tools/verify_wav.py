@@ -18,6 +18,7 @@ Exit code 0 when every file is valid, 1 otherwise.
 """
 from __future__ import annotations
 
+import math
 import struct
 import sys
 from pathlib import Path
@@ -49,9 +50,81 @@ WORDS_PER_SECOND = 2.6
 MIN_CLIP_SECONDS = 0.5
 MAX_CLIP_SECONDS = 10.0
 
+# Duration alone is not enough: the parallel remediation's generator falls back
+# to harmonic "cues" (two sine partials per phrase) whose lengths (0.8-1.3 s)
+# clear the per-phrase duration floor, so a Linux box without espeak-ng would
+# silently regenerate fake clips that still pass every format and duration
+# check. Speech spreads its energy over hundreds of bins; a tone concentrates
+# essentially all of it in its few partials. Reject any clip whose three
+# strongest FFT bins hold more than half the total spectral energy.
+TONE_TOP3_ENERGY = 0.5
+_FFT_SAMPLES = 16384
+
 
 def min_seconds_for(text: str) -> float:
     return max(MIN_CLIP_SECONDS, len(text.split()) / WORDS_PER_SECOND * 0.75)
+
+
+def _fft_energy(re: list[float], im: list[float]) -> None:
+    """In-place iterative radix-2 Cooley-Tukey FFT (n must be a power of two)."""
+    n = len(re)
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j |= bit
+        if i < j:
+            re[i], re[j] = re[j], re[i]
+            im[i], im[j] = im[j], im[i]
+    length = 2
+    while length <= n:
+        ang = -2.0 * math.pi / length
+        step_r, step_i = math.cos(ang), math.sin(ang)
+        half = length // 2
+        for i in range(0, n, length):
+            cur_r, cur_i = 1.0, 0.0
+            for k in range(half):
+                a_r, a_i = re[i + k], im[i + k]
+                b_r, b_i = re[i + k + half], im[i + k + half]
+                t_r, t_i = b_r * cur_r - b_i * cur_i, b_r * cur_i + b_i * cur_r
+                re[i + k], im[i + k] = a_r + t_r, a_i + t_i
+                re[i + k + half], im[i + k + half] = a_r - t_r, a_i - t_i
+                cur_r, cur_i = cur_r * step_r - cur_i * step_i, cur_r * step_i + cur_i * step_r
+        length <<= 1
+
+
+def top3_energy_ratio(pcm: bytes) -> float:
+    """Fraction of spectral energy held by the three strongest FFT bins.
+
+    ~1.0 for a sine/harmonic tone, typically <0.1 for speech. Samples are
+    strided down to at most _FFT_SAMPLES points (keeping every partial the
+    generator's fallback uses, all <= 900 Hz) and Hann-windowed; the result is
+    padded to a power of two with silence.
+    """
+    count = len(pcm) // 2
+    if count < 256:
+        return 0.0
+    stride = max(1, count // _FFT_SAMPLES)
+    samples = struct.unpack_from(f"<{count}h", pcm)[::stride][:_FFT_SAMPLES]
+    m = len(samples)
+    n = 1
+    while n < m:
+        n <<= 1
+    if n < 256:
+        return 0.0
+    re = [0.0] * n
+    im = [0.0] * n
+    for i, value in enumerate(samples):
+        window = 0.5 - 0.5 * math.cos(2.0 * math.pi * i / (m - 1))
+        re[i] = value * window
+    _fft_energy(re, im)
+    energy = [re[i] * re[i] + im[i] * im[i] for i in range(1, n // 2)]
+    total = sum(energy)
+    if total <= 0.0:
+        return 0.0
+    return sum(sorted(energy)[-3:]) / total
 
 
 class WavError(Exception):
@@ -68,6 +141,7 @@ def check_wav(path: Path) -> dict:
     offset = 12
     fmt = None
     data_size = None
+    pcm_offset = None
     while offset + 8 <= len(data):
         chunk_id = data[offset:offset + 4]
         (chunk_size,) = struct.unpack_from("<I", data, offset + 4)
@@ -84,6 +158,7 @@ def check_wav(path: Path) -> dict:
             }
         elif chunk_id == b"data":
             data_size = chunk_size
+            pcm_offset = body
         offset = body + chunk_size + (chunk_size & 1)
 
     if fmt is None:
@@ -106,6 +181,7 @@ def check_wav(path: Path) -> dict:
         "bits": fmt["bits"],
         "pcm_bytes": data_size,
         "seconds": seconds,
+        "pcm": data[pcm_offset:pcm_offset + data_size],
     }
 
 
@@ -142,9 +218,15 @@ def main(argv: list[str]) -> int:
                     )
                 if info["seconds"] > MAX_CLIP_SECONDS:
                     raise WavError(f"{info['seconds']:.2f}s exceeds the {MAX_CLIP_SECONDS}s clip budget")
+            ratio = top3_energy_ratio(info["pcm"])
+            if ratio > TONE_TOP3_ENERGY:
+                raise WavError(
+                    f"{ratio:.0%} of the spectral energy sits in the three strongest FFT bins; "
+                    "that is a harmonic tone, not speech (speech spreads energy over hundreds of bins)"
+                )
             print(
                 f"OK   {path}  {info['rate']}Hz {info['bits']}-bit {info['channels']}ch "
-                f"{info['seconds']:.2f}s ({info['pcm_bytes']} bytes PCM)"
+                f"{info['seconds']:.2f}s ({info['pcm_bytes']} bytes PCM, top3-bin energy {ratio:.1%})"
             )
         except OSError as error:
             failures += 1
