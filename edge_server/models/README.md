@@ -5,5 +5,5 @@ Place your quantized YOLOv8n ONNX model in this directory:
 
 ## Quick Export / Download Command (1-line):
 ```bash
-python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=320, simplify=True)" && mv yolov8n.onnx blindsight/pi_server/models/
+python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=320, simplify=True)" && mkdir -p edge_server/models && mv yolov8n.onnx edge_server/models/
 ```

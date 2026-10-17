@@ -2,7 +2,7 @@
 
 > **A Dual-Tier Embedded Edge & Cloud Multimodal Mobility Assistant for the Visually Impaired.**
 
-BlindSight is an open-source assistive mobility wearable designed to provide real-time spatial navigation awareness and conversational scene understanding. It pairs sub-100ms local edge reflex detection on a Raspberry Pi 3B+ with a high-level cloud visual companion accessible directly via phone or earphone.
+BlindSight is an open-source assistive mobility wearable designed to provide real-time spatial navigation awareness and conversational scene understanding. It pairs local edge reflex detection on a Raspberry Pi 3B+ with a high-level cloud visual companion accessible directly via phone or earphone.
 
 ---
 
@@ -17,7 +17,7 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
              ▼
    ┌────────────────────┐      HTTP Multipart POST      ┌─────────────────────────────────┐
    │  Main ESP32 DevKit ├──────────────────────────────►│    Raspberry Pi 3B+ Gateway     │
-   │  • Packet Assembly │                               │  • Flask REST Server (:5000)    │
+   │  • Packet Assembly │                               │  • Flask / Gunicorn Gateway     │
    │  • 3x HC-SR04 Sens │◄────────── Audio Stream ──────┤  • 16-bit WAV Out (espeak-ng)   │
    │  • I2S PCM5102 DAC │      GET /audio/<req_id>      └──────────────┬──────────────────┘
    │  • LittleFS Audio  │                                              │
@@ -34,7 +34,7 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
    │  Tier 1: Offline Edge Reflex   │                                         │ Tier 2: Cloud Multimodal AI      │
    │  • YOLOv8n ONNX (320x320)      │                                         │ • OpenRouter API Gateway         │
    │  • onnxruntime (2-thread CPU)  │                                         │ • Gemini 2.5 Flash / GPT-4o-mini │
-   │  • 96ms Inference (<150MB RAM) │                                         │ • Visual Scene Q&A               │
+   │  • ~1.5s Reflex (<150MB RAM)   │                                         │ • Visual Scene Q&A               │
    │  • Spatial Sector Obstacle Nav │                                         │ • Natural Spoken Voice Output    │
    └────────────────────────────────┘                                         └────────────────┬─────────────────┘
                                                                                                │
@@ -53,10 +53,10 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
 ## ⚡ Core Features
 
 1. **Dual-Tier Intelligence**:
-   * **Tier 1 (Offline Edge Reflex)**: Operates without internet connectivity. Runs quantized YOLOv8n ONNX on the Raspberry Pi 3B+ CPU with an ultra-lean memory footprint (~120MB) and 96ms inference latency, providing direct spatial instructions (*"Warning: Chair close ahead. Path clear on your right."*).
+   * **Tier 1 (Offline Edge Reflex)**: Operates without internet connectivity. Runs quantized YOLOv8n ONNX on the Raspberry Pi 3B+ CPU with an ultra-lean memory footprint (<150MB RAM) executing within ~1.5s per frame in an isolated process to guarantee clean memory reclamation on 1GB hardware. Generates concise directional spatial instructions (*"Warning: Chair close ahead. Path clear on your right."*).
    * **Tier 2 (Cloud Multimodal Companion)**: Accessible via phone PWA or API. Powered by OpenRouter (`google/gemini-2.5-flash` with `openai/gpt-4o-mini` fallback), giving users descriptive contextual answers to questions like *"What color is this shirt?"* or *"Read the sign in front of me"*.
 2. **Deterministic Fallback Safety**:
-   * If Wi-Fi drops, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
+   * If Wi-Fi drops or the Pi gateway is unavailable, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
 3. **PWA Mobile Phone Companion**:
    * Fully installable standalone web application with high-contrast UI, large tactile touch targets, Web Speech voice input, and native device speech synthesis (zero Pi CPU load).
    * Tactile haptic vibration cues (`navigator.vibrate`) for low-vision users.
@@ -98,7 +98,7 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-user>/BlindSight.git
+git clone https://github.com/lavyanshg/BlindSight.git
 cd BlindSight/edge_server
 
 # Install Python dependencies
@@ -128,17 +128,18 @@ python3 server.py
 
 ### 3. Flashing the ESP32 Firmware
 
-#### Step A: Main ESP32
-1. Open [`firmware/esp32_main/BlindSight_Main_ESP32.ino`](file:///firmware/esp32_main/BlindSight_Main_ESP32.ino) in Arduino IDE or [`firmware/esp32_main`](file:///firmware/esp32_main) in PlatformIO.
-2. Set your Wi-Fi SSID, password, and the Raspberry Pi IP address.
-3. Select board `ESP32 Dev Module` and flash.
-4. Open the Serial Monitor (115200 baud) and note the printed `MAIN MAC: XX:XX:XX:XX:XX:XX`.
+See [firmware/FIRMWARE_VARIANTS.md](firmware/FIRMWARE_VARIANTS.md) for full details on the available toolchains (PlatformIO, Arduino IDE, or PowerShell one-click script).
 
-#### Step B: ESP32-CAM
-1. Open [`firmware/esp32_cam/BlindSight_Camera.ino`](file:///firmware/esp32_cam/BlindSight_Camera.ino) in Arduino IDE or [`firmware/esp32_cam`](file:///firmware/esp32_cam) in PlatformIO.
-2. Paste the `MAIN MAC` address into `MAIN_ESP_MAC`.
-3. Select board `AI Thinker ESP32-CAM`.
-4. Connect `GPIO0` to `GND`, press `RST`, and flash. Disconnect `GPIO0` and press `RST` to run.
+#### Option A: Using PlatformIO (VS Code)
+1. **Main ESP32 DevKit**: Open `firmware/esp32_main`, copy `include/secrets.example.h` to `include/secrets.h`, configure credentials, and click **Upload**.
+2. **ESP32-CAM**: Open `firmware/esp32_cam`, copy `include/secrets.example.h` to `include/secrets.h`, set `BLINDSIGHT_MAIN_ESP_MAC` to the main board MAC, bridge GPIO 0 to GND, and click **Upload**.
+3. **LittleFS Voice Clips**: In `firmware/esp32_main`, run `PlatformIO: Upload Filesystem Image` to flash the pre-packaged WAV voice clips in `data/`.
+
+#### Option B: Using Arduino IDE
+1. Open `firmware/esp32_main/BlindSight_Main_ESP32.ino` (select `ESP32 Dev Module`).
+2. Configure `WIFI_SSID`, `WIFI_PASSWORD`, and `PI_URL` in the sketch header and flash.
+3. Open `firmware/esp32_cam/BlindSight_Camera.ino` (select `AI Thinker ESP32-CAM`).
+4. Set `MAIN_ESP_MAC` to the MAC printed by the main board, ground GPIO 0, and flash.
 
 ---
 
@@ -147,11 +148,12 @@ python3 server.py
 | Endpoint | Method | Payload / Params | Description |
 |---|---|---|---|
 | `/` | `GET` | None | Serves the Accessible Voice Companion PWA |
-| `/health` | `GET` | None | Gateway health, model status, and last vision timestamp |
-| `/analyse` | `POST` | Multipart `image` (JPEG) | Ingests camera frame, executes YOLOv8n, generates speech |
+| `/sw.js` | `GET` | None | Service worker script with offline app shell caching |
+| `/health` | `GET` | None | Honest system health: `status` (`ok`, `degraded`, `error`), `vision_script_ok`, `model_path`, `espeak_ok`, `last_vision_success` |
+| `/analyse` | `POST` | Multipart `image` (JPEG) | Ingests camera frame, executes YOLOv8n, generates speech WAV |
 | `/audio/<id>` | `GET` | Request ID in URL | Streams 16-bit PCM WAV generated by `espeak-ng` |
-| `/api/chat` | `POST` | `{"prompt": str, "use_camera": bool}` | Multimodal voice query to OpenRouter assistant |
-| `/api/latest-frame` | `GET` | None | Live JPEG snapshot from the latest camera transmission |
+| `/api/chat` | `POST` | `{"prompt": str, "use_camera": bool}` | Multimodal voice query to OpenRouter assistant (rate-limited, optional token auth) |
+| `/api/latest-frame` | `GET` | None | Live JPEG snapshot from latest camera transmission (returns 404 if no frame captured) |
 
 ---
 

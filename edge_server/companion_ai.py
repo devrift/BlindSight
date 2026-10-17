@@ -101,6 +101,5 @@ def ask_companion(prompt: str, image_path: str | Path | None = None) -> str:
                 print(f"[ERROR] OpenRouter error {resp.status_code}: {resp.text}", file=sys.stderr)
         except Exception as err:
             print(f"[ERROR] OpenRouter request exception: {err}", file=sys.stderr)
-            continue
 
     return FALLBACK_REPLY

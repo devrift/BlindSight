@@ -109,10 +109,20 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.println();
   Serial.println("Connecting to WiFi...");
-  while (WiFi.status() != WL_CONNECTED) { delay(300); Serial.print('.'); }
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 66) {
+    delay(300);
+    Serial.print('.');
+    wifiAttempts++;
+  }
+  WiFi.setSleep(false);
   Serial.println();
   Serial.printf("CAM MAC: %s\n", WiFi.macAddress().c_str());
-  Serial.printf("Wi-Fi channel: %d (must match main ESP32)\n", WiFi.channel());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("Wi-Fi channel: %d (matches AP)\n", WiFi.channel());
+  } else {
+    Serial.println("Wi-Fi not found. Continuing in offline mode on default channel.");
+  }
   if (!initCamera()) { Serial.println("Camera init FAILED"); while (true) delay(1000); }
   Serial.println("Camera OK");
   if (esp_now_init() != ESP_OK) { Serial.println("ESP-NOW init failed"); while (true) delay(1000); }

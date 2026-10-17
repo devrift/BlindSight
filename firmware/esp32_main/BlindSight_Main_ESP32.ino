@@ -16,13 +16,13 @@
 #include <driver/i2s.h>
 
 // ##############################################################
-// ###############  EDIT THESE 3 LINES ONLY  ####################
+// ###############  EDIT THESE 4 LINES ONLY  ####################
 const char *WIFI_SSID     = "BlindSight";        // your hotspot name
 const char *WIFI_PASSWORD = "CHANGE_ME";         // your hotspot password
 const char *PI_URL        = "http://192.168.4.1:5000";  // Pi IP + :5000
+// Paste your ESP32-CAM MAC address here:
+uint8_t CAMERA_MAC[6]     = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
 // ##############################################################
-// (You do NOT need the camera MAC here. Leave the line below alone.)
-uint8_t CAMERA_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
 
 #define TRIG_L 13
 #define TRIG_C 14
@@ -46,21 +46,26 @@ struct __attribute__((packed)) ImagePacket {
 
 uint8_t imageBuf[MAX_JPEG];
 bool received[300];
-volatile bool imageReady = false;
+volatile bool imageReady = false, acceptingFrame = true;
 uint16_t activeId = 0, expectedCount = 0, receivedCount = 0;
 size_t imageLen = 0;
+uint32_t lastPacketAt = 0;
 
 uint16_t sum16(const uint8_t *d, size_t n) {
   uint32_t s = 0; for (size_t i = 0; i < n; i++) s += d[i]; return s & 0xffff;
 }
 
-// Works on BOTH ESP32 core 2.x and 3.x (the callback signature changed).
+bool isCamera(const uint8_t *mac) {
+  return mac && memcmp(mac, CAMERA_MAC, 6) == 0;
+}
+
 static void handlePacket(const uint8_t *data, int len) {
   if (len != (int)sizeof(ImagePacket)) return;
   const ImagePacket *p = (const ImagePacket *)data;
   if (p->magic != MAGIC || p->count == 0 || p->count > 300 ||
       p->index >= p->count || p->bytes > CHUNK ||
       p->checksum != sum16(p->data, p->bytes)) return;
+
   if (p->imageId != activeId) {
     activeId = p->imageId; expectedCount = p->count;
     receivedCount = 0; imageLen = 0; memset(received, 0, sizeof(received));
@@ -72,16 +77,19 @@ static void handlePacket(const uint8_t *data, int len) {
     received[p->index] = true; receivedCount++;
     if (p->index == p->count - 1) imageLen = off + p->bytes;
   }
+  lastPacketAt = millis();
   if (receivedCount == expectedCount && imageLen > 0) imageReady = true;
 }
 
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
 void onData(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
-  (void)info; handlePacket(data, len);
+  if (!acceptingFrame || !info || !isCamera(info->src_addr)) return;
+  handlePacket(data, len);
 }
 #else
 void onData(const uint8_t *mac, const uint8_t *data, int len) {
-  (void)mac; handlePacket(data, len);
+  if (!acceptingFrame || !isCamera(mac)) return;
+  handlePacket(data, len);
 }
 #endif
 
@@ -133,8 +141,7 @@ void playWavStream(HTTPClient &http) {
   }
 }
 
-// Plays a local clip. If the file is missing it simply does nothing,
-// so the sketch still runs fine before you upload the WAV files.
+// Plays a local clip. If the file is missing it simply does nothing.
 void playFile(const char *path) {
   File f = LittleFS.open(path, "r");
   if (!f) return;
@@ -161,6 +168,7 @@ const char *quickRule() {
   float c = distanceCM(TRIG_C, ECHO_C); delay(55);
   float r = distanceCM(TRIG_R, ECHO_R);
   Serial.printf("L=%.0f C=%.0f R=%.0f cm\n", l, c, r);
+  if (c < 25) return "Obstacle critical. Stop.";
   if (c < 45) return l > r ? "Obstacle ahead. Move left." : "Obstacle ahead. Move right.";
   if (l < 45) return "Obstacle on left. Move right.";
   if (r < 45) return "Obstacle on right. Move left.";
@@ -168,10 +176,22 @@ const char *quickRule() {
   return "Path clear.";
 }
 
+String audioPathFromReply(const String &reply) {
+  const char *key = "\"audio_url\":\"";
+  int start = reply.indexOf(key);
+  if (start < 0) return String();
+  start += strlen(key);
+  int end = reply.indexOf('"', start);
+  return end > start ? reply.substring(start, end) : String();
+}
+
 void uploadAndPlay() {
+  acceptingFrame = false;
   Serial.printf("Uploading %u bytes\n", (unsigned)imageLen);
   playFile("/analysing.wav");
+
   HTTPClient http;
+  http.setTimeout(60000);
   http.begin(String(PI_URL) + "/analyse");
   String boundary = "BlindSightBoundary";
   http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
@@ -180,7 +200,7 @@ void uploadAndPlay() {
   String post = "\r\n--" + boundary + "--\r\n";
   size_t total = pre.length() + imageLen + post.length();
   uint8_t *body = (uint8_t *)malloc(total);
-  if (!body) { http.end(); return; }
+  if (!body) { http.end(); acceptingFrame = true; return; }
   memcpy(body, pre.c_str(), pre.length());
   memcpy(body + pre.length(), imageBuf, imageLen);
   memcpy(body + pre.length() + imageLen, post.c_str(), post.length());
@@ -189,11 +209,18 @@ void uploadAndPlay() {
   String reply = http.getString();
   http.end();
   Serial.printf("AI %d: %s\n", code, reply.c_str());
-  if (code != 200) return;
-  HTTPClient audio;
-  audio.begin(String(PI_URL) + "/audio");
-  if (audio.GET() == 200) playWavStream(audio);
-  audio.end();
+
+  if (code == 200) {
+    String audioPath = audioPathFromReply(reply);
+    if (audioPath.length()) {
+      HTTPClient audio;
+      audio.setTimeout(60000);
+      audio.begin(String(PI_URL) + audioPath);
+      if (audio.GET() == 200) playWavStream(audio);
+      audio.end();
+    }
+  }
+  acceptingFrame = true;
 }
 
 void setup() {
@@ -203,18 +230,33 @@ void setup() {
   pinMode(BUTTON, INPUT_PULLUP);
   LittleFS.begin(true);
   initI2S();
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.println();
   Serial.println("Connecting to WiFi...");
-  while (WiFi.status() != WL_CONNECTED) { delay(300); Serial.print('.'); }
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 66) {
+    delay(300);
+    Serial.print('.');
+    wifiAttempts++;
+  }
+  WiFi.setSleep(false);
   Serial.println();
   Serial.println("=====================================");
   Serial.printf ("  MAIN MAC: %s\n", WiFi.macAddress().c_str());
   Serial.println("  ^^ COPY THIS INTO THE CAMERA SKETCH");
   Serial.println("=====================================");
-  Serial.printf("Wi-Fi channel: %d\n", WiFi.channel());
-  esp_now_init();
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("WiFi connected. Channel: %d\n", WiFi.channel());
+  } else {
+    Serial.println("WiFi not found. Continuing in offline sensor mode.");
+  }
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
   esp_now_register_recv_cb(onData);
   Serial.println("Ready. Press the button to test the sensors.");
 }
@@ -230,5 +272,12 @@ void loop() {
     else                                      playFile("/clear.wav");
     delay(500);
   }
-  if (imageReady) { imageReady = false; uploadAndPlay(); }
+  if (expectedCount && !imageReady && millis() - lastPacketAt > 3000) {
+    expectedCount = receivedCount = imageLen = 0;
+    memset(received, 0, sizeof(received));
+  }
+  if (imageReady) {
+    imageReady = false;
+    uploadAndPlay();
+  }
 }

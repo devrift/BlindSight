@@ -41,7 +41,6 @@ COCO_CLASSES = [
 LABEL_REPLACEMENTS = {
     "dining table": "table",
     "potted plant": "plant",
-    "traffic light": "traffic light",
 }
 
 CONF_THRESHOLD = 0.35
@@ -61,24 +60,20 @@ class Detection:
 
 def get_model_path() -> Path | None:
     """Finds available YOLOv8n ONNX model weights in standard search paths."""
-<<<<<<< HEAD:edge_server/vision_ai.py
+    env_path = os.getenv("BLINDSIGHT_MODEL_PATH")
+    if env_path:
+        p = Path(env_path)
+        return p if p.is_file() else None
+
     server_dir = Path(__file__).resolve().parent
     root_dir = server_dir.parent
     candidates = [
-        os.getenv("BLINDSIGHT_MODEL_PATH"),
         str(server_dir / "models" / "yolov8n.onnx"),
         str(server_dir / "models" / "yolov8n_int8.onnx"),
         str(root_dir / "edge_server" / "models" / "yolov8n.onnx"),
         "/home/pi/BlindSight/edge_server/models/yolov8n.onnx",
         "/home/pi/blindsight/pi_server/models/yolov8n.onnx",
         "edge_server/models/yolov8n.onnx",
-=======
-    candidates = [
-        os.getenv("BLINDSIGHT_MODEL_PATH"),
-        str(Path(__file__).resolve().parent / "models" / "yolov8n.onnx"),
-        str(Path(__file__).resolve().parent / "models" / "yolov8n_int8.onnx"),
-        "/home/pi/blindsight/pi_server/models/yolov8n.onnx",
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
         "models/yolov8n.onnx",
         "yolov8n.onnx",
     ]
@@ -129,17 +124,15 @@ def nms(boxes: list[list[float]], scores: list[float], iou_threshold: float = 0.
     return keep
 
 
-def run_inference(image_path: Path, model_path: Path, stats: dict | None = None) -> list[Detection]:
+def run_inference(image_path: Path, model_path: Path, stats: dict) -> list[Detection]:
     """Runs YOLOv8n ONNX inference via onnxruntime or cv2.dnn fallback.
 
-    Raises if no backend can run the model; an empty list means the model ran
-    and found nothing. Backend, sizes and stage timings are recorded in `stats`.
+    Populates `stats` with stage timings and metadata. Raises on any fatal error
+    so the caller exits non-zero and server.py can fall back to the safe announcement.
     """
     import numpy as np
     from PIL import Image
 
-    if stats is None:
-        stats = {}
     t_start = time.perf_counter()
 
     # Default model target dimension: 320 for speed on Pi, or 640
@@ -155,11 +148,7 @@ def run_inference(image_path: Path, model_path: Path, stats: dict | None = None)
         sess_opts.intra_op_num_threads = 2
         sess_opts.inter_op_num_threads = 1
         sess_opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-<<<<<<< HEAD:edge_server/vision_ai.py
         sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
-=======
-        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
 
         session = ort.InferenceSession(str(model_path), sess_opts, providers=["CPUExecutionProvider"])
         input_shape = session.get_inputs()[0].shape
@@ -190,8 +179,8 @@ def run_inference(image_path: Path, model_path: Path, stats: dict | None = None)
 
     # Aspect-ratio preserving letterbox resize
     scale = min(target_w / orig_w, target_h / orig_h)
-    new_w = int(round(orig_w * scale))
-    new_h = int(round(orig_h * scale))
+    new_w = round(orig_w * scale)
+    new_h = round(orig_h * scale)
     resized = pil_img.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
     pad_left = (target_w - new_w) // 2
@@ -290,11 +279,7 @@ def run_inference(image_path: Path, model_path: Path, stats: dict | None = None)
     return detections
 
 
-<<<<<<< HEAD:edge_server/vision_ai.py
 def generate_sentence(detections: list[Detection], orig_w: float = 320.0, orig_h: float = 240.0) -> str:
-=======
-def generate_sentence(detections: list[Detection]) -> str:
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
     """Generates exactly ONE clean sentence prioritizing central and close hazards."""
     if not detections:
         return "Path ahead appears clear."
@@ -302,11 +287,7 @@ def generate_sentence(detections: list[Detection]) -> str:
     # Filter for navigation-relevant obstacles (>0.30 height)
     close_hazards = [d for d in detections if d.norm_h > 0.30]
 
-<<<<<<< HEAD:edge_server/vision_ai.py
     # <= 0.30: Distant object (Ignore if central path is clear)
-=======
-    # If only distant objects are in view, path ahead remains navigable
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
     if not close_hazards:
         return "Path ahead appears clear."
 
@@ -321,7 +302,6 @@ def generate_sentence(detections: list[Detection]) -> str:
     # 1. Central hazard (highest priority)
     if center_hazards:
         target = center_hazards[0]
-<<<<<<< HEAD:edge_server/vision_ai.py
         # > 0.55: Immediate hazard (Prepends "Warning: ...")
         # > 0.30: Near hazard (Prepends "Caution: ...")
         if target.norm_h > 0.55:
@@ -338,24 +318,10 @@ def generate_sentence(detections: list[Detection]) -> str:
         elif not right_hazards or right_density < left_density:
             return f"{prefix} Path clear on your right."
         elif not left_hazards or left_density < right_density:
-=======
-        proximity_str = "close ahead" if target.norm_h > 0.55 else "ahead"
-        prefix = f"Warning: {target.label.capitalize()} {proximity_str}."
-
-        left_blocked = bool(left_hazards)
-        right_blocked = bool(right_hazards)
-
-        if not left_blocked and not right_blocked:
-            return f"{prefix} Path clear on your left and right."
-        elif not right_blocked:
-            return f"{prefix} Path clear on your right."
-        elif not left_blocked:
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
             return f"{prefix} Path clear on your left."
         else:
             return f"{prefix} Caution, all paths obstructed."
 
-<<<<<<< HEAD:edge_server/vision_ai.py
     # 2. Side hazards when central path is clear
     if left_hazards and not right_hazards:
         target = left_hazards[0]
@@ -368,28 +334,12 @@ def generate_sentence(detections: list[Detection]) -> str:
         prefix = "Warning: " if target.norm_h > 0.55 else "Caution: "
         proximity_str = "close on your right" if target.norm_h > 0.55 else "on your right"
         return f"{prefix}{target.label.capitalize()} {proximity_str}. Path ahead is clear."
-=======
-    # 2. Side hazards when center is clear
-    if left_hazards and not right_hazards:
-        target = left_hazards[0]
-        proximity_str = "close on your left" if target.norm_h > 0.55 else "on your left"
-        return f"Caution: {target.label.capitalize()} {proximity_str}. Path ahead is clear."
-
-    if right_hazards and not left_hazards:
-        target = right_hazards[0]
-        proximity_str = "close on your right" if target.norm_h > 0.55 else "on your right"
-        return f"Caution: {target.label.capitalize()} {proximity_str}. Path ahead is clear."
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
 
     if left_hazards and right_hazards:
         l_target = left_hazards[0]
         r_target = right_hazards[0]
-<<<<<<< HEAD:edge_server/vision_ai.py
         prefix = "Warning: " if max(l_target.norm_h, r_target.norm_h) > 0.55 else "Caution: "
         return f"{prefix}{l_target.label.capitalize()} on left and {r_target.label} on right. Path ahead is clear."
-=======
-        return f"Caution: {l_target.label.capitalize()} on left and {r_target.label} on right. Path ahead is clear."
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
 
     return "Path ahead appears clear."
 
@@ -424,15 +374,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.image.is_file():
-<<<<<<< HEAD:edge_server/vision_ai.py
-        print("Path ahead appears clear.")
-        return 0
-
-    model_path = get_model_path()
-    if model_path is None:
-        print("Path ahead appears clear.")
-        return 0
-=======
         print(f"vision_ai: image not found: {args.image}", file=sys.stderr)
         return 1
 
@@ -440,25 +381,16 @@ def main(argv: list[str] | None = None) -> int:
     if model_path is None:
         print("vision_ai: yolov8n.onnx not found (see models/README.md or set BLINDSIGHT_MODEL_PATH)", file=sys.stderr)
         return 1
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
 
     stats: dict = {}
     try:
         detections = run_inference(args.image, model_path, stats)
-<<<<<<< HEAD:edge_server/vision_ai.py
         orig_w = float(stats.get("image", "320x240").split("x")[0])
         orig_h = float(stats.get("image", "320x240").split("x")[1])
         sentence = generate_sentence(detections, orig_w=orig_w, orig_h=orig_h)
     except Exception as error:
-        print(f"vision_ai: fallback triggered: {type(error).__name__}: {error}", file=sys.stderr)
-        print("Path ahead appears clear.")
-        return 0
-=======
-        sentence = generate_sentence(detections)
-    except Exception as error:
         print(f"vision_ai: inference failed: {type(error).__name__}: {error}", file=sys.stderr)
         return 1
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23:blindsight/pi_server/vision_ai.py
 
     print(sentence)
     if args.verbose:

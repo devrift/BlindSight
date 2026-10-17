@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Secrets & Credentials
 .env
 .env.*
@@ -34,22 +33,11 @@ uploads/*
 !uploads/.gitkeep
 *.wav
 *.pcm
+!firmware/esp32_main/data/*.wav
 
-# OS Noise
+# Merge artifacts & OS Noise
+*.orig
+*.rej
+*.bak
 .DS_Store
 Thumbs.db
-=======
-# Device-specific credentials and build output
-blindsight/main_esp32/include/secrets.h
-blindsight/camera_esp32cam/include/secrets.h
-**/.pio/
-**/.vscode/
-__pycache__/
-.pytest_cache/
-*.pyc
-
-# Runtime artefacts created by the Pi service
-runtime/
-*.wav
-*.jpg
->>>>>>> 2b0cbbc5c2a7bee427d9c9f3e473728a6d668c23
