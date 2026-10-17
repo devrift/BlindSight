@@ -1,0 +1,37 @@
+# Lint baseline for the BlindSight Python code.
+# Run with: ruff check .
+line-length = 120
+target-version = "py39"
+
+extend-exclude = [
+    ".pio",
+    "runtime",
+    "uploads",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+    "PLE", # pylint errors
+    "PLW", # pylint warnings
+    "S",   # flake8-bandit (this project shells out to a vision subprocess)
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+    "S104",  # binding 0.0.0.0 is intentional: the Pi must serve the LAN
+    "S110",  # try/except/pass is used deliberately for best-effort snapshot writes
+]
+
+[lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # pytest asserts
+    "S603",   # tests deliberately execute the repo's own scripts
+    "S607",   # `git` and `sys.executable` are resolved from PATH on purpose
+    "PLW1510",  # tests assert on returncode, so check=False is the point
+]
