@@ -20,9 +20,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file
 from PIL import Image
-from dotenv import find_dotenv, load_dotenv
 
 SERVER_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SERVER_DIR.parent
@@ -105,6 +105,7 @@ class Settings:
     data_dir: Path
     uploads_dir: Path
     models_dir: Path
+    vision_script: Path
     vision_command: list[str]
     vision_script: Path | None
     espeak_binary: str
@@ -507,6 +508,8 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     @app.post("/analyse")
     def analyse():
+        cleanup_runtime_dir(settings.data_dir)
+
         photo = request.files.get("image")
         if photo is None or not photo.filename:
             return jsonify(error="missing multipart field: image"), 400
@@ -535,6 +538,11 @@ def create_app(settings: Settings | None = None) -> Flask:
         # Maintain latest snapshot for the companion viewer.
         with contextlib.suppress(OSError):
             (settings.data_dir / "latest.jpg").write_bytes(payload)
+
+        # Check TTS readiness before running vision inference
+        if not service.check_tts_ready():
+            image_path.unlink(missing_ok=True)
+            return jsonify(error="text-to-speech unavailable"), 503
 
         text = service.analyse(image_path)
         try:

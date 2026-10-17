@@ -155,7 +155,6 @@ def ask_companion_detailed(
         except requests.RequestException as err:
             last_reason = f"request_failed:{type(err).__name__}"
             print(f"[ERROR] OpenRouter request exception: {err}", file=sys.stderr)
-            continue
 
         if resp.status_code != 200:
             last_reason = f"http_{resp.status_code}"

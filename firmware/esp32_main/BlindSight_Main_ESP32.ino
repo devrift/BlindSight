@@ -77,6 +77,7 @@ void handlePacket(const uint8_t *srcMac, const uint8_t *data, int len) {
   if (p->magic != MAGIC || p->count == 0 || p->count > 300 ||
       p->index >= p->count || p->bytes > CHUNK ||
       p->checksum != sum16(p->data, p->bytes)) return;
+
   if (p->imageId != activeId) {
     activeId = p->imageId; expectedCount = p->count;
     receivedCount = 0; imageLen = 0; memset(received, 0, sizeof(received));
@@ -158,8 +159,7 @@ void playWavStream(HTTPClient &http) {
   i2s_set_sample_rates(I2S_NUM_0, CLIP_SAMPLE_RATE);
 }
 
-// Plays a local clip. If the file is missing it simply does nothing,
-// so the sketch still runs fine before you upload the WAV files.
+// Plays a local clip. If the file is missing it simply does nothing.
 void playFile(const char *path) {
   File f = LittleFS.open(path, "r");
   if (!f) return;
@@ -188,6 +188,7 @@ const char *quickRule() {
   float c = distanceCM(TRIG_C, ECHO_C); delay(55);
   float r = distanceCM(TRIG_R, ECHO_R);
   Serial.printf("L=%.0f C=%.0f R=%.0f cm\n", l, c, r);
+  if (c < 25) return "Obstacle critical. Stop.";
   if (c < 45) return l > r ? "Obstacle ahead. Move left." : "Obstacle ahead. Move right.";
   if (l < 45) return "Obstacle on left. Move right.";
   if (r < 45) return "Obstacle on right. Move left.";
@@ -210,6 +211,7 @@ void uploadAndPlay() {
   acceptingFrame = false;
   Serial.printf("Uploading %u bytes\n", (unsigned)imageLen);
   playFile("/analysing.wav");
+
   HTTPClient http;
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.begin(String(PI_URL) + "/analyse");
@@ -248,6 +250,7 @@ void setup() {
   pinMode(BUTTON, INPUT_PULLUP);
   LittleFS.begin(true);
   initI2S();
+
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);

@@ -7,6 +7,10 @@
 
 # BlindSight — pin-by-pin connection chart
 
+> ⚠️ **SUPERSEDED by WIRING_V2_BUCK_AND_TTL.md**
+> The dual-Arduino isolated rail wiring design described in this chart has been replaced by the unified 5V 3A buck converter architecture with a single common ground.
+> Refer to [WIRING_V2_BUCK_AND_TTL.md](WIRING_V2_BUCK_AND_TTL.md) for the active production wiring specification.
+
 ## Main ESP32 DevKit V1
 
 ### PCM5102 / PCM5100 I2S DAC

@@ -8,6 +8,7 @@
 #else
 #error "Copy include/secrets.example.h to include/secrets.h and configure the device."
 #endif
+
 const char *WIFI_SSID = BLINDSIGHT_WIFI_SSID;
 const char *WIFI_PASSWORD = BLINDSIGHT_WIFI_PASSWORD;
 uint8_t MAIN_ESP_MAC[6] = BLINDSIGHT_MAIN_ESP_MAC;
@@ -34,15 +35,19 @@ const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 
 constexpr uint16_t MAGIC = 0xB517;
 constexpr size_t CHUNK = 220;
+
 struct __attribute__((packed)) ImagePacket {
   uint16_t magic, imageId, index, count, bytes, checksum;
   uint8_t data[CHUNK];
 };
+
 uint16_t imageId = 1;
 uint32_t lastCapture = 0;
 
 uint16_t checksum16(const uint8_t *d, size_t n) {
-  uint32_t s = 0; for (size_t i=0; i<n; ++i) s += d[i]; return s & 0xffff;
+  uint32_t s = 0;
+  for (size_t i = 0; i < n; ++i) s += d[i];
+  return s & 0xffff;
 }
 
 bool initCamera() {
@@ -78,7 +83,32 @@ void sendPhoto() {
       delay(4);
     }
   }
-  imageId++; esp_camera_fb_return(fb);
+  uint16_t count = (fb->len + CHUNK - 1) / CHUNK;
+  if (count == 0 || count > 300) {
+    Serial.println("JPEG too large");
+    esp_camera_fb_return(fb);
+    return;
+  }
+  Serial.printf("Sending JPEG: %u bytes, %u packets\n", fb->len, count);
+  for (uint16_t i = 0; i < count; i++) {
+    ImagePacket p = {};
+    size_t offset = i * CHUNK;
+    size_t n = min((size_t)CHUNK, fb->len - offset);
+    p.magic = MAGIC;
+    p.imageId = imageId;
+    p.index = i;
+    p.count = count;
+    p.bytes = n;
+    memcpy(p.data, fb->buf + offset, n);
+    p.checksum = checksum16(p.data, n);
+    // Two sends reduce packet loss; receiver ignores duplicate numbered chunks.
+    esp_now_send(MAIN_ESP_MAC, (uint8_t *)&p, sizeof(p));
+    delay(4);
+    esp_now_send(MAIN_ESP_MAC, (uint8_t *)&p, sizeof(p));
+    delay(4);
+  }
+  imageId++;
+  esp_camera_fb_return(fb);
 }
 
 void setup() {
@@ -94,4 +124,3 @@ void setup() {
   esp_now_peer_info_t peer = {}; memcpy(peer.peer_addr,MAIN_ESP_MAC,6); peer.channel=0; peer.encrypt=false;
   if (esp_now_add_peer(&peer)!=ESP_OK) { Serial.println("Peer add failed"); while(true) delay(1000); }
 }
-void loop() { if (millis()-lastCapture > CAPTURE_EVERY_MS) { lastCapture=millis(); sendPhoto(); } }

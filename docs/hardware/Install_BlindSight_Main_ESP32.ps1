@@ -66,9 +66,10 @@ if (-not $cliCmd) {
 } else { $cliPath = $cliCmd.Source }
 Write-Host "Using: $cliPath" -ForegroundColor Green
 
-$work = Join-Path $env:USERPROFILE 'Desktop\BlindSight_Main_ESP32'
+$work = Join-Path ([System.IO.Path]::GetTempPath()) ("BlindSight_Main_ESP32_" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $ino = Join-Path $work 'BlindSight_Main_ESP32.ino'
+
 $code = @'
 #include <Arduino.h>
 #include <WiFi.h>
@@ -257,6 +258,7 @@ void loop(){
   if(imageReady){imageReady=false;uploadAndPlay();}
 }
 '@
+
 # Escape values for C++ strings, then inject them into sketch placeholders.
 $ssidC = $ssid.Replace('\','\\').Replace('"','\"')
 $passC = $password.Replace('\','\\').Replace('"','\"')

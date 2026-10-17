@@ -1,14 +1,20 @@
 # BlindSight — Click-by-Click Build, Upload & Test Guide
 
+> ⚠️ **SUPERSEDED WIRING NOTICE**
+> Any legacy references in early revisions to dual isolated Arduino rails are superseded by [WIRING_V2_BUCK_AND_TTL.md](WIRING_V2_BUCK_AND_TTL.md).
+> All microcontrollers and sensors must share a single 5V 3A buck converter rail and a common ground.
+
 This guide takes you from hardware wiring to a working first demo. Do not wear the system until all bench tests pass.
+
+---
 
 ## 1. Prepare the software
 
-### 1.1 Raspberry Pi 3B+
+### 1.1 Raspberry Pi 3B+ Gateway
 1. Install **Raspberry Pi OS (64-bit)** with Raspberry Pi Imager.
 2. In Raspberry Pi Imager, click the **gear icon** before writing the SD card.
-3. Set a username and password, configure Wi-Fi if desired, and enable SSH.
-4. Boot the Pi. On its desktop, click the terminal icon.
+3. Set username (`pi`) and password, configure Wi-Fi if desired, and enable SSH.
+4. Boot the Pi. On its desktop or via SSH, open Terminal.
 5. Run:
    ```bash
    sudo apt update
@@ -46,20 +52,18 @@ This guide takes you from hardware wiring to a working first demo. Do not wear t
 > failure: the gateway never announces "path clear" when it could not see.
 
 ### 1.2 Create a fixed Wi-Fi network
-Use either your normal router or the Raspberry Pi as a Wi-Fi access point. A Pi access point is recommended for a portable demo.
+Use either your normal router or the Raspberry Pi as a Wi-Fi access point (AP). A Pi access point is recommended for wearable mobility.
 
 1. On the Pi desktop, click the **network icon** in the top-right corner.
-2. Click **Advanced Options** → **Create Wireless Hotspot** (wording may vary by Raspberry Pi OS version).
-3. Set the name to `BlindSight`.
-4. Set a strong password.
-5. Keep the Wi-Fi channel fixed if the settings page offers it; channel 6 is a good choice.
-6. Note the Pi IP address. In Terminal run:
-   ```bash
-   hostname -I
-   ```
-7. Use the first local IPv4 address in `PI_URL` in the main ESP32 firmware. Example: `http://192.168.4.1:5000`.
+2. Click **Advanced Options** → **Create Wireless Hotspot**.
+3. Set the name to `BlindSight` and set a strong password.
+4. Keep the Wi-Fi channel fixed (channel 1 or 6).
+5. Note the Pi IP address with `hostname -I`.
+6. Example gateway IP: `192.168.4.1`.
 
-Both ESP32 boards must join the **same Wi-Fi network** before ESP-NOW starts.
+Both ESP32 boards join the **same Wi-Fi network** so they share a radio channel for ESP-NOW and can reach the Pi HTTP endpoints.
+
+---
 
 > **WIRING VERSION NOTE.** This guide's power section and `PIN_CONNECTION_CHART.md`
 > describe the original two-Arduino rail design (v1). That design is
@@ -74,16 +78,16 @@ Both ESP32 boards must join the **same Wi-Fi network** before ESP-NOW starts.
 Follow `WIRING_V2_BUCK_AND_TTL.md` for power, and the pin table in
 `PIN_CONNECTION_CHART.md` for signals. Before connecting power, check these essential points:
 
-- Connect each HC-SR04 **ECHO** to the ESP32 only through its 1 kΩ / 2 kΩ voltage divider.
-- Main ESP32: GPIO 26 → DAC BCLK, GPIO 25 → DAC LRCK, GPIO 22 → DAC DIN.
-- Ultrasonic TRIG pins: GPIO 13, 14 and 27.
-- Ultrasonic divided ECHO pins: GPIO 34, 35 and 39.
-- Button: GPIO 32 to GND; the code uses its internal pull-up.
-- ESP32-CAM: power at 5 V, with a 470–1000 µF capacitor directly across 5 V and GND.
-- Do **not** connect the separate 5 V rails together.
-- Verify polarity twice before power-on.
+- **Common Ground**: All components (Main ESP32, ESP32-CAM, DAC, 3x HC-SR04, Buck regulator) share one common ground.
+- **5V 3A Buck Rail**: Powers the sensors and microcontrollers.
+- **ECHO Voltage Dividers**: Never connect HC-SR04 ECHO directly to an ESP32 GPIO. Use a 1kΩ / 2kΩ divider to step 5V down to ~3.3V.
+- **Main ESP32 DAC**: GPIO 26 → BCLK, GPIO 25 → LRCK/WS, GPIO 22 → DIN.
+- **Ultrasonic TRIG pins**: GPIO 13 (L), GPIO 14 (C), GPIO 27 (R).
+- **Ultrasonic divided ECHO pins**: GPIO 34 (L), GPIO 35 (C), GPIO 39 (R).
+- **Button**: GPIO 32 to GND (internal pull-up enabled).
+- **ESP32-CAM**: 470–1000 µF low-ESR electrolytic capacitor across 5V and GND directly at the camera pins.
 
-## 3. Install PlatformIO
+---
 
 1. On a computer, install **Visual Studio Code** from `code.visualstudio.com`.
 2. Open Visual Studio Code.
@@ -140,10 +144,26 @@ Follow `WIRING_V2_BUCK_AND_TTL.md` for power, and the pin table in
    `.ino` (Arduino IDE), then upload the main ESP32 firmware again. Packets
    from any other transmitter are ignored.
 
-## 6. Make and upload the local voice clips
+### Option B: Using Arduino IDE
+1. Open `firmware/esp32_cam/BlindSight_Camera.ino`.
+2. Select board: `AI Thinker ESP32-CAM`.
+3. Configure `WIFI_SSID`, `WIFI_PASSWORD`, and `MAIN_ESP_MAC`.
+4. Connect with GPIO 0 grounded, click **Upload**, remove GPIO 0 jumper, and reset.
 
-The main ESP32 speaks critical fallback instructions from its own memory. On the Pi or Linux computer, open Terminal and run:
+---
 
+## 6. Upload Local Voice Clips to LittleFS
+
+The main ESP32 plays pre-recorded voice clips for instant, zero-latency offline feedback.
+Pre-generated 16-bit 22050 Hz WAV clips are shipped in `firmware/esp32_main/data/`:
+- `analysing.wav`
+- `left.wav`
+- `right.wav`
+- `stop.wav`
+- `careful.wav`
+- `clear.wav`
+
+To generate or re-verify these files:
 ```bash
 cd /path/to/BlindSight
 ./firmware/esp32_main/data/generate_clips.sh
@@ -165,29 +185,22 @@ returns quietly when a file is missing.
 
 ## 7. Bench-test in this order
 
-1. **Pi test:** open `http://PI_IP:5000/health` in a browser; it must show `status: ok`.
-2. **Camera test:** power ESP32-CAM; its Serial Monitor should show capture and packet-send messages every 10 seconds.
-3. **Main receiver test:** main ESP32 Serial Monitor should print image upload status and an HTTP 200 response.
-4. **Audio test:** connect a suitable headphone amplifier/earphones to DAC output and verify “Analysing,” then the Pi response.
-5. **Sensor test:** hold an object approximately 20–80 cm in front of each HC-SR04. Press the fallback button and verify the relevant spoken warning.
-6. **Power test:** leave the system on for 10 minutes. If camera resets, use shorter/thicker 5 V wiring and ensure the ESP32-CAM capacitor is installed.
+1. **Pi Health Check:** Open `http://PI_IP:5000/health` in a browser; verify `status` is `ok`.
+2. **Camera Stream Check:** Power ESP32-CAM; verify packet transmission in Serial Monitor.
+3. **Main Gateway Check:** Verify main ESP32 receives ESP-NOW packets and uploads frames to `/analyse`.
+4. **Audio Playback:** Connect earphones to the PCM5102 DAC output; verify local chime/speech on upload, followed by Pi AI guidance audio.
+5. **Ultrasonic Sensor Check:** Wave a hand in front of left, center, and right HC-SR04 sensors; press the button and confirm directional voice prompts ("Move left", "Move right", "Stop", "Proceed carefully").
+6. **Thermal & Stability Test:** Run the system continuously for 15 minutes to verify power stability and absence of camera reboots.
 
-## 8. Before mounting on the headband
+---
 
-- Keep sensors aimed forward: left, centre, and right, with enough separation to reduce cross-talk.
-- Secure the ESP32-CAM to the spectacle frame without blocking its lens.
-- Put main ESP32 and DAC in the 10 × 7 × 5 cm enclosure; do not allow loose wires to short.
-- Keep antenna areas away from metal and large batteries where possible.
-- Test with a sighted helper in an open, controlled indoor space.
-- The ultrasonic fallback is for close obstacles only; it cannot detect every hazard, drop, moving vehicle, stair edge, or overhead obstacle.
-
-## 9. Common fixes
+## 8. Common Troubleshooting
 
 | Problem | Check first |
 |---|---|
-| ESP32-CAM resets | 5 V supply, 470–1000 µF capacitor, short wires, adequate current |
-| No ESP-NOW image | same Wi-Fi SSID/channel, correct main MAC, both boards connected before ESP-NOW starts |
-| Pi upload fails | correct `PI_URL`, server running, Pi and ESP32 on same network |
-| No DAC sound | DAC BCLK/LRCK/DIN pins, common GND on main rail, correct earphone amplifier |
-| Wrong ultrasonic readings | ECHO voltage divider, sensor orientation, trigger one at a time |
-| ESP32-CAM cannot upload | GPIO 0 to GND during upload; remove it and reset for normal operation |
+| ESP32-CAM resets | 5V 3A buck rail, 470–1000 µF capacitor, short power leads |
+| No ESP-NOW image | Matching Wi-Fi SSID/channel, correct MAIN MAC address, sender MAC validation |
+| Pi upload 404/500 | Verify PI_URL, check `python3 server.py` logs in terminal |
+| No DAC sound | Verify I2S pins (26, 25, 22), check LittleFS filesystem upload, common ground |
+| Wrong ultrasonic readings | Verify 1k/2k voltage dividers on ECHO lines, ensure sensors face forward |
+| ESP32-CAM upload timeout | Ensure GPIO 0 is grounded during power-up before clicking upload |

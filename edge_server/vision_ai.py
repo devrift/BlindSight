@@ -75,7 +75,6 @@ def get_model_path() -> Path | None:
     server_dir = Path(__file__).resolve().parent
     root_dir = server_dir.parent
     candidates = [
-        os.getenv("BLINDSIGHT_MODEL_PATH"),
         str(server_dir / "models" / "yolov8n.onnx"),
         str(server_dir / "models" / "yolov8n_int8.onnx"),
         str(root_dir / "edge_server" / "models" / "yolov8n.onnx"),
@@ -131,17 +130,15 @@ def nms(boxes: list[list[float]], scores: list[float], iou_threshold: float = 0.
     return keep
 
 
-def run_inference(image_path: Path, model_path: Path, stats: dict | None = None) -> list[Detection]:
+def run_inference(image_path: Path, model_path: Path, stats: dict) -> list[Detection]:
     """Runs YOLOv8n ONNX inference via onnxruntime or cv2.dnn fallback.
 
-    Raises if no backend can run the model; an empty list means the model ran
-    and found nothing. Backend, sizes and stage timings are recorded in `stats`.
+    Populates `stats` with stage timings and metadata. Raises on any fatal error
+    so the caller exits non-zero and server.py can fall back to the safe announcement.
     """
     import numpy as np
     from PIL import Image
 
-    if stats is None:
-        stats = {}
     t_start = time.perf_counter()
 
     # Default model target dimension: 320 for speed on Pi, or 640

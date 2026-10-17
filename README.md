@@ -17,7 +17,7 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
              ▼
    ┌────────────────────┐      HTTP Multipart POST      ┌─────────────────────────────────┐
    │  Main ESP32 DevKit ├──────────────────────────────►│    Raspberry Pi 3B+ Gateway     │
-   │  • Packet Assembly │                               │  • Flask REST Server (:5000)    │
+   │  • Packet Assembly │                               │  • Flask / Gunicorn Gateway     │
    │  • 3x HC-SR04 Sens │◄────────── Audio Stream ──────┤  • 16-bit WAV Out (espeak-ng)   │
    │  • I2S PCM5102 DAC │      GET /audio/<req_id>      └──────────────┬──────────────────┘
    │  • LittleFS Audio  │                                              │
@@ -105,7 +105,7 @@ BlindSight is an open-source assistive mobility wearable designed to provide rea
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-user>/BlindSight.git
+git clone https://github.com/lavyanshg/BlindSight.git
 cd BlindSight/edge_server
 
 # Install Python dependencies
@@ -156,11 +156,16 @@ be healthy — check it after any change.
 3. Select board `ESP32 Dev Module` and flash.
 4. Open the Serial Monitor (115200 baud) and note the printed `MAIN MAC: XX:XX:XX:XX:XX:XX`.
 
-#### Step B: ESP32-CAM
-1. Open [`firmware/esp32_cam/BlindSight_Camera.ino`](file:///firmware/esp32_cam/BlindSight_Camera.ino) in Arduino IDE or [`firmware/esp32_cam`](file:///firmware/esp32_cam) in PlatformIO.
-2. Paste the `MAIN MAC` address into `MAIN_ESP_MAC`.
-3. Select board `AI Thinker ESP32-CAM`.
-4. Connect `GPIO0` to `GND`, press `RST`, and flash. Disconnect `GPIO0` and press `RST` to run.
+#### Option A: Using PlatformIO (VS Code)
+1. **Main ESP32 DevKit**: Open `firmware/esp32_main`, copy `include/secrets.example.h` to `include/secrets.h`, configure credentials, and click **Upload**.
+2. **ESP32-CAM**: Open `firmware/esp32_cam`, copy `include/secrets.example.h` to `include/secrets.h`, set `BLINDSIGHT_MAIN_ESP_MAC` to the main board MAC, bridge GPIO 0 to GND, and click **Upload**.
+3. **LittleFS Voice Clips**: In `firmware/esp32_main`, run `PlatformIO: Upload Filesystem Image` to flash the pre-packaged WAV voice clips in `data/`.
+
+#### Option B: Using Arduino IDE
+1. Open `firmware/esp32_main/BlindSight_Main_ESP32.ino` (select `ESP32 Dev Module`).
+2. Configure `WIFI_SSID`, `WIFI_PASSWORD`, and `PI_URL` in the sketch header and flash.
+3. Open `firmware/esp32_cam/BlindSight_Camera.ino` (select `AI Thinker ESP32-CAM`).
+4. Set `MAIN_ESP_MAC` to the MAC printed by the main board, ground GPIO 0, and flash.
 
 ---
 
