@@ -8,7 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="apple-touch-icon-precomposed" href="/static/icon-192.png">
   <title>BlindSight AI Companion</title>
   <style>
     :root {
@@ -111,6 +112,22 @@
       display: block;
     }
 
+    .frame-status {
+      width: 100%;
+      height: 160px;
+      border-radius: 10px;
+      border: 1px dashed #334155;
+      background-color: #020617;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 0 20px;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
     .options-row {
       display: flex;
       align-items: center;
@@ -158,6 +175,11 @@
       color: #e2e8f0;
       align-self: flex-end;
       border-bottom-right-radius: 4px;
+    }
+
+    .bubble.bot.failure {
+      background-color: #7f1d1d;
+      border: 2px solid #ef4444;
     }
 
     .bubble.bot {
@@ -259,7 +281,10 @@
       <span class="card-title">Live Vision Feed</span>
       <button class="btn-send" style="padding: 4px 10px; font-size: 0.8rem;" onclick="refreshFrame()">Refresh</button>
     </div>
-    <img id="camera-frame" class="camera-preview" src="/api/latest-frame" alt="Latest camera frame view" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'320\' height=\'240\'><rect width=\'100%\' height=\'100%\' fill=\'%230f172a\'/><text x=\'50%\' y=\'50%\' fill=\'%2364748b\' font-size=\'14\' font-family=\'sans-serif\' text-anchor=\'middle\' dominant-baseline=\'middle\'>Waiting for camera stream...</text></svg>'">
+    <img id="camera-frame" class="camera-preview" alt="Latest frame from the head camera" hidden>
+    <div id="frame-status" class="frame-status" role="status" aria-live="polite">
+      Waiting for the first camera frame.
+    </div>
     <div class="options-row">
       <label class="toggle-label">
         <input type="checkbox" id="use-camera-toggle" checked>
@@ -296,11 +321,34 @@
     // PWA Service Worker Registration
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/sw.js').catch(err => {
+        navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).catch(err => {
           console.debug('ServiceWorker error:', err);
         });
       });
     }
+
+    // Optional gateway auth. The gateway only enforces this when
+    // BLINDSIGHT_API_TOKEN is set server-side; /api/config says which.
+    let authToken = localStorage.getItem('blindsight_token') || '';
+    function authHeaders() {
+      return authToken ? { 'Authorization': 'Bearer ' + authToken } : {};
+    }
+    async function bootstrapConfig() {
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) return;
+        const cfg = await res.json();
+        if (cfg.auth_required && !authToken) {
+          authToken = window.prompt(
+            'This BlindSight gateway is password protected. Enter the access token:'
+          ) || '';
+          if (authToken) localStorage.setItem('blindsight_token', authToken);
+        }
+      } catch (err) {
+        console.debug('config unavailable:', err);
+      }
+    }
+    bootstrapConfig();
 
     // Haptic feedback utility for low-vision tactile response
     function triggerHaptic(pattern = [30]) {
@@ -322,12 +370,41 @@
     let isListening = false;
     let recognition = null;
 
-    // Refresh camera snapshot periodically
-    function refreshFrame() {
-      triggerHaptic([15]);
-      cameraFrame.src = '/api/latest-frame?t=' + Date.now();
+    const frameStatus = document.getElementById('frame-status');
+
+    // Refresh camera snapshot periodically.
+    //
+    // The gateway returns 404 when there is no *fresh* frame rather than falling
+    // back to a bundled placeholder. That distinction matters: showing a stale or
+    // stock image in a panel labelled "Live Vision Feed" invites the user to ask
+    // questions about something that is not in front of them.
+    function setNoFrame(message) {
+      cameraFrame.hidden = true;
+      cameraFrame.removeAttribute('src');
+      frameStatus.hidden = false;
+      frameStatus.textContent = message;
     }
-    setInterval(refreshFrame, 5000);
+
+    async function refreshFrame(announce) {
+      if (announce) triggerHaptic([15]);
+      try {
+        const res = await fetch('/api/latest-frame?t=' + Date.now(), { headers: authHeaders() });
+        if (!res.ok) {
+          setNoFrame(announce
+            ? 'No camera frame available. Check the head camera and Wi-Fi.'
+            : 'Waiting for the first camera frame.');
+          return;
+        }
+        const blob = await res.blob();
+        frameStatus.hidden = true;
+        cameraFrame.hidden = false;
+        cameraFrame.src = URL.createObjectURL(blob);
+      } catch (err) {
+        setNoFrame('Cannot reach the gateway.');
+      }
+    }
+    setInterval(() => refreshFrame(false), 5000);
+    refreshFrame(false);
 
     // Initialize Web Speech API
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -409,6 +486,20 @@
       }
     }
 
+    // Failure replies get their own bubble style and an explicit spoken prefix,
+    // so a blind user cannot mistake an outage message for a description of
+    // their surroundings.
+    function announceFailure(message) {
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble bot failure';
+      bubble.setAttribute('role', 'alert');
+      bubble.textContent = message;
+      chatFeed.appendChild(bubble);
+      chatFeed.scrollTop = chatFeed.scrollHeight;
+      speakText('Attention. ' + message);
+      statusDisplay.textContent = message;
+    }
+
     async function sendPrompt(text) {
       if (!text || !text.trim()) return;
       triggerHaptic([25]);
@@ -423,31 +514,54 @@
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
           body: JSON.stringify(payload)
         });
 
-        if (res.ok) {
-          triggerHaptic([30, 50, 30]);
-          const data = await res.json();
-          const reply = data.reply || "I didn't receive a response.";
-          addMessage('bot', reply);
-          speakText(reply);
-          statusDisplay.textContent = 'Ready. Tap & Speak.';
-        } else {
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401) {
           triggerHaptic([80]);
-          const errReply = "I'm having trouble connecting to my vision brain right now.";
-          addMessage('bot', errReply);
-          speakText(errReply);
-          statusDisplay.textContent = 'Server error. Please retry.';
+          localStorage.removeItem('blindsight_token');
+          authToken = '';
+          announceFailure('Access denied. The gateway token is missing or wrong.');
+          return;
         }
+        if (res.status === 429) {
+          triggerHaptic([80]);
+          announceFailure('Too many questions at once. Please wait a moment.');
+          return;
+        }
+
+        // A degraded reply is NOT an answer. The gateway marks it so the failure
+        // is announced as a failure instead of being spoken in the assistant's
+        // voice as though it had described the scene.
+        if (!res.ok || data.degraded) {
+          triggerHaptic([80]);
+          let msg = 'I could not reach my vision brain, so I could not answer.';
+          if (data.reason === 'missing_api_key') {
+            msg = 'The assistant is not configured on the gateway yet.';
+          } else if (res.status === 502) {
+            msg = 'The assistant did not respond. Please try again.';
+          }
+          if (data.frame_stale) {
+            msg += ' I also had no recent camera frame, so I could not see anything.';
+          }
+          announceFailure(msg);
+          return;
+        }
+
+        triggerHaptic([30, 50, 30]);
+        const reply = data.reply || "I didn't receive a response.";
+        addMessage('bot', reply);
+        speakText(reply);
+        statusDisplay.textContent = data.frame_stale
+          ? 'Answered without a camera frame.'
+          : 'Ready. Tap & Speak.';
       } catch (err) {
         triggerHaptic([100]);
         console.error(err);
-        const errReply = "Connection error. Please check your network.";
-        addMessage('bot', errReply);
-        speakText(errReply);
-        statusDisplay.textContent = 'Connection error.';
+        announceFailure('Connection error. Please check your network.');
       }
     }
 

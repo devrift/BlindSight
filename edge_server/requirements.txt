@@ -4,3 +4,17 @@ numpy>=1.24.0
 onnxruntime>=1.16.0
 requests>=2.31.0
 python-dotenv>=1.0.0
+
+# Production WSGI server used by blindsight.service. The Flask development
+# server is for local experimentation only.
+gunicorn>=21.2.0
+
+# Needed by the model-export one-liner documented in README.md and
+# edge_server/models/README.md:
+#   python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(...)"
+# Install on a machine with enough RAM; the Pi itself only needs the .onnx.
+ultralytics>=8.1.0
+
+# Optional: the cv2.dnn inference fallback in vision_ai.py. onnxruntime is the
+# primary backend; install this only if onnxruntime cannot load your export.
+# opencv-python>=4.8.0

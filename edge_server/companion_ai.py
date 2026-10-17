@@ -41,12 +41,62 @@ SYSTEM_PROMPT = (
 )
 
 
-def ask_companion(prompt: str, image_path: str | Path | None = None) -> str:
-    """Sends a conversational or vision query to OpenRouter and returns spoken-ready text."""
-    api_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip("'\" \t\r\n")
+class CompanionResult:
+    """A reply plus enough context for the caller to tell success from failure.
+
+    The gateway used to receive only a string, so a provider outage was
+    indistinguishable from a real answer: it returned FALLBACK_REPLY with HTTP
+    200 and the PWA spoke the failure message aloud in the assistant's voice as
+    though it had described the scene.
+    """
+
+    __slots__ = ("ok", "reason", "reply")
+
+    def __init__(self, reply: str, ok: bool, reason: str = "") -> None:
+        self.reply = reply
+        self.ok = ok
+        self.reason = reason
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"CompanionResult(ok={self.ok}, reason={self.reason!r}, reply={self.reply[:40]!r})"
+
+
+def _get_api_key() -> str:
+    return (os.environ.get("OPENROUTER_API_KEY") or "").strip("'\" \t\r\n")
+
+
+def _build_user_content(prompt: str, image_path: str | Path | None) -> Any:
+    """Returns a plain string, or a text+image parts list when an image is usable."""
+    if not image_path:
+        return prompt
+
+    img_p = Path(image_path)
+    if not img_p.is_file():
+        return prompt
+
+    try:
+        img_bytes = img_p.read_bytes()
+        b64_data = base64.b64encode(img_bytes).decode("utf-8")
+        mime = "image/png" if img_p.suffix.lower() == ".png" else "image/jpeg"
+    except OSError:
+        return prompt
+
+    return [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_data}"}},
+    ]
+
+
+def ask_companion_detailed(prompt: str, image_path: str | Path | None = None) -> CompanionResult:
+    """Sends a conversational or vision query to OpenRouter.
+
+    Returns a CompanionResult whose `ok` flag is True only when a model actually
+    produced the reply.
+    """
+    api_key = _get_api_key()
     if not api_key:
         print("[ERROR] OPENROUTER_API_KEY not found in environment or .env file.", file=sys.stderr)
-        return FALLBACK_REPLY
+        return CompanionResult(FALLBACK_REPLY, ok=False, reason="missing_api_key")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -55,30 +105,13 @@ def ask_companion(prompt: str, image_path: str | Path | None = None) -> str:
         "X-Title": "BlindSight Voice Companion",
     }
 
-    user_content: Any = prompt
-    if image_path:
-        img_p = Path(image_path)
-        if img_p.is_file():
-            try:
-                img_bytes = img_p.read_bytes()
-                b64_data = base64.b64encode(img_bytes).decode("utf-8")
-                mime = "image/png" if img_p.suffix.lower() == ".png" else "image/jpeg"
-                user_content = [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime};base64,{b64_data}"},
-                    },
-                ]
-            except Exception:
-                user_content = prompt
-
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
+        {"role": "user", "content": _build_user_content(prompt, image_path)},
     ]
 
-    for model_name in [DEFAULT_MODEL, FALLBACK_MODEL]:
+    last_reason = "no_response"
+    for model_name in (DEFAULT_MODEL, FALLBACK_MODEL):
         payload = {
             "model": model_name,
             "messages": messages,
@@ -92,15 +125,31 @@ def ask_companion(prompt: str, image_path: str | Path | None = None) -> str:
                 json=payload,
                 timeout=12,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                if reply:
-                    return reply.strip()
-            else:
-                print(f"[ERROR] OpenRouter error {resp.status_code}: {resp.text}", file=sys.stderr)
-        except Exception as err:
+        except requests.RequestException as err:
+            last_reason = f"request_failed:{type(err).__name__}"
             print(f"[ERROR] OpenRouter request exception: {err}", file=sys.stderr)
             continue
 
-    return FALLBACK_REPLY
+        if resp.status_code != 200:
+            last_reason = f"http_{resp.status_code}"
+            print(f"[ERROR] OpenRouter error {resp.status_code}: {resp.text}", file=sys.stderr)
+            continue
+
+        try:
+            data = resp.json()
+        except ValueError:
+            last_reason = "non_json_response"
+            print("[ERROR] OpenRouter returned a non-JSON body", file=sys.stderr)
+            continue
+
+        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if reply and reply.strip():
+            return CompanionResult(reply.strip(), ok=True)
+        last_reason = "empty_reply"
+
+    return CompanionResult(FALLBACK_REPLY, ok=False, reason=last_reason)
+
+
+def ask_companion(prompt: str, image_path: str | Path | None = None) -> str:
+    """Backwards-compatible wrapper returning only the reply text."""
+    return ask_companion_detailed(prompt, image_path=image_path).reply
