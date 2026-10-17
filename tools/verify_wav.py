@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BlindSight WAV Asset Verifier.
 
-Asserts canonical 16-bit PCM mono 22050 Hz RIFF/WAV format for LittleFS voice clips:
+Asserts canonical 16-bit PCM mono 22050 Hz RIFF/WAV format and speech duration bounds:
 - analysing.wav
 - left.wav
 - right.wav
@@ -24,6 +24,23 @@ REQUIRED_FILES = [
     "careful.wav",
     "clear.wav",
 ]
+
+EXPECTED_TEXT = {
+    "analysing.wav": "Analysing",
+    "left.wav": "Obstacle ahead. Move left.",
+    "right.wav": "Obstacle ahead. Move right.",
+    "stop.wav": "Stop. Obstacle very close ahead.",
+    "careful.wav": "Object ahead. Proceed carefully.",
+    "clear.wav": "Path clear.",
+}
+
+WORDS_PER_SECOND = 2.6
+MIN_CLIP_SECONDS = 0.5
+MAX_CLIP_SECONDS = 10.0
+
+
+def min_seconds_for(text: str) -> float:
+    return max(MIN_CLIP_SECONDS, len(text.split()) / WORDS_PER_SECOND * 0.75)
 
 
 def verify_directory(data_dir: Path) -> bool:
@@ -58,6 +75,15 @@ def verify_directory(data_dir: Path) -> bool:
                     errors.append(f"sample_rate={rate}Hz (expected 22050Hz)")
                 if frames == 0:
                     errors.append("empty audio frames")
+
+                expected_phrase = EXPECTED_TEXT.get(name, "")
+                min_dur = min_seconds_for(expected_phrase)
+                if duration < min_dur:
+                    errors.append(
+                        f"duration={duration:.2f}s is too short for '{expected_phrase}' (need >={min_dur:.2f}s)"
+                    )
+                if duration > MAX_CLIP_SECONDS:
+                    errors.append(f"duration={duration:.2f}s exceeds {MAX_CLIP_SECONDS}s budget")
 
                 if errors:
                     print(f"  [FAIL] {name}: {', '.join(errors)}", file=sys.stderr)

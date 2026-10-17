@@ -2,14 +2,14 @@
 """BlindSight LittleFS Voice Clip Generator.
 
 Generates 16-bit PCM mono 22050 Hz WAV clips for ESP32 LittleFS offline fallback:
-- analysing.wav
-- left.wav
-- right.wav
-- stop.wav
-- careful.wav
-- clear.wav
+- analysing.wav ("Analysing")
+- left.wav ("Obstacle ahead. Move left.")
+- right.wav ("Obstacle ahead. Move right.")
+- stop.wav ("Stop. Obstacle very close ahead.")
+- careful.wav ("Object ahead. Proceed carefully.")
+- clear.wav ("Path clear.")
 
-Uses espeak-ng if available, or synthesizes harmonic auditory cues.
+Uses espeak-ng if available, Windows SAPI TTS if on Windows, or synthesizes harmonic cues.
 """
 from __future__ import annotations
 
@@ -18,36 +18,70 @@ import math
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import wave
 from pathlib import Path
 
 CLIPS = {
     "analysing.wav": {
-        "text": "Analysing.",
-        "freqs": [(660, 0.15), (880, 0.25)],
+        "text": "Analysing",
+        "freqs": [(660, 0.3), (880, 0.5)],
     },
     "left.wav": {
-        "text": "Move left.",
-        "freqs": [(523, 0.18), (392, 0.22)],
+        "text": "Obstacle ahead. Move left.",
+        "freqs": [(523, 0.5), (392, 0.8)],
     },
     "right.wav": {
-        "text": "Move right.",
-        "freqs": [(392, 0.18), (523, 0.22)],
+        "text": "Obstacle ahead. Move right.",
+        "freqs": [(392, 0.5), (523, 0.8)],
     },
     "stop.wav": {
-        "text": "Stop.",
-        "freqs": [(880, 0.15), (0, 0.05), (880, 0.25)],
+        "text": "Stop. Obstacle very close ahead.",
+        "freqs": [(880, 0.5), (0, 0.1), (880, 0.9)],
     },
     "careful.wav": {
-        "text": "Caution.",
-        "freqs": [(587, 0.2), (494, 0.25)],
+        "text": "Object ahead. Proceed carefully.",
+        "freqs": [(587, 0.5), (494, 0.8)],
     },
     "clear.wav": {
         "text": "Path clear.",
-        "freqs": [(440, 0.12), (554, 0.12), (659, 0.25)],
+        "freqs": [(440, 0.3), (554, 0.3), (659, 0.6)],
     },
 }
+
+
+def synthesize_windows_sapi(path: Path, text: str) -> bool:
+    """Uses Windows SAPI speech synthesis via tools/tts_win.ps1 to generate genuine speech WAV."""
+    if sys.platform != "win32":
+        return False
+    ps_script = Path(__file__).resolve().parent / "tts_win.ps1"
+    if not ps_script.is_file():
+        return False
+    try:
+        res = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ps_script),
+                "-text",
+                text,
+                "-outPath",
+                str(path.resolve()),
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+        if res.returncode == 0 and path.is_file() and path.stat().st_size > 44:
+            with wave.open(str(path), "rb") as src:
+                if src.getnchannels() == 1 and src.getsampwidth() == 2 and src.getframerate() == 22050:
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 def synthesize_synthetic_clip(path: Path, tones: list[tuple[float, float]], sample_rate: int = 22050) -> None:
@@ -56,19 +90,16 @@ def synthesize_synthetic_clip(path: Path, tones: list[tuple[float, float]], samp
     for freq, duration in tones:
         n_samples = int(sample_rate * duration)
         if freq <= 0:
-            # Silence
             frames.extend(b"\x00\x00" * n_samples)
             continue
 
         for i in range(n_samples):
             t = float(i) / sample_rate
-            # Harmonics for rich, pleasant auditory cue
             val_float = (
                 0.60 * math.sin(2.0 * math.pi * freq * t)
                 + 0.25 * math.sin(2.0 * math.pi * 2.0 * freq * t)
                 + 0.15 * math.sin(2.0 * math.pi * 3.0 * freq * t)
             )
-            # Attack / decay envelope (15ms ramp)
             ramp_len = int(sample_rate * 0.015)
             envelope = min(1.0, i / max(1, ramp_len), (n_samples - i) / max(1, ramp_len))
             sample = int(val_float * envelope * 22000.0)
@@ -88,7 +119,7 @@ def generate_clips(output_dir: Path) -> None:
 
     for filename, spec in CLIPS.items():
         target = output_dir / filename
-        generated_via_espeak = False
+        generated_speech = False
 
         if espeak_bin:
             try:
@@ -100,19 +131,27 @@ def generate_clips(output_dir: Path) -> None:
                     timeout=5,
                 )
                 if res.returncode == 0 and temp_path.stat().st_size > 44:
-                    # Validate header & format
                     with wave.open(str(temp_path), "rb") as src:
                         if src.getnchannels() == 1 and src.getsampwidth() == 2 and src.getframerate() == 22050:
                             shutil.copy2(temp_path, target)
-                            generated_via_espeak = True
+                            generated_speech = True
                 temp_path.unlink(missing_ok=True)
             except Exception:
-                generated_via_espeak = False
+                generated_speech = False
 
-        if not generated_via_espeak:
+        if not generated_speech and sys.platform == "win32":
+            generated_speech = synthesize_windows_sapi(target, spec["text"])
+
+        if not generated_speech:
             synthesize_synthetic_clip(target, spec["freqs"], sample_rate=22050)
 
-        print(f"Generated {target.name} ({target.stat().st_size} bytes)")
+        duration = 0.0
+        try:
+            with wave.open(str(target), "rb") as w:
+                duration = w.getnframes() / float(w.getframerate())
+        except Exception:
+            pass
+        print(f"Generated {target.name} ({target.stat().st_size} bytes, {duration:.2f}s)")
 
 
 def main() -> None:
