@@ -11,7 +11,10 @@ fails.
 """
 from __future__ import annotations
 
+import math
+import struct
 import sys
+import wave
 from pathlib import Path
 
 import pytest
@@ -54,3 +57,47 @@ def test_clip_names_match_firmware_calls(clips):
     names = {path.stem for path in clips}
     expected = set(verify_wav.EXPECTED_CLIPS)
     assert expected <= names, f"firmware calls playFile() for clips that do not exist: {expected - names}"
+
+
+# ---------------------------------------------------------------------------
+# Content sanity: a format-only gate is not enough.
+#
+# A parallel remediation of this repo "fixed" the silent fallback by committing
+# 0.4 s harmonic tones (correct 16-bit/mono/22050 Hz format, no speech) and
+# reported audit B5 as RESOLVED. The duration rule below is what catches that.
+# ---------------------------------------------------------------------------
+def _write_tone(path: Path, samples: int, rate: int = verify_wav.REQUIRED_RATE) -> None:
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        frames = bytearray()
+        for i in range(samples):
+            t = i / rate
+            env = min(1.0, i / (rate * 0.05), (samples - i) / (rate * 0.05))
+            value = int((math.sin(2 * math.pi * 440 * t) * 0.6 + math.sin(4 * math.pi * 440 * t) * 0.3) * env * 24000)
+            frames.extend(struct.pack("<h", value))
+        handle.writeframes(bytes(frames))
+
+
+def test_tone_placeholders_are_rejected_as_too_short_for_speech(tmp_path):
+    for name, text in verify_wav.EXPECTED_TEXT.items():
+        clip = tmp_path / f"{name}.wav"
+        _write_tone(clip, int(0.40 * verify_wav.REQUIRED_RATE))
+        info = verify_wav.check_wav(clip)  # format is fine - that is the trap
+        assert info["seconds"] < verify_wav.min_seconds_for(text), name
+
+
+def test_duration_rule_accepts_plausible_speech_lengths():
+    # espeak at -s 155 is ~2.6 words/s plus a little lead-in/out padding; a real
+    # rendering of each phrase clears the lenient 0.75x floor min_seconds_for
+    # uses, so genuine clips are never rejected by the sanity gate.
+    for text in verify_wav.EXPECTED_TEXT.values():
+        words = len(text.split())
+        plausible = words / 2.6 + 0.15
+        assert plausible >= verify_wav.min_seconds_for(text), text
+
+
+def test_min_seconds_scales_with_phrase_length():
+    assert verify_wav.min_seconds_for("Analysing") < verify_wav.min_seconds_for("Stop. Obstacle very close ahead.")
+    assert verify_wav.min_seconds_for("") == verify_wav.MIN_CLIP_SECONDS

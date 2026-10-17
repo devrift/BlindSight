@@ -31,6 +31,28 @@ REQUIRED_CHANNELS = 1
 
 EXPECTED_CLIPS = ("analysing", "left", "right", "stop", "careful", "clear")
 
+# The spoken text each clip must carry. Used for a duration sanity gate: a
+# format-only check passes tone/beep placeholders that contain no speech at all,
+# which is how a parallel remediation once "fixed" the silent fallback by
+# committing 0.4 s harmonic tones and reporting B5 RESOLVED. At espeak's -s 155
+# (~2.6 words/s) four words cannot fit in 0.4 s, so a per-phrase minimum derived
+# from the word count catches that class of fake cheaply and deterministically.
+EXPECTED_TEXT = {
+    "analysing": "Analysing",
+    "left": "Obstacle ahead. Move left.",
+    "right": "Obstacle ahead. Move right.",
+    "stop": "Stop. Obstacle very close ahead.",
+    "careful": "Object ahead. Proceed carefully.",
+    "clear": "Path clear.",
+}
+WORDS_PER_SECOND = 2.6
+MIN_CLIP_SECONDS = 0.5
+MAX_CLIP_SECONDS = 10.0
+
+
+def min_seconds_for(text: str) -> float:
+    return max(MIN_CLIP_SECONDS, len(text.split()) / WORDS_PER_SECOND * 0.75)
+
 
 class WavError(Exception):
     pass
@@ -77,7 +99,14 @@ def check_wav(path: Path) -> dict:
     if fmt["rate"] != REQUIRED_RATE:
         raise WavError(f"{fmt['rate']} Hz; firmware DAC is clocked at {REQUIRED_RATE} Hz")
 
-    return {"rate": fmt["rate"], "channels": fmt["channels"], "bits": fmt["bits"], "pcm_bytes": data_size}
+    seconds = data_size / float(rate * channels * (bits // 8))
+    return {
+        "rate": fmt["rate"],
+        "channels": fmt["channels"],
+        "bits": fmt["bits"],
+        "pcm_bytes": data_size,
+        "seconds": seconds,
+    }
 
 
 def main(argv: list[str]) -> int:
@@ -103,7 +132,20 @@ def main(argv: list[str]) -> int:
     for path in paths:
         try:
             info = check_wav(path)
-            print(f"OK   {path}  {info['rate']}Hz {info['bits']}-bit {info['channels']}ch ({info['pcm_bytes']} bytes PCM)")
+            text = EXPECTED_TEXT.get(path.stem)
+            if text is not None:
+                lo = min_seconds_for(text)
+                if info["seconds"] < lo:
+                    raise WavError(
+                        f"{info['seconds']:.2f}s is too short to contain \"{text}\" "
+                        f"(need >={lo:.2f}s); a tone/beep placeholder is not speech"
+                    )
+                if info["seconds"] > MAX_CLIP_SECONDS:
+                    raise WavError(f"{info['seconds']:.2f}s exceeds the {MAX_CLIP_SECONDS}s clip budget")
+            print(
+                f"OK   {path}  {info['rate']}Hz {info['bits']}-bit {info['channels']}ch "
+                f"{info['seconds']:.2f}s ({info['pcm_bytes']} bytes PCM)"
+            )
         except OSError as error:
             failures += 1
             print(f"FAIL {path}: {error}", file=sys.stderr)

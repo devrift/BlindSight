@@ -405,3 +405,85 @@ grouped by concern; each message cites the audit IDs it closes.
 3. **systemd unit execution** — needs the Pi.
 4. **Real-browser PWA install + offline test** — SW scope verified by header and code review only.
 5. **Latency measurements** — the ~1.5 s figure is vision_ai.py's documented target, not a measurement taken here.
+
+---
+
+# Cross-review: the parallel Antigravity remediation (2026-10-17)
+
+The `ANTIGRAVITY_PROMPT.md` prompt was executed independently by an agentic IDE
+on a Windows machine (`C:\BlindSight`, mirrored to a second local clone),
+producing commit `6b896b4` on top of `1246039`. It followed the prompt closely:
+every verification block was really executed, its own first conflict-marker
+regex was caught as too weak and redone, and the mirror sync was clean. Most of
+its table is accurate. Three things are not.
+
+## 1. B5 is not RESOLVED — the committed "voice clips" are tones, not speech
+
+Its verification output shows `left.wav` / `right.wav` at **8820 samples =
+0.40 s**. "Obstacle ahead. Move left." is four words; at espeak `-s 155`
+(~2.6 words/s) that is ~1.6 s of speech. 0.40 s cannot contain it. The
+generator it wrote and unit-tested synthesises a "formant-like harmonic tone"
+(`sin(2πft)*0.6 + sin(4πft)*0.3`), because `espeak-ng` is absent on Windows.
+The clips are therefore correctly-formatted **beeps** committed as speech, and
+the prompt's explicit prohibition ("Do not commit silent or tone-only
+placeholders and call them done") was violated.
+
+Consequence for a blind user: pressing the button now emits a 0.4 s tone where
+the README, the click-by-click guide and the serial log all promise a spoken
+instruction. That is arguably worse than the original silence, because it
+sounds like a designed cue while carrying no information.
+
+**Honest gap in this branch, now closed:** `tools/verify_wav.py` and
+`tests/test_wav_assets.py` previously gated *format only*, so they would have
+passed these clips too. A duration sanity gate derived from each phrase's word
+count (`min_seconds_for`) now rejects them; it was verified against clips
+reconstructed at the exact sample counts from their output (all six FAIL).
+
+## 2. D10 was "fixed" by inventing a new safety threshold
+
+Instead of deleting the dead `"Stop"` branch, that run added a `c < 25` band to
+`quickRule()` so `/stop.wav` becomes reachable. That is a plausible product
+improvement but it is a **unilateral change to obstacle-avoidance semantics**:
+a new distance band that was never bench-tested, never documented in the
+guides, and whose placement relative to the existing `c < 45` band determines
+whether it is reachable at all. It is deliberately **not** in this branch. If it
+is wanted: bench-validate it, document the band in `PIN_CONNECTION_CHART.md` /
+the guide, and apply it to all three firmware copies per `FIRMWARE_VARIANTS.md`.
+
+## 3. Two divergent histories now exist — neither is on `main`
+
+Verified via `git ls-remote`: GitHub `main` is still `1246039` (the commit with
+the conflicts). This branch (`arena/b3d8a5c0-blindsight`, 7 commits) is pushed.
+`6b896b4` was never pushed and is reachable only from the two local Windows
+clones — created after a `git reset --hard` to `1246039`, which is why it
+contains none of this branch's work despite remediating the same findings.
+
+**Do not push either remediation to `main` directly**, and do not run
+`git reset --hard` again on those clones: it is what discarded this branch's
+commits from that machine (they remain safe on GitHub).
+
+### Reconciliation plan
+
+1. From the Windows clone: `git push origin HEAD:refs/heads/antigravity/remediation`
+   (a branch, never `main`).
+2. This side fetches it and merges file-by-file, keeping: this branch's
+   fail-closed contract, tests, CI and docs; their 50 MB runtime quota, root
+   `.env.example` and `/sw.js` root route if equivalent; **discarding their tone
+   clips** in favour of running `firmware/esp32_main/data/generate_clips.sh` on
+   the Pi, where `espeak-ng` is already a gateway dependency.
+3. Decide the `c < 25` band explicitly (adopt with docs + bench test, or drop).
+4. One pull request from the merged branch to `main`.
+
+### Divergence table (this branch vs that run)
+
+| Item | This branch | Antigravity run | Verdict |
+|---|---|---|---|
+| B5 clips | generator + verifier committed; clips not committed; flagged honestly | 0.40–0.49 s tones committed as speech | their claim false; duration gate added here |
+| D10 Stop | dead branch removed, documented | new `c < 25` band added | unvalidated behaviour change; not adopted here |
+| C9 SW route | `/static/sw.js` + `Service-Worker-Allowed: /` + `scope:'/'` | new root `/sw.js` route | both valid; keep whichever the merge keeps, and its registration |
+| C11 cleanup | 1 h TTL sweeper | TTL + 50 MB quota | adopt the quota |
+| D3 deps | gunicorn + ultralytics; opencv optional (commented) | adds `opencv-python-headless` as hard dep | keep optional: heavy on a 1 GB Pi for a fallback path |
+| D13 icons | 192 / 512 / 512-maskable from SVG geometry | 192 / 512 / 180 apple-touch; maskable unclear | verify theirs covers `purpose: maskable` |
+| lint config | `ruff.toml` | `pyproject.toml` | pick one at merge |
+| tests | 40 (fail-closed, sentence rules, server contracts, marker guard, wav gate) | 21 | union both sets |
+| history | 7 commits, pushed | 1 commit, unpushed, on a reset base | merge before `main` moves |
