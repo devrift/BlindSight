@@ -27,6 +27,7 @@ uint8_t MAIN_ESP_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
 // ##############################################################
 
 const uint32_t CAPTURE_EVERY_MS = 10000;   // one photo every 10 s
+const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;  // bounded association
 
 #define PWDN_GPIO_NUM  32
 #define RESET_GPIO_NUM -1
@@ -96,8 +97,12 @@ void sendPhoto() {
     memcpy(p.data, fb->buf + offset, n);
     p.checksum = checksum16(p.data, n);
     // Sent twice to survive packet loss; receiver ignores duplicates.
-    esp_now_send(MAIN_ESP_MAC, (uint8_t *)&p, sizeof(p)); delay(4);
-    esp_now_send(MAIN_ESP_MAC, (uint8_t *)&p, sizeof(p)); delay(4);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (esp_now_send(MAIN_ESP_MAC, (uint8_t *)&p, sizeof(p)) != ESP_OK) {
+        Serial.printf("esp_now_send failed for chunk %u\n", i);
+      }
+      delay(4);
+    }
   }
   imageId++;
   esp_camera_fb_return(fb);
@@ -106,10 +111,12 @@ void sendPhoto() {
 void setup() {
   Serial.begin(115200); delay(300);
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.println();
   Serial.println("Connecting to WiFi...");
-  while (WiFi.status() != WL_CONNECTED) { delay(300); Serial.print('.'); }
+  uint32_t started = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - started < WIFI_CONNECT_TIMEOUT_MS) { delay(300); Serial.print('.'); }
   Serial.println();
   Serial.printf("CAM MAC: %s\n", WiFi.macAddress().c_str());
   Serial.printf("Wi-Fi channel: %d (must match main ESP32)\n", WiFi.channel());
