@@ -311,6 +311,12 @@
       <span id="btn-label">Tap &amp; Speak</span>
     </button>
 
+    <div class="options-row" style="justify-content: center; margin: 4px 0 10px;">
+      <label class="toggle-label" for="language-select"><span>Reply language</span></label>
+      <select id="language-select" class="text-input" style="width: auto; padding: 6px 12px;"
+              aria-label="Reply language" onchange="saveLanguage(this.value)"></select>
+    </div>
+
     <form class="text-input-form" id="chat-form" onsubmit="handleTextSubmit(event)">
       <input type="text" class="text-input" id="prompt-input" placeholder="Or type a question here..." aria-label="Question text">
       <button type="submit" class="btn-send">Ask</button>
@@ -349,6 +355,41 @@
       }
     }
     bootstrapConfig();
+
+    // Reply language: the gateway answers (and speaks) in the chosen language.
+    async function loadPrefs() {
+      try {
+        const res = await fetch('/api/prefs');
+        if (!res.ok) return;
+        const prefs = await res.json();
+        const select = document.getElementById('language-select');
+        select.innerHTML = '';
+        (prefs.options || []).forEach(opt => {
+          const el = document.createElement('option');
+          el.value = opt.code;
+          el.textContent = opt.label;
+          select.appendChild(el);
+        });
+        select.value = prefs.language || 'en';
+      } catch (err) { /* gateway unreachable; keep browser defaults */ }
+    }
+    async function saveLanguage(code) {
+      try {
+        const res = await fetch('/api/prefs', {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ language: code })
+        });
+        if (res.ok) {
+          statusDisplay.textContent = 'Reply language updated.';
+        } else {
+          statusDisplay.textContent = 'Could not change the reply language.';
+        }
+      } catch (err) {
+        statusDisplay.textContent = 'Could not reach the gateway to change language.';
+      }
+    }
+    loadPrefs();
 
     // Haptic feedback utility for low-vision tactile response
     function triggerHaptic(pattern = [30]) {

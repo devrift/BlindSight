@@ -41,6 +41,10 @@ runtime/*
 !runtime/.gitkeep
 uploads/*
 !uploads/.gitkeep
+
+# Companion memory / prefs / chat history: personal data, never committed.
+state/*
+!state/.gitkeep
 *.wav
 *.pcm
 

@@ -41,6 +41,23 @@ SYSTEM_PROMPT = (
 )
 
 
+def build_system_prompt(language_label: str = "English", memory: list[str] | None = None) -> str:
+    """System prompt with the reply language and the user's stored facts folded in.
+
+    The language line is what makes the language switch real: the model answers
+    in the chosen language, and the gateway's espeak-ng voice matches it.
+    Memory facts are quoted verbatim so the companion can use names, rooms and
+    preferences the user taught it earlier.
+    """
+    prompt = SYSTEM_PROMPT
+    if language_label and language_label != "English":
+        prompt += f" Always reply in {language_label}, using natural spoken {language_label}."
+    facts = [f for f in (memory or []) if f.strip()]
+    if facts:
+        prompt += " Facts the user taught you earlier, which you may rely on: " + "; ".join(facts) + "."
+    return prompt
+
+
 class CompanionResult:
     """A reply plus enough context for the caller to tell success from failure.
 
@@ -87,9 +104,16 @@ def _build_user_content(prompt: str, image_path: str | Path | None) -> Any:
     ]
 
 
-def ask_companion_detailed(prompt: str, image_path: str | Path | None = None) -> CompanionResult:
+def ask_companion_detailed(
+    prompt: str,
+    image_path: str | Path | None = None,
+    history: list[dict[str, str]] | None = None,
+    system_prompt: str | None = None,
+) -> CompanionResult:
     """Sends a conversational or vision query to OpenRouter.
 
+    `history` carries earlier turns (oldest first, {"role", "content"}) so the
+    model sees an actual conversation instead of one isolated question.
     Returns a CompanionResult whose `ok` flag is True only when a model actually
     produced the reply.
     """
@@ -105,10 +129,13 @@ def ask_companion_detailed(prompt: str, image_path: str | Path | None = None) ->
         "X-Title": "BlindSight Voice Companion",
     }
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": _build_user_content(prompt, image_path)},
-    ]
+    messages = [{"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
+    for turn in history or []:
+        role = turn.get("role")
+        content = turn.get("content")
+        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": _build_user_content(prompt, image_path)})
 
     last_reason = "no_response"
     for model_name in (DEFAULT_MODEL, FALLBACK_MODEL):
