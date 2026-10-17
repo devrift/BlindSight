@@ -24,6 +24,7 @@ SAFETY CONTRACT (do not break this):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -71,6 +72,11 @@ class Detection:
 
 def get_model_path() -> Path | None:
     """Finds available YOLOv8n ONNX model weights in standard search paths."""
+    env_override = os.getenv("BLINDSIGHT_MODEL_PATH")
+    if env_override:
+        p = Path(env_override)
+        return p if p.is_file() else None
+
     server_dir = Path(__file__).resolve().parent
     root_dir = server_dir.parent
     candidates = [

@@ -328,3 +328,28 @@ header {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---- live mic level + noise gate meter ---- */
+.meter {
+  width: min(320px, 80%);
+  height: 10px;
+  border-radius: 999px;
+  background: #1e293b;
+  overflow: hidden;
+  border: 1px solid var(--card-edge);
+}
+#mic-meter {
+  height: 100%;
+  width: 0%;
+  background: var(--muted);
+  transition: width 0.1s linear;
+}
+#mic-meter.hot { background: var(--ok); }
+.heard-line {
+  margin: 4px 0 0;
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: calc(0.95rem * var(--font-scale));
+  text-align: center;
+}
+

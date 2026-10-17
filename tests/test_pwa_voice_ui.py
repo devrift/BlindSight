@@ -13,7 +13,8 @@ def test_shell_serves_voice_ui_assets(client):
     html = page.get_data(as_text=True)
     assert 'id="sr-announcer"' in html and 'aria-live="assertive"' in html
     assert 'id="mic-btn"' in html and 'aria-label=' in html
-    assert 'id="wake-toggle"' in html and 'id="language-select"' in html
+    assert 'id="mode-select"' in html and 'id="voice-select"' in html
+    assert 'id="mic-meter"' in html and 'id="language-select"' in html
     assert "/static/app.js" in html and "/static/app.css" in html
     # the visual status line must not double-announce over the live region
     assert 'aria-hidden="true"' in html

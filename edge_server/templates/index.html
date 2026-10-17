@@ -41,15 +41,22 @@
         </svg>
       </button>
       <p id="mic-hint">Starting up…</p>
+      <div class="meter" aria-hidden="true"><div id="mic-meter"></div></div>
+      <p id="heard-line" class="heard-line" aria-hidden="true"></p>
     </section>
 
     <section class="card controls-card" aria-label="Companion settings">
       <div class="control">
-        <label for="wake-toggle">Wake word<br><small>“hey BlindSight”</small></label>
-        <span class="switch">
-          <input type="checkbox" id="wake-toggle" checked>
-          <span class="track" aria-hidden="true"></span>
-        </span>
+        <label for="mode-select">Listening mode</label>
+        <select id="mode-select" aria-label="Listening mode">
+          <option value="wake">Wake word</option>
+          <option value="handsfree">Hands-free</option>
+          <option value="button">Button only</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="voice-select">Voice</label>
+        <select id="voice-select" aria-label="Assistant voice"></select>
       </div>
       <div class="control">
         <label for="camera-toggle">Include camera<br><small>with questions</small></label>

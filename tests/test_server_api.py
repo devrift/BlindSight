@@ -109,8 +109,9 @@ def test_chat_requires_prompt(client):
     assert client.post("/api/chat", json={}).status_code == 400
 
 
-def test_chat_reports_degradation(client):
+def test_chat_reports_degradation(client, monkeypatch):
     """Audit D2: a provider outage must be distinguishable from an answer."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     response = client.post("/api/chat", json={"prompt": "what is in front of me?", "use_camera": True})
     # No OPENROUTER_API_KEY in CI: the gateway must say so, loudly.
     assert response.status_code == 502

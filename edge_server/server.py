@@ -108,7 +108,6 @@ class Settings:
     data_dir: Path
     uploads_dir: Path
     models_dir: Path
-    vision_script: Path
     vision_command: list[str]
     vision_script: Path | None
     espeak_binary: str
