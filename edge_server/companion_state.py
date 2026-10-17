@@ -56,7 +56,7 @@ _CACHE: dict[str, Any] = {}
 
 
 def _empty() -> dict[str, Any]:
-    return {"prefs": {"language": DEFAULT_LANGUAGE}, "history": [], "memory": []}
+    return {"prefs": {"language": DEFAULT_LANGUAGE, "voice": ""}, "history": [], "memory": []}
 
 
 def _load() -> dict[str, Any]:
@@ -73,7 +73,8 @@ def _load() -> dict[str, Any]:
             state["prefs"] = {
                 "language": prefs.get("language", DEFAULT_LANGUAGE)
                 if isinstance(prefs, dict) and prefs.get("language") in LANGUAGES
-                else DEFAULT_LANGUAGE
+                else DEFAULT_LANGUAGE,
+                "voice": prefs.get("voice", "") if isinstance(prefs, dict) and isinstance(prefs.get("voice"), str) else "",
             }
             state["history"] = [
                 t for t in loaded.get("history", [])
@@ -125,6 +126,19 @@ def set_language(code: str) -> str | None:
 
 def language_options() -> list[dict[str, str]]:
     return [{"code": c, "label": label} for c, (_voice, label) in LANGUAGES.items()]
+
+
+def get_voice() -> str:
+    with _LOCK:
+        return _load()["prefs"]["voice"]
+
+
+def set_voice(name: str) -> str:
+    name = (name or "").strip()[:120]
+    with _LOCK:
+        _load()["prefs"]["voice"] = name
+        _save()
+        return name
 
 
 def espeak_voice(code: str | None = None) -> str:

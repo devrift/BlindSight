@@ -18,3 +18,5 @@ ultralytics>=8.1.0
 # Optional: the cv2.dnn inference fallback in vision_ai.py. onnxruntime is the
 # primary backend; install this only if onnxruntime cannot load your export.
 # opencv-python>=4.8.0
+# Neural (human-sounding) TTS; espeak-ng remains the offline fallback
+edge-tts>=6.1.0

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import importlib
+import json
 import os
 import shutil
 import subprocess
@@ -68,6 +70,8 @@ except ImportError:  # pragma: no cover - defensive import fallback
         set_language=lambda code: "en" if code == "en" else None,
         language_options=lambda: [{"code": "en", "label": "English"}],
         espeak_voice=lambda code=None: "en",
+        get_voice=lambda: "",
+        set_voice=lambda name: name,
         recent_history=lambda limit=8: [],
         append_turn=lambda role, content: None,
         clear_history=lambda: None,
@@ -96,6 +100,19 @@ RUNTIME_TTL_SECONDS = float(os.getenv("BLINDSIGHT_RUNTIME_TTL", "3600"))
 # Hard cap on the runtime folder: TTL alone cannot stop a chatty day
 # from filling a small Pi SD card (ported from the antigravity remediation).
 RUNTIME_MAX_BYTES = 50 * 1024 * 1024
+
+# Microsoft Edge's online neural TTS voices (free, no key): these are the
+# human-sounding voices. espeak-ng remains the offline fallback, and the
+# browser's own speechSynthesis is the last resort on the client.
+NEURAL_VOICES = {
+    "en": "en-IN-NeerjaNeural",
+    "hi": "hi-IN-SwaraNeural",
+    "bn": "bn-IN-TanishaaNeural",
+    "ta": "ta-IN-PallaviNeural",
+    "te": "te-IN-ShrutiNeural",
+    "es": "es-ES-ElviraNeural",
+    "fr": "fr-FR-DeniseNeural",
+}
 RUNTIME_SWEEP_SECONDS = 300.0
 
 # Simple in-process rate limit for the cloud endpoint, which spends real money.
@@ -306,8 +323,9 @@ class VisionService:
             "vision_script_ok": script_ok,
             "vision_script": script_detail,
             "model_path": str(model_path) if model_path else None,
-            "tts_ready": espeak_path is not None,
+            "tts_ready": self.any_tts(),
             "tts_binary": self.settings.espeak_binary,
+            "tts_engine": "edge-tts" if self.edge_tts_cmd() else ("espeak-ng" if espeak_path else None),
             "companion_ready": api_key,
             "last_vision_success": self.last_success,
             "issues": issues,
@@ -358,6 +376,74 @@ class VisionService:
 
     def tts_available(self) -> bool:
         return shutil.which(self.settings.espeak_binary) is not None
+
+    # ------------------------------------------------------- neural (human) TTS
+    def edge_tts_cmd(self) -> list[str] | None:
+        """edge-tts gives Microsoft's neural voices; invoked as a module so it
+        works regardless of PATH (gunicorn, systemd, pytest)."""
+        try:
+            if importlib.util.find_spec("edge_tts") is None:
+                return None
+        except (ImportError, ValueError):
+            return None
+        return [sys.executable, "-m", "edge_tts"]
+
+    def any_tts(self) -> bool:
+        return self.tts_available() or self.edge_tts_cmd() is not None
+
+    def neural_voices(self, lang_prefix: str) -> list[dict[str, str]]:
+        """Cached edge-tts catalogue for one language; empty when unavailable."""
+        now = time.time()
+        cache = getattr(self, "_voice_cache", None)
+        if cache is None or now - cache[0] > 300:
+            cmd = self.edge_tts_cmd()
+            voices: list[dict[str, str]] = []
+            if cmd:
+                try:
+                    proc = subprocess.run(  # noqa: S603
+                        [*cmd, "--list-voices"], capture_output=True, timeout=20, check=False, text=True
+                    )
+                    if proc.returncode == 0:
+                        try:
+                            voices = [
+                                {"voice": v["ShortName"], "label": v.get("FriendlyName", v["ShortName"])}
+                                for v in json.loads(proc.stdout)
+                            ]
+                        except Exception:
+                            for line in proc.stdout.splitlines()[2:]:
+                                parts = line.split()
+                                if parts:
+                                    name = parts[0].strip()
+                                    voices.append({"voice": name, "label": name})
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    voices = []
+            self._voice_cache = (now, voices)
+        return [v for v in self._voice_cache[1] if v["voice"].lower().startswith(lang_prefix.lower())]
+
+    def synthesize_reply(self, text: str, voice: str, out_stem: Path) -> Path | None:
+        """Human-sounding neural TTS first (mp3), espeak-ng WAV second, None when
+        neither exists so the caller can fall back to browser speechSynthesis."""
+        cmd = self.edge_tts_cmd()
+        if cmd:
+            chosen = voice or NEURAL_VOICES.get(companion_state.get_language(), NEURAL_VOICES["en"])
+            mp3 = out_stem.with_suffix(".mp3")
+            try:
+                proc = subprocess.run(  # noqa: S603
+                    [*cmd, "--voice", chosen, "--text", text, "--write-media", str(mp3)],
+                    capture_output=True, timeout=30, check=False,
+                )
+                if proc.returncode == 0 and mp3.is_file() and mp3.stat().st_size > 1000:
+                    return mp3
+            except (OSError, subprocess.SubprocessError):
+                pass
+        if self.tts_available():
+            wav = out_stem.with_suffix(".wav")
+            try:
+                self.speak(text, wav)
+                return wav
+            except (OSError, subprocess.SubprocessError):
+                return None
+        return None
 
     # ------------------------------------------------------------------- frames
 
@@ -522,18 +608,36 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     @app.get("/api/prefs")
     def api_prefs_get():
-        """Current reply language plus the choices the UI can offer."""
-        return jsonify(language=companion_state.get_language(), options=companion_state.language_options())
+        """Current reply language and voice plus the choices the UI can offer."""
+        return jsonify(
+            language=companion_state.get_language(),
+            voice=companion_state.get_voice(),
+            options=companion_state.language_options(),
+        )
+
+    @app.get("/api/tts/voices")
+    def api_tts_voices():
+        """Neural voice catalogue for the current language; the PWA falls back
+        to browser voices when the gateway has no neural TTS."""
+        voices = service.neural_voices(companion_state.get_language() + "-")
+        return jsonify(
+            source="edge-tts" if voices else "browser",
+            voices=voices,
+            current=companion_state.get_voice(),
+        )
 
     @app.post("/api/prefs")
     def api_prefs_set():
         if not _authorized():
             return jsonify(error="unauthorized"), 401
         data = request.get_json(silent=True) or {}
+        voice = data.get("voice")
+        if isinstance(voice, str):
+            companion_state.set_voice(voice)
         code = companion_state.set_language(str(data.get("language", "")))
-        if code is None:
+        if code is None and "language" in data:
             return jsonify(error="unsupported language", options=companion_state.language_options()), 400
-        return jsonify(language=code)
+        return jsonify(language=companion_state.get_language(), voice=companion_state.get_voice())
 
     @app.post("/analyse")
     def analyse():
@@ -567,15 +671,13 @@ def create_app(settings: Settings | None = None) -> Flask:
             (settings.data_dir / "latest.jpg").write_bytes(payload)
 
         # Check TTS readiness before running vision inference
-        if not service.check_tts_ready():
+        if not service.any_tts():
             image_path.unlink(missing_ok=True)
             return jsonify(error="text-to-speech unavailable"), 503
 
         text = service.analyse(image_path)
-        try:
-            service.speak(text, audio_path)
-        except (OSError, subprocess.SubprocessError) as error:
-            print(f"text-to-speech error: {error}", flush=True)
+        audio = service.synthesize_reply(text, companion_state.get_voice(), audio_path.with_suffix(""))
+        if audio is None:
             image_path.unlink(missing_ok=True)
             return jsonify(error="text-to-speech unavailable"), 503
 
@@ -586,10 +688,11 @@ def create_app(settings: Settings | None = None) -> Flask:
     def audio(request_id: str):
         if not request_id.isalnum() or len(request_id) != 16:
             return jsonify(error="invalid audio identifier"), 404
-        audio_path = settings.data_dir / f"{request_id}.wav"
-        if not audio_path.is_file():
-            return jsonify(error="audio not ready"), 404
-        return send_file(audio_path, mimetype="audio/wav", download_name="response.wav", conditional=True)
+        for ext, mime in ((".mp3", "audio/mpeg"), (".wav", "audio/wav")):
+            audio_path = settings.data_dir / f"{request_id}{ext}"
+            if audio_path.is_file():
+                return send_file(audio_path.resolve(), mimetype=mime, download_name=f"response{ext}", conditional=True)
+        return jsonify(error="audio not ready"), 404
 
     @app.post("/api/chat")
     def api_chat():
@@ -609,6 +712,12 @@ def create_app(settings: Settings | None = None) -> Flask:
         local = _local_command(prompt)
         if local is not None:
             reply, note = local
+            audio_url = None
+            rid = hashlib.sha256(f"{time.time_ns()}{reply}".encode()).hexdigest()[:16]
+            voice = companion_state.get_voice() or NEURAL_VOICES.get(companion_state.get_language(), NEURAL_VOICES["en"])
+            audio = service.synthesize_reply(reply, voice, settings.data_dir / rid)
+            if audio is not None:
+                audio_url = f"/audio/{rid}"
             return jsonify(
                 reply=reply,
                 degraded=False,
@@ -618,6 +727,7 @@ def create_app(settings: Settings | None = None) -> Flask:
                 image_attached=False,
                 frame_stale=False,
                 language=companion_state.get_language(),
+                audio_url=audio_url,
             )
 
         image_path = None
@@ -632,17 +742,31 @@ def create_app(settings: Settings | None = None) -> Flask:
         # Real conversation: earlier turns plus the user's language and taught
         # facts travel with every request, so follow-up questions ("and on the
         # left?", "what colour was it?") have context.
+        # The reply language follows what you type: Devanagari script answers in
+        # Hindi even when the saved preference is another language, so a user
+        # who tested "language hindi" once is never stuck in Hindi again.
+        turn_language = companion_state.get_language()
+        if any("\u0900" <= ch <= "\u097f" for ch in prompt):
+            turn_language = "hi"
         history = companion_state.recent_history()
         system_prompt = build_system_prompt(
-            companion_state.LANGUAGES[companion_state.get_language()][1],
+            companion_state.LANGUAGES[turn_language][1],
             companion_state.list_facts(),
         )
         result = ask_companion_detailed(
             prompt, image_path=image_path, history=history, system_prompt=system_prompt
         )
+        audio_url = None
         if result.ok:
             companion_state.append_turn("user", prompt)
             companion_state.append_turn("assistant", result.reply)
+            # Human-sounding answer audio: neural TTS on the gateway, so every
+            # browser and phone gets the same expressive voice.
+            rid = hashlib.sha256(f"{time.time_ns()}{result.reply}".encode()).hexdigest()[:16]
+            voice = companion_state.get_voice() or NEURAL_VOICES.get(turn_language, NEURAL_VOICES["en"])
+            audio = service.synthesize_reply(result.reply, voice, settings.data_dir / rid)
+            if audio is not None:
+                audio_url = f"/audio/{rid}"
 
         # `degraded` lets the UI tell "the assistant answered" apart from "the
         # assistant is down". Previously the failure string came back as a plain
@@ -654,7 +778,8 @@ def create_app(settings: Settings | None = None) -> Flask:
             "image_attached": image_path is not None,
             "frame_stale": frame_stale,
             "local_command": False,
-            "language": companion_state.get_language(),
+            "language": turn_language,
+            "audio_url": audio_url,
         }
         if not result.ok:
             # Non-2xx so a client that ignores `degraded` still cannot mistake
@@ -682,4 +807,15 @@ app = create_app()
 if __name__ == "__main__":
     # Development server only. For deployment use the gunicorn command in
     # edge_server/blindsight.service.
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), threaded=True)
+    tls = os.getenv("BLINDSIGHT_TLS", "")  # "cert.pem,key.pem" for HTTPS on the LAN
+    ssl_ctx = None
+    if tls and "," in tls:
+        cert, key = (part.strip() for part in tls.split(",", 1))
+        if Path(cert).is_file() and Path(key).is_file():
+            ssl_ctx = (cert, key)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        threaded=True,
+        ssl_context=ssl_ctx,
+    )

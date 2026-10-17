@@ -23,6 +23,9 @@ echo Installing or updating the requirements...
 
 echo.
 echo   BlindSight is starting on  http://localhost:5000
+echo   Voice input works on localhost. For PHONE voice use, run the gateway on
+echo   the Pi (its starter enables HTTPS) or search Chrome flags for
+echo   "insecure origins" and allow this computer's address.
 echo   Your phone, on the same Wi-Fi, can use the same address with
 echo   this computer's IP instead of localhost.
 echo   Keep this window open while using the app. Close it to stop.

@@ -22,6 +22,7 @@
       <img src="/static/icon.svg" alt="">
       <h1>BlindSight</h1>
     </div>
+    <span class="badge" id="lang-badge" aria-label="Current reply language">English</span>
     <span class="badge" id="conn-status">Voice companion</span>
   </header>
 
@@ -53,6 +54,13 @@
           <option value="handsfree">Hands-free</option>
           <option value="button">Button only</option>
         </select>
+      </div>
+      <div class="control">
+        <label for="noise-gate-toggle">Noise gate<br><small>filters room noise</small></label>
+        <span class="switch">
+          <input type="checkbox" id="noise-gate-toggle">
+          <span class="track" aria-hidden="true"></span>
+        </span>
       </div>
       <div class="control">
         <label for="voice-select">Voice</label>

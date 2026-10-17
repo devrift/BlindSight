@@ -54,6 +54,7 @@ let cmdRec = null;
 let restartDelay = 300;
 let lastRecEnd = 0;
 let audioCtx = null;
+let noiseGate = localStorage.getItem('blindsight_noisegate') === 'on';
 
 /* ---------------------------------------------------- mic energy / noise gate */
 let analyser = null;
@@ -207,43 +208,74 @@ function pickVoice() {
   return natural || mine[0] || voices.find((v) => /natural|neural/i.test(v.name)) || null;
 }
 
-function fillVoiceSelect() {
+async function fillVoiceSelect() {
   const select = $('voice-select');
-  if (!select || !synth) return;
-  const langPrefix = (SPEECH_LANG[language] || 'en').slice(0, 2).toLowerCase();
-  const voices = synth.getVoices().filter((v) => (v.lang || '').toLowerCase().startsWith(langPrefix));
+  if (!select) return;
   select.innerHTML = '';
-  if (!voices.length) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'Default voice';
-    select.appendChild(opt);
-    return;
+  let serverVoices = [];
+  try {
+    const res = await fetch('/api/tts/voices');
+    if (res.ok) serverVoices = (await res.json()).voices || [];
+  } catch (err) { /* gateway offline: browser voices only */ }
+  if (serverVoices.length) {
+    const group = document.createElement('optgroup');
+    group.label = 'Gateway neural voices (human-sounding)';
+    serverVoices.slice(0, 12).forEach((v) => {
+      const opt = document.createElement('option');
+      opt.value = v.voice;
+      opt.textContent = v.label || v.voice;
+      group.appendChild(opt);
+    });
+    select.appendChild(group);
   }
-  voices.sort((a, b) => (b.name.includes('Natural') ? 1 : 0) - (a.name.includes('Natural') ? 1 : 0));
-  const current = pickVoice();
-  voices.forEach((v) => {
-    const opt = document.createElement('option');
-    opt.value = v.voiceURI;
-    opt.textContent = v.name + (v.voiceURI === (current && current.voiceURI) ? ' (current)' : '');
-    select.appendChild(opt);
-  });
-  if (current) select.value = current.voiceURI;
+  if (synth) {
+    const langPrefix = (SPEECH_LANG[language] || 'en').slice(0, 2).toLowerCase();
+    const browserVoices = synth.getVoices().filter((v) => (v.lang || '').toLowerCase().startsWith(langPrefix));
+    if (browserVoices.length) {
+      const group = document.createElement('optgroup');
+      group.label = 'Browser voices (offline fallback)';
+      browserVoices.forEach((v) => {
+        const opt = document.createElement('option');
+        opt.value = 'browser|' + v.voiceURI;
+        opt.textContent = v.name;
+        group.appendChild(opt);
+      });
+      select.appendChild(group);
+    }
+  }
+  const current = $('voice-select') ? serverCurrentVoice : '';
+  if (current) select.value = current;
 }
 
-function speak(text) {
+let serverCurrentVoice = '';
+
+function speak(text, audioUrl) {
   stopListeningAll();
-  if (!synth) { announce(text); resumeListening(); return; }
-  synth.cancel();
   appState = 'speak';
   setStatus(text, 'speak');
+  const done = () => { earcon('ok'); resumeListening(); };
+  if (audioUrl) {
+    // Gateway-rendered neural voice: the same human-sounding audio on every
+    // browser and phone, independent of each OS's built-in robot voices.
+    const player = new Audio(audioUrl);
+    player.onended = done;
+    player.onerror = () => browserSpeak(text, done);
+    player.play().catch(() => browserSpeak(text, done));
+    return;
+  }
+  browserSpeak(text, done);
+}
+
+function browserSpeak(text, done) {
+  if (!synth) { announce(text); done(); return; }
+  synth.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = SPEECH_LANG[language] || 'en-US';
   const voice = pickVoice();
   if (voice) utter.voice = voice;
   utter.rate = 1.0;
-  utter.onend = () => { earcon('ok'); resumeListening(); };
-  utter.onerror = () => resumeListening();
+  utter.onend = done;
+  utter.onerror = done;
   synth.speak(utter);
 }
 
@@ -312,21 +344,20 @@ function startWakeSession() {
   wakeRec = new SR();
   wakeRec.lang = SPEECH_LANG[language] || 'en-US';
   wakeRec.continuous = true;
-  wakeRec.interimResults = true;
+  wakeRec.interimResults = false;   // finals only: room noise rarely survives finalisation
   wakeRec.onresult = (event) => {
     restartDelay = 300;
-    let finalConfidence = 0;
+    let confidence = 0;
     for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (!event.results[i].isFinal) continue;
       wakeBuffer += ' ' + event.results[i][0].transcript;
-      if (event.results[i].isFinal) finalConfidence = event.results[i][0].confidence || 0;
+      confidence = Math.max(confidence, event.results[i][0].confidence || 0);
     }
     const words = normalize(wakeBuffer).split(' ').filter(Boolean).slice(-8);
     wakeBuffer = words.join(' ');
     const said = wakeBuffer;
-    if (!said || !WAKE_PHRASES.some((p) => said.includes(p))) return;
-    // Noise gate: ignore matches whispered by room noise unless the result is
-    // final and confident, or real speech energy was present just now.
-    if (!speechRecently() && finalConfidence < 0.6) return;
+    if (!said || !WAKE_PHRASES.some((ph) => said.includes(ph))) return;
+    if (noiseGate && !speechRecently() && confidence < 0.6) return;
     wakeBuffer = '';
     earcon('wake');
     startCommandSession(false);
@@ -334,8 +365,8 @@ function startWakeSession() {
   wakeRec.onerror = (event) => handleRecError(event, 'wake');
   wakeRec.onend = () => {
     wakeRec = null;
-    // THE v1 bug lived here: restart no matter which listening state we were
-    // in, otherwise Chrome's silence-timeout kills the wake listener forever.
+    // Restart no matter which listening state we were in: Chrome's silence
+    // timeout must never be able to kill the wake listener again.
     if (listenMode === 'wake' && appState !== 'speak' && appState !== 'think' && appState !== 'listen') {
       window.setTimeout(() => { if (listenMode === 'wake' && appState === 'idle') startWakeSession(); }, backoffDelay());
     }
@@ -376,7 +407,12 @@ function startCommandSession(continuousMode) {
     restartDelay = 300;
     let fresh = '';
     for (let i = 0; i < event.results.length; i++) {
-      if (event.results[i].isFinal) fresh += event.results[i][0].transcript + ' ';
+      if (!event.results[i].isFinal) continue;
+      const conf = event.results[i][0].confidence || 0;
+      const words = normalize(event.results[i][0].transcript).split(' ').filter(Boolean).length;
+      if (conf > 0 && conf < 0.4) continue;                    // low-confidence noise
+      if (conf === 0 && words < 3 && !speechRecently()) continue;  // stray short noise
+      fresh += event.results[i][0].transcript + ' ';
     }
     if (!fresh) return;
     // Noise gate for hands-free mode: drop sentences that arrived while the
@@ -410,6 +446,16 @@ function startCommandSession(continuousMode) {
 }
 
 /* ------------------------------------------------------------- command router */
+async function savePrefs(patch) {
+  try {
+    await fetch('/api/prefs', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify(patch)
+    });
+  } catch (err) { /* gateway offline */ }
+}
+
 function authHeaders() {
   return authToken ? { 'Authorization': 'Bearer ' + authToken } : {};
 }
@@ -451,7 +497,7 @@ async function sendChat(prompt, useCamera) {
     if (res.status === 429) { speak('Please wait a moment and ask again.'); return; }
     const data = await res.json();
     addBubble('bot', data.reply, data.degraded);
-    speak(data.reply);
+    speak(data.reply, data.audio_url || null);
   } catch (err) {
     earcon('error');
     addBubble('bot', 'The gateway cannot be reached.', true);
@@ -480,9 +526,20 @@ function wireEvents() {
   $('mic-btn').addEventListener('click', async () => {
     if (appState === 'speak') { stopSpeaking(); resumeListening(); return; }
     if (appState === 'listen') { stopListeningAll(); announce('Listening stopped.'); resumeListening(); return; }
-    await openMicAnalytics();
+    if (noiseGate) await openMicAnalytics();
     stopSpeaking();
     startCommandSession(false);
+  });
+
+  $('noise-gate-toggle').addEventListener('change', async (event) => {
+    noiseGate = event.target.checked;
+    localStorage.setItem('blindsight_noisegate', noiseGate ? 'on' : 'off');
+    if (noiseGate) {
+      await openMicAnalytics();
+      announce('Noise gate on. The level bar shows what I hear.');
+    } else {
+      announce('Noise gate off.');
+    }
   });
 
   $('mode-select').addEventListener('change', async (event) => {
@@ -491,7 +548,7 @@ function wireEvents() {
     stopListeningAll();
     appState = 'idle';
     if (listenMode === 'button') { setStatus('Button mode: tap to talk.', 'idle'); announce('Button mode.'); return; }
-    await openMicAnalytics();
+    if (noiseGate) await openMicAnalytics();
     announce(listenMode === 'handsfree' ? 'Hands-free mode on. Just speak.' : 'Wake word mode on. Say hey BlindSight.');
     startListening();
   });
@@ -512,11 +569,19 @@ function wireEvents() {
     } catch (err) { announce('Could not reach the gateway to change language.'); }
   });
 
-  $('voice-select').addEventListener('change', (event) => {
-    chosenVoiceURI = event.target.value;
-    localStorage.setItem('blindsight_voice', chosenVoiceURI);
+  $('voice-select').addEventListener('change', async (event) => {
+    const value = event.target.value;
     earcon('tick');
-    speak('This is the voice I will use.');
+    if (value.startsWith('browser|')) {
+      chosenVoiceURI = value.slice(8);
+      localStorage.setItem('blindsight_voice', chosenVoiceURI);
+      await savePrefs({ voice: '' });
+      browserSpeak('This is the voice I will use when the gateway voice is unavailable.', () => {});
+    } else {
+      serverCurrentVoice = value;
+      await savePrefs({ voice: value });
+      speak('This is the voice I will use.', null);
+    }
   });
 
   $('chat-form').addEventListener('submit', (event) => {
@@ -570,6 +635,12 @@ async function loadPrefs() {
     });
     select.value = prefs.language || 'en';
     language = prefs.language || 'en';
+    serverCurrentVoice = prefs.voice || '';
+    const chip = $('lang-badge');
+    if (chip) {
+      const opt = (prefs.options || []).find((o) => o.code === language);
+      chip.textContent = opt ? opt.label : language;
+    }
   } catch (err) { /* gateway unreachable at boot */ }
 }
 
@@ -586,6 +657,16 @@ async function bootstrapConfig() {
 }
 
 window.addEventListener('load', async () => {
+  if (!window.isSecureContext) {
+    // Browsers only expose the microphone on localhost or HTTPS. Opening the
+    // app as http://192.168.x.x:5000 silently kills every voice feature, which
+    // is the most common cause of "the button does nothing".
+    const msg = 'Voice input needs localhost or HTTPS. Open http://localhost:5000 on this device, or restart the gateway with BLINDSIGHT_TLS set and accept the certificate once.';
+    window.setTimeout(() => {
+      setStatus(msg, 'idle');
+      announce(msg);
+    }, 500);
+  }
   const savedSize = localStorage.getItem('blindsight_text_size');
   if (savedSize && savedSize !== 'md') document.documentElement.setAttribute('data-text-size', savedSize);
   if (synth) {
@@ -596,6 +677,8 @@ window.addEventListener('load', async () => {
   await loadPrefs();
   fillVoiceSelect();
   $('mode-select').value = listenMode;
+  const gate = $('noise-gate-toggle');
+  if (gate) gate.checked = noiseGate;
   wireEvents();
   setStatus('Ready', 'idle');
   announce('BlindSight ready. ' + (listenMode === 'handsfree' ? 'Hands-free mode: just speak.' : 'Say hey BlindSight, or tap the big button.') + ' Say help for the command list.');
@@ -611,9 +694,9 @@ window.addEventListener('load', async () => {
   // Open the mic analytics eagerly so the noise floor calibrates before the
   // first wake word; recognition itself starts only after a gesture if the
   // browser refuses pre-gesture capture.
-  const micOk = await openMicAnalytics();
-  if (micOk && listenMode !== 'button') startListening();
-  else if (!micOk && listenMode !== 'button') {
-    setStatus('Tap the big button once to allow the microphone, then I listen hands-free.', 'idle');
+  if (noiseGate) {
+    const micOk = await openMicAnalytics();
+    if (!micOk) announce('Noise gate needs microphone permission; it stays off.');
   }
+  if (listenMode !== 'button') startListening();
 });
