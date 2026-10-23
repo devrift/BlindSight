@@ -81,6 +81,9 @@ except ImportError:  # pragma: no cover - defensive import fallback
         list_facts=lambda: [],
     )
 
+# App version surfaced in /health so deployments can be verified at a glance.
+BLINDSIGHT_VERSION = "1.0.0"
+
 MAX_UPLOAD_BYTES = 1_500_000
 # Multipart framing adds a few hundred bytes around the image bytes, so the
 # whole-request cap has to sit above the image cap or Flask rejects the body
@@ -595,6 +598,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     @app.get("/health")
     def health():
         report = service.diagnostics()
+        report["version"] = BLINDSIGHT_VERSION
         code = 200 if report["status"] == "ok" else 503
         return jsonify(report), code
 

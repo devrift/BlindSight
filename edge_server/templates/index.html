@@ -9,6 +9,10 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BlindSight">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -76,6 +80,11 @@
       <div class="control">
         <label for="language-select">Reply language</label>
         <select id="language-select" aria-label="Reply language"></select>
+      </div>
+      <div class="control" id="token-control" hidden>
+        <label for="token-input">Gateway token<br><small>password protection</small></label>
+        <input type="password" id="token-input" placeholder="Access token" autocomplete="off">
+        <button type="button" id="token-save">Save</button>
       </div>
       <div class="control">
         <span class="group-label" id="text-size-label">Text size</span>

@@ -34,8 +34,15 @@ Keep the window/terminal open while using the app.
 * On the computer: <http://localhost:5000>
 * On your phone (same Wi-Fi): `http://<the computer's IP>:5000`
   (the starter script prints that address on the Pi)
-* In **Chrome or Edge**, allow the microphone, then say **“hey BlindSight”**
-  and ask your question — or tap the big button, or type.
+* **Android phone (Chrome or Edge):** use the `https://` address the Pi
+  prints, accept the certificate once, allow the microphone, then say
+  **“hey BlindSight”** and ask your question — or tap the big button, or type.
+* **iPhone / iPad (Safari):** Apple does not let any web app listen for a wake
+  word, so BlindSight tells you what to do instead: tap the big button, then
+  tap the **microphone on the iPhone keyboard** to dictate, then tap Ask.
+  Answers are still spoken back in the same human-sounding voice.
+* **Windows computer (Chrome or Edge):** everything works on
+  <http://localhost:5000> — the easiest way to test before deploying to a Pi.
 * Say `help` and it reads every command aloud. `remember …`, `what do you
   remember?`, `language hindi`, `stop` all work with no internet.
 
