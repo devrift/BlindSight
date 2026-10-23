@@ -51,6 +51,8 @@ let language = 'en';
 let chosenVoiceURI = localStorage.getItem('blindsight_voice') || '';
 let authToken = localStorage.getItem('blindsight_token') || '';
 let wakeRec = null;
+let lastNetworkRetry = 0;
+let lastMicTap = 0;
 let cmdRec = null;
 let restartDelay = 300;
 let lastRecEnd = 0;
@@ -61,6 +63,8 @@ let noiseGate = localStorage.getItem('blindsight_noisegate') === 'on';
 /* ---------------------------------------------------- mic energy / noise gate */
 let analyser = null;
 let levelBuf = null;
+let micStream = null;
+let micInterval = null;
 let noiseFloor = 0.02;
 let micLevel = 0;
 let speechWindow = [];         // timestamps of frames whose energy beat the floor
@@ -80,13 +84,25 @@ async function openMicAnalytics() {
     source.connect(analyser);
     levelBuf = new Uint8Array(analyser.fftSize);
     calibrating = true;
-    window.setInterval(sampleMicLevel, 100);
+    micStream = stream;
+    micInterval = window.setInterval(sampleMicLevel, 100);
     window.setTimeout(() => { calibrating = false; }, 1500);
     return true;
   } catch (err) {
     analyser = null;
     return false;
   }
+}
+
+function stopMicAnalytics() {
+  // A second live mic stream (this analytics tap) can starve Chrome's
+  // SpeechRecognition on Android, so it is paused for the whole duration of
+  // every recognition session and recalibrated afterwards.
+  if (micInterval) { window.clearInterval(micInterval); micInterval = null; }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+  analyser = null;
+  speechWindow = [];
+  paintMeter();
 }
 
 function sampleMicLevel() {
@@ -179,6 +195,15 @@ function unlockAudio() {
 document.addEventListener('touchend', unlockAudio);
 document.addEventListener('click', unlockAudio);
 document.addEventListener('keydown', unlockAudio);
+
+function flashCue() {
+  // Visual-only attention cue. Any sound within ~250 ms of rec.start() steals
+  // the microphone from SpeechRecognition on Android (confirmed field bug).
+  const btn = $('mic-btn');
+  if (!btn) return;
+  btn.classList.add('cue');
+  window.setTimeout(() => btn.classList.remove('cue'), 400);
+}
 
 /* ------------------------------------------------------- status + announcing */
 const MODE_LABEL = { idle: 'Ready', wake: 'Listening for wake word', listen: 'Listening', think: 'Thinking', speak: 'Speaking' };
@@ -347,6 +372,7 @@ function stopListeningAll() {
 
 function resumeListening() {
   appState = 'idle';
+  if (noiseGate) openMicAnalytics();
   if (listenMode === 'button') { setStatus('Ready', 'idle'); return; }
   window.setTimeout(() => {
     if (appState === 'idle') startListening();
@@ -361,17 +387,31 @@ function startListening() {
 }
 
 function handleRecError(event, label) {
+  // A voice-first app must never die silently: every fatal recognition error
+  // is announced AND spoken, and network drops retry once on their own.
   if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
     listenMode = 'button';
     $('mode-select').value = 'button';
     localStorage.setItem('blindsight_mode', 'button');
-    setStatus('Microphone permission denied. Tap the big button, then allow the mic.', 'idle');
-    announce('Microphone permission denied. Tap the big button, then allow the microphone.');
+    const msg = 'Microphone permission denied. Tap the big button, then allow the microphone.';
+    setStatus(msg, 'idle');
+    announce(msg);
+    speak(msg);
   } else if (event.error === 'audio-capture') {
-    setStatus('No microphone found. Plug one in or pick another input.', 'idle');
-    announce('No microphone found.');
+    const msg = 'No microphone found. Plug one in or pick another input.';
+    setStatus(msg, 'idle');
+    announce(msg);
+    speak(msg);
   } else if (event.error === 'network') {
-    setStatus('Browser speech needs internet once; retrying…', 'idle');
+    const msg = 'Browser speech cannot reach its internet service. Check the connection; trying again.';
+    setStatus(msg, 'idle');
+    announce(msg);
+    speak(msg);
+    const now = Date.now();
+    if (now - lastNetworkRetry > 5000) {
+      lastNetworkRetry = now;
+      window.setTimeout(() => { if (appState === 'idle') startListening(); }, 2000);
+    }
   }
   // 'no-speech' and 'aborted' are ordinary endings; the restart below handles them.
   void label;
@@ -381,6 +421,7 @@ let wakeBuffer = '';
 
 function startWakeSession() {
   if (!hasSR) return;
+  stopMicAnalytics();
   wakeBuffer = '';
   wakeRec = new SR();
   wakeRec.lang = SPEECH_LANG[language] || 'en-US';
@@ -400,7 +441,7 @@ function startWakeSession() {
     if (!said || !WAKE_PHRASES.some((ph) => said.includes(ph))) return;
     if (noiseGate && !speechRecently() && confidence < 0.6) return;
     wakeBuffer = '';
-    earcon('wake');
+    flashCue();
     startCommandSession(false);
   };
   wakeRec.onerror = (event) => handleRecError(event, 'wake');
@@ -436,6 +477,7 @@ function focusDictation() {
 
 function startCommandSession(continuousMode) {
   if (!hasSR) { focusDictation(); return; }
+  stopMicAnalytics();
   stopListeningAll();
   commandBuffer = '';
   cmdRec = new SR();
@@ -471,7 +513,7 @@ function startCommandSession(continuousMode) {
     if (!fresh) return;
     // Noise gate for hands-free mode: drop sentences that arrived while the
     // room was quiet-ish (fans, TV) rather than during real speech energy.
-    if (continuousMode && !speechRecently()) return;
+    if (continuousMode && analyser && !speechRecently()) return;
     commandBuffer += ' ' + fresh;
     showHeard(normalize(commandBuffer));
     if (continuousMode) {
@@ -495,7 +537,8 @@ function startCommandSession(continuousMode) {
   };
   appState = 'listen';
   setStatus('Listening', 'listen');
-  earcon('listen');
+  // No earcon here on purpose: on Android a beep played at the instant the
+  // recognizer opens grabs audio focus and kills the session ~1s later.
   try { cmdRec.start(); } catch (err) { /* already started */ }
 }
 
@@ -550,7 +593,7 @@ async function sendChat(prompt, useCamera) {
       showTokenControl('This gateway is password protected. Enter the access token in settings, tap Save, then ask again.');
       return;
     }
-    if (res.status === 429) { speak('Please wait a moment and ask again.'); return; }
+    if (res.status === 429) { speak('Slow down a little - I heard you, try again in a few seconds.'); return; }
     const data = await res.json();
     addBubble('bot', data.reply, data.degraded);
     speak(data.reply, data.audio_url || null);
@@ -580,6 +623,10 @@ async function statusSummary() {
 /* ------------------------------------------------------------------- wiring */
 function wireEvents() {
   $('mic-btn').addEventListener('click', async () => {
+    if (appState === 'think') { announce('One moment, still thinking.'); return; }
+    const tap = Date.now();
+    if (tap - lastMicTap < 300) return;  // a tap must never stop what it just started
+    lastMicTap = tap;
     unlockAudio();
     if (appState === 'speak') { stopSpeaking(); resumeListening(); return; }
     if (appState === 'listen') { stopListeningAll(); announce('Listening stopped.'); resumeListening(); return; }
@@ -677,11 +724,31 @@ function wireEvents() {
     });
   });
 
+  // Keep the mic button and text box reachable while Android's soft keyboard
+  // covers the lower half of the screen.
+  if (window.visualViewport) {
+    const keepVisible = () => {
+      const el = document.activeElement;
+      if (el && (el.id === 'prompt-input' || el.id === 'token-input')) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    window.visualViewport.addEventListener('resize', keepVisible);
+    window.visualViewport.addEventListener('scroll', keepVisible);
+  }
+  $('prompt-input').addEventListener('focus', () => {
+    window.setTimeout(() => $('prompt-input').scrollIntoView({ block: 'nearest' }), 200);
+  });
+
   $('help-btn').addEventListener('click', () => speak(HELP_TEXT));
   $('stop-btn').addEventListener('click', () => { stopSpeaking(); resumeListening(); announce('Stopped.'); });
   $('frame-btn').addEventListener('click', async () => {
     try {
       const res = await fetch('/api/latest-frame', { headers: authHeaders() });
+      if (res.status === 401) {
+        showTokenControl('The gateway needs its access token before showing camera frames. Enter it in settings and tap Save.');
+        return;
+      }
       if (!res.ok) { announce('No camera frame available yet.'); return; }
       const blob = await res.blob();
       const img = $('frame-img');

@@ -4,7 +4,7 @@
 // `Service-Worker-Allowed: /` header. Without that, a worker living at
 // /static/sw.js is scoped to /static/ only and never controls the page at /,
 // which made the precache list and the offline navigation fallback inert.
-const CACHE_NAME = 'blindsight-v4';
+const CACHE_NAME = 'blindsight-v5';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/manifest.json',
@@ -42,6 +42,26 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/') ||
       url.pathname.startsWith('/analyse') ||
       url.pathname.startsWith('/audio/')) {
+    return;
+  }
+
+  // Shell files revalidate in the background so field fixes reach phones
+  // without waiting for a cache-name bump; everything else stays cache-first.
+  const REVALIDATE = ['/', '/static/app.js'];
+  if (REVALIDATE.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const network = fetch(request).then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        }).catch(() => null);
+        if (cached) return cached;
+        return network.then((fresh) => fresh || new Response('', { status: 504, statusText: 'Offline' }));
+      })
+    );
     return;
   }
 
