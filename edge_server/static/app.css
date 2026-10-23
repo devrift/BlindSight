@@ -217,6 +217,16 @@ header {
   padding: 8px 12px;
 }
 .control select { max-width: 46%; }
+.control input[type="password"] {
+  flex: 1;
+  min-width: 0;
+  background: #05070c;
+  color: var(--text);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: calc(1rem * var(--font-scale));
+}
 .control button { cursor: pointer; font-weight: 600; }
 .control button[aria-pressed="true"] {
   border-color: var(--accent);

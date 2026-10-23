@@ -1,213 +1,257 @@
-# BlindSight 👁️🔊
+# BlindSight
 
-> **A Dual-Tier Embedded Edge & Cloud Multimodal Mobility Assistant for the Visually Impaired.**
+**A voice-first navigation companion for blind and low-vision users.**
+A Raspberry Pi runs local object detection and speaks what it sees; an ESP32
+pair keeps a network-independent ultrasonic reflex; a phone PWA adds a
+conversational cloud vision companion with a wake word, human-sounding neural
+voices, a small persistent memory and seven reply languages.
 
-BlindSight is an open-source assistive mobility wearable designed to provide real-time spatial navigation awareness and conversational scene understanding. It pairs local edge reflex detection on a Raspberry Pi 3B+ (about 1.5 s per frame end-to-end today; see [Known limitations](#-known-limitations--roadmap)) with a high-level cloud visual companion accessible directly via phone or earphone.
+Licensed MIT — see [LICENSE](LICENSE).
 
 ---
 
-## 🏛️ System Architecture
+## Works on
+
+| Device | Talking **to** it | Talking **back** | Wake word | Install |
+|---|---|---|---|---|
+| **Android** (Chrome/Edge) | wake word, hands-free, or big button | neural human voices | ✅ | install prompt / “Add to Home screen” |
+| **iPhone / iPad** (Safari) | big button → keyboard’s dictation mic | neural human voices | ❌ Apple allows no web app to listen continuously | Share → Add to Home Screen |
+| **Windows** (Chrome/Edge) | full voice on `http://localhost:5000` | neural human voices | ✅ | desktop shortcut — ideal for testing |
+
+Voice **output** is identical everywhere: replies are rendered once on the
+gateway with Microsoft’s free neural voices and streamed to every device as
+audio. Voice **input** differs by what each OS permits a web app to do — and
+BlindSight degrades honestly: on an iPhone it *says out loud* how to dictate
+instead of showing a dead microphone button, audio is unlocked on your first
+tap (iOS blocks sound before any touch), and the Stop button silences the
+neural audio too.
+
+---
+
+## How it works
 
 ```
-   ┌────────────────────┐
-   │  ESP32-CAM (Head)  │  QVGA JPEG (320x240)
-   │  220-byte Chunks   │  16-bit Checksum Verification
-   └─────────┬──────────┘
-             │ ESP-NOW (Zero-Latency Peer-to-Peer RF)
-             ▼
-   ┌────────────────────┐      HTTP Multipart POST      ┌─────────────────────────────────┐
-   │  Main ESP32 DevKit ├──────────────────────────────►│    Raspberry Pi 3B+ Gateway     │
-   │  • Packet Assembly │                               │  • Flask / Gunicorn Gateway     │
-   │  • 3x HC-SR04 Sens │◄────────── Audio Stream ──────┤  • 16-bit WAV Out (espeak-ng)   │
-   │  • I2S PCM5102 DAC │      GET /audio/<req_id>      └──────────────┬──────────────────┘
-   │  • LittleFS Audio  │                                              │
-   └────────────────────┘                                              │
-             ▲                                                         │
-             │                                                         │
-    3x Ultrasonic Range                                                │
-   (Hardware Low Fallback)                                             │
-                                                                       │
-             ┌─────────────────────────────────────────────────────────┴────────────────────────┐
-             │                                                                                  │
-             ▼                                                                                  ▼
-   ┌────────────────────────────────┐                                         ┌──────────────────────────────────┐
-   │  Tier 1: Offline Edge Reflex   │                                         │ Tier 2: Cloud Multimodal AI      │
-   │  • YOLOv8n ONNX (320x320)      │                                         │ • OpenRouter API Gateway         │
-   │  • onnxruntime (2-thread CPU)  │                                         │ • Gemini 2.5 Flash / GPT-4o-mini │
-   │  • ~1.5s Inference (<150MB RAM)│                                         │ • Visual Scene Q&A               │
-   │  • Spatial Sector Obstacle Nav │                                         │ • Natural Spoken Voice Output    │
-   └────────────────────────────────┘                                         └────────────────┬─────────────────┘
-                                                                                               │
-                                                                                               ▼
-                                                                              ┌──────────────────────────────────┐
-                                                                              │   Progressive Web App (PWA)      │
-                                                                              │   • Accessible Mobile UI (Phone) │
-                                                                              │   • Native Web Speech Recognition│
-                                                                              │   • Device Speech Synthesis      │
-                                                                              │   • Haptic Low-Vision Feedback   │
-                                                                              └──────────────────────────────────┘
+   HEAD UNIT (Main ESP32)          RASPBERRY PI 3B+               PHONE / EARPIECE
+ ┌───────────────────────────┐   ┌────────────────────────────┐   ┌──────────────────────────┐
+ │ Tier 0: ultrasonic reflex │   │ Tier 1: offline edge reflex│   │ Tier 2: cloud companion  │
+ │ 3× HC-SR04, no network:   │   │ YOLOv8n ONNX 320×320 in an │   │ PWA with wake word       │
+ │ <25 cm  -> "Stop"         │   │ isolated subprocess,       │   │ (Android/desktop),       │
+ │ <45 cm  -> steer left/    │   │ ~1.5 s/frame on a 3B+;     │   │ dictation on iPhone,     │
+ │           right clip      │   │ fails closed, never claims │   │ memory, 7 languages,     │
+ │ ESP-NOW JPEG uplink from  │   │ "clear" it did not see     │   │ neural TTS via           │
+ │ the ESP32-CAM head cam    │   │ espeak-ng / edge-tts voice │   │ OpenRouter               │
+ └───────────────────────────┘   └────────────────────────────┘   └──────────────────────────┘
 ```
 
----
-
-## ⚡ Core Features
-
-1. **Dual-Tier Intelligence**:
-   * **Tier 1 (Offline Edge Reflex)**: Operates without internet connectivity. Runs quantized YOLOv8n ONNX on the Raspberry Pi 3B+ CPU with a lean memory footprint (<150MB) and roughly 1.5 s inference latency per frame, providing direct spatial instructions (*"Warning: Chair close ahead. Path clear on your right."*). When vision cannot run at all, the gateway says so and falls back to a generic safety message — it never claims the path is clear when it could not see.
-   * **Tier 2 (Cloud Multimodal Companion)**: Accessible via phone PWA or API. Powered by OpenRouter (`google/gemini-2.5-flash` with `openai/gpt-4o-mini` fallback), giving users descriptive contextual answers to questions like *"What color is this shirt?"* or *"Read the sign in front of me"*.
-   * **Conversation, memory and language**: the companion keeps the recent turns of each conversation, so follow-up questions ("and on the left?") have context. It also keeps a small persistent memory and a reply-language preference in `state/companion.json` (git-ignored, capped at 20 facts / 24 turns, atomic writes, corrupt files quarantined). Voice or text commands, all working **without** any API key: `remember that my dog is Bruno`, `what do you remember?`, `forget bruno`, `forget everything`, `language hindi` (or `switch language to hindi`), `start over`. The language switch changes both the model's reply language and the espeak-ng voice; the PWA also offers a Reply-language selector. The ESP32 LittleFS offline clips remain English-only.
-2. **Deterministic Fallback Safety**:
-   * If Wi-Fi drops, 3× HC-SR04 ultrasonic rangefinders trigger instant local LittleFS WAV clips
-     (inside 25 cm the reflex says stop instead of steer: "Obstacle critical. Stop." plays `/stop.wav`) over the I2S PCM5102 DAC directly on the Main ESP32 without depending on the network.
-   * The clips are generated, not authored: run `tools/generate_clips.py` once (espeak-ng on Linux, built-in SAPI voice on Windows) and check the result with `tools/verify_wav.py` and upload the filesystem image. Without them this fallback is silent — the firmware reports that clearly on the serial monitor.
-3. **PWA Mobile Phone Companion**:
-   * Fully installable standalone web application with high-contrast UI, large tactile touch targets, Web Speech voice input, and native device speech synthesis (zero Pi CPU load).
-   * Tactile haptic vibration cues (`navigator.vibrate`) for low-vision users.
+Design rule of the whole project: **this is a mobility aid, so every component
+fails loudly, never optimistically.** `/health` reports the real state of each
+tier; no endpoint ever serves placeholder, stale or synthesised data as a live
+observation; a missing model, missing TTS or missing API key produces an honest
+error the user can hear and understand.
 
 ---
 
-## 🔌 Hardware Pinouts & Power Distribution
+## Quick start
 
-### Power Topology
+See [QUICKSTART.md](QUICKSTART.md) for the three-step version. In short:
 
-> Canonical wiring reference: [`docs/hardware/WIRING_V2_BUCK_AND_TTL.md`](docs/hardware/WIRING_V2_BUCK_AND_TTL.md).
-> `PIN_CONNECTION_CHART.md` and the click-by-click guide still carry the older
-> two-Arduino rail description for their signal tables; their power sections are
-> superseded by WIRING_V2.
-* **5V 3A Buck Rail**: Dedicated buck converter supplying 5.0–5.1V with a **shared common ground** for:
-  * Main ESP32 (`VIN`)
-  * ESP32-CAM (`5V` + 1000 µF low-ESR decoupling capacitor across 5V and GND)
-  * PCM5102 I2S DAC (`VCC`)
-  * 3× HC-SR04 Ultrasonic Sensors (`VCC`)
-* **Galvanic Pi Isolation**: Raspberry Pi 3B+ is powered exclusively from its own isolated power source / power bank. **No power or GND wire joins the Pi to the buck converter** (communication is 100% wireless over Wi-Fi).
+| Where | Command |
+|---|---|
+| Windows | double-click `start_blindsight.bat` (opens Chrome/Edge on localhost) |
+| Pi / Linux | `./start_blindsight.sh` (venv, deps, prints the phone URL, HTTPS when openssl exists) |
+| Anywhere | `python -m venv .venv` → install `edge_server/requirements.txt` → `python edge_server/server.py` |
 
-### Pin Wiring Matrix
+Then open `http://localhost:5000` in **Chrome or Edge** (microphone APIs need
+localhost or HTTPS), allow the mic, and say **“hey BlindSight”** — or switch to
+*Hands-free*, or tap the big button. On a phone, use the `https://` address the
+Pi prints and accept the self-signed certificate once.
 
-| Subsystem | Peripheral Pin | ESP32 GPIO | Logic Level / Divider |
+---
+
+## Using the companion
+
+Everything below works by voice on Android/desktop; the same phrases can be
+dictated or typed anywhere.
+
+| Say | Effect |
+|---|---|
+| `hey BlindSight, <question>` | wake word, then one spoken question (camera attached if the toggle is on) |
+| `describe` / `what is around me` | forces a camera-frame description |
+| `remember that …` | stores a fact (max 20, 200 chars each) in `state/companion.json` — **works offline** |
+| `what do you remember?` / `forget …` / `forget everything` | recall / remove facts — **offline** |
+| `language hindi` / `switch language to spanish` | changes reply language **and** the spoken voice — **offline** |
+| `read status` | speaks the live `/health` summary — **offline** |
+| `clear chat` / `start over` | resets conversation history (facts are kept) — **offline** |
+| `stop` / `help` | silence the assistant / hear the command list — **offline** |
+
+* **Language follows your script:** typing Devanagari answers in Hindi even if
+  the saved preference differs; the header badge always shows the live language.
+* **Voices:** replies are rendered on the gateway with neural voices
+  (`edge-tts`, e.g. `en-IN-NeerjaNeural`, `hi-IN-SwaraNeural`) and travel with
+  the response as audio, so every device hears the same human voice.
+  Fallbacks, in order: `espeak-ng` WAV, then the browser's own speech.
+  The Voice picker lists gateway neural voices first, browser voices second.
+* **iPhone flow:** tap the big button → the keyboard opens → tap its
+  microphone → dictate → Ask. The app speaks this guidance on first open and
+  disables the wake/hands-free options rather than pretending they work.
+* **Password-protected gateways:** an inline token field appears in settings
+  (no browser popups — they don’t exist in iOS home-screen mode).
+* **Noise gate (optional toggle):** calibrates your room's background level and
+  only reacts above it; the level bar shows what the mic hears. Off by default
+  so the speech recognizer always owns the microphone exclusively.
+* **Conversation memory:** the last 24 turns are stored (8 are sent per
+  request), so follow-ups like “and on the left?” have context. State writes are
+  atomic; a corrupt file is quarantined, never fatal.
+
+---
+
+## Production deployment (Raspberry Pi)
+
+1. **Code & service**
+   ```bash
+   git clone https://github.com/devrift/BlindSight.git && cd BlindSight
+   ./start_blindsight.sh          # venv + deps; or install the systemd unit:
+   sudo cp edge_server/blindsight.service /etc/systemd/system/
+   sudo systemctl daemon-reload && sudo systemctl enable --now blindsight
+   journalctl -u blindsight -f    # logs
+   ```
+   The unit runs gunicorn (1 worker, 4 threads) bound to `0.0.0.0:5000`.
+2. **Secrets & access control** — copy `edge_server/.env.example` to
+   `edge_server/.env` and set:
+   * `OPENROUTER_API_KEY` — enables Tier-2 cloud answers (spends real money).
+   * `BLINDSIGHT_API_TOKEN` — **strongly recommended**: the gateway serves your
+     LAN; with a token set, `/api/chat`, `/api/latest-frame` and `POST /api/prefs`
+     require `Authorization: Bearer <token>`, and the PWA asks for it in settings.
+3. **HTTPS for phones** — browsers expose the microphone only on localhost or
+   HTTPS. Either set `BLINDSIGHT_TLS=cert.pem,key.pem` (the Pi starter creates a
+   self-signed pair in `.tls/` automatically; phones accept it once), or put
+   nginx/Caddy in front. Without HTTPS, phone voice features stay blocked by
+   the browser and the app says so out loud.
+4. **Speech stack** — `sudo apt install espeak-ng` for offline speech; install
+   extra language voices with `espeak-ng-data`. `edge-tts` (in requirements)
+   provides the neural voices and needs outbound internet.
+5. **Vision model** — drop `yolov8n.onnx` into `edge_server/models/` (see
+   `edge_server/models/README.md`) or point `BLINDSIGHT_MODEL_PATH` at it.
+   Without it, Tier 1 reports itself not-ready and the reflex tiers carry on.
+6. **Housekeeping** — per-request frames/audio live in `runtime/`, swept hourly
+   and capped at 50 MB; conversation state lives in `state/`. Back up `state/`
+   and `edge_server/.env` to migrate a user's memory. Updates: `git pull` and
+   `sudo systemctl restart blindsight`.
+
+### Windows development
+
+`start_blindsight.bat` creates `.venv`, installs requirements and opens the
+app in your browser. Voice input works on `http://localhost:5000` in Chrome or
+Edge; for LAN phones run the gateway on the Pi (its starter enables HTTPS).
+
+---
+
+## HTTP API
+
+| Route | Method | Auth | Purpose |
 |---|---|---|---|
-| **PCM5102 DAC** | BCK / BCLK | GPIO 26 | Direct 3.3V I2S Clock |
-| | LRCK / WS | GPIO 25 | Direct 3.3V Word Select |
-| | DIN | GPIO 22 | Direct 3.3V Serial Audio |
-| **HC-SR04 Left** | TRIG | GPIO 13 | Direct 3.3V Output |
-| | ECHO | GPIO 34 | **1kΩ / 2kΩ Divider** (5V → 3.3V) |
-| **HC-SR04 Center**| TRIG | GPIO 14 | Direct 3.3V Output |
-| | ECHO | GPIO 35 | **1kΩ / 2kΩ Divider** (5V → 3.3V) |
-| **HC-SR04 Right** | TRIG | GPIO 27 | Direct 3.3V Output |
-| | ECHO | GPIO 39 | **1kΩ / 2kΩ Divider** (5V → 3.3V) |
-| **Tactile Button** | Pin 1 / Pin 2 | GPIO 32 ↔ GND | `INPUT_PULLUP` (Active LOW) |
-
-> ⚠️ **Warning**: Never feed 5V ECHO signals directly to ESP32 GPIOs 34, 35, or 39. Always use 1kΩ in series and 2kΩ to GND.
+| `/` | GET | – | PWA shell (voice-first, screen-reader first-class) |
+| `/health` | GET | – | honest tier status, `issues[]`, `version`; 503 when degraded |
+| `/api/config` | GET | – | `auth_required`, `frame_max_age_seconds` (never the token) |
+| `/api/prefs` | GET / POST | POST: token | reply language + voice preference, language options |
+| `/api/tts/voices` | GET | – | neural voice catalogue for the current language |
+| `/api/chat` | POST | token | `{prompt, use_camera}` → reply + `audio_url`; 502 + `degraded:true` when the provider is down; 429 rate limit (20/min default) |
+| `/api/latest-frame` | GET | token | freshest camera JPEG (≤30 s); **404 when none — never a placeholder** |
+| `/analyse` | POST | – | multipart `image`; runs Tier 1, returns summary + `audio_url`; 503 if no TTS |
+| `/audio/<id>` | GET | – | rendered reply audio (neural mp3 preferred, espeak wav fallback) |
+| `/sw.js`, `/static/sw.js` | GET | – | service worker with `Service-Worker-Allowed: /` |
 
 ---
 
-## 🚀 Quickstart & Setup Guide
+## Firmware
 
-### 1. Raspberry Pi Gateway Setup
+* `firmware/esp32_main/` ships **three synchronised copies** of the main
+  firmware (`src/main.cpp` for PlatformIO, the `.ino` for the Arduino IDE, and
+  the copy embedded in `docs/hardware/Install_BlindSight_Main_ESP32.ps1`).
+  `firmware/FIRMWARE_VARIANTS.md` is the contract: every behaviour change must
+  land in all three. Both `platformio.ini` pin `espressif32@6.13.0`, and the
+  ESP-NOW receive callback is dual-supported via
+  `#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3`.
+* Reflex bands: `<25 cm` → “Obstacle critical. Stop.” (`/stop.wav`),
+  `25–45 cm` → steer to the clearer side, `<100 cm` → proceed carefully,
+  else path clear. Thresholds are bench-pending; see Known limitations.
+* Voice clips are **generated, not authored**: `tools/generate_clips.py`
+  (espeak-ng on Linux, SAPI on Windows) writes 16-bit mono 22050 Hz WAVs into
+  `firmware/esp32_main/data/`; `tools/verify_wav.py` rejects wrong formats,
+  implausible durations *and* harmonic-tone fakes (spectral gate). CI runs it.
+* `firmware/esp32_cam/` captures JPEGs and streams them over ESP-NOW in
+  checksummed, de-duplicated 220-byte chunks with bounded Wi-Fi wait and
+  send-failure logging.
+
+---
+
+## Project layout
+
+```
+edge_server/          gateway: server.py, vision_ai.py, companion_ai.py,
+                      companion_state.py, PWA (templates/ + static/),
+                      blindsight.service, .env.example, models/README.md
+firmware/             esp32_main (3 copies + data clips), esp32_cam,
+                      FIRMWARE_VARIANTS.md
+tools/                generate_clips.py, verify_wav.py, generate_icons.py,
+                      tts_win.ps1
+tests/                pytest suite (fail-closed vision, API contracts,
+                      companion memory, WAV gates, PWA shell, mobile platform
+                      contract, repo hygiene)
+docs/                 hardware guides, REPO_AUDIT.md (full audit trail)
+start_blindsight.*    one-click starters (Windows / Pi-Linux)
+state/, runtime/,     personal data + per-request media: git-ignored,
+uploads/              swept/capped, never committed
+```
+
+---
+
+## Development & CI
 
 ```bash
-# Clone the repository
-git clone https://github.com/lavyanshg/BlindSight.git
-cd BlindSight/edge_server
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Export or download the quantized YOLOv8n ONNX model (imgsz=320)
-# (ultralytics is in requirements.txt; export on a machine with enough RAM)
-python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=320, simplify=True)"
-mkdir -p models && mv yolov8n.onnx models/
-
-# Configure your environment
-cp .env.example .env
-nano .env  # Add your OPENROUTER_API_KEY
-
-# Start the server (or enable the systemd service)
-python3 server.py
+python -m venv .venv && .venv/bin/pip install -r edge_server/requirements.txt pytest ruff
+.venv/bin/python -m pytest -q          # full suite
+ruff check .                           # strict baseline in pyproject.toml
+node --check edge_server/static/app.js # PWA syntax (CI does this too)
+.venv/bin/python tools/verify_wav.py   # LittleFS clip gates
 ```
 
-`GET /health` reports the real state of every component (`vision_ready`,
-`tts_ready`, `companion_ready`, plus an `issues` list). Until the model and
-`espeak-ng` are in place it returns `503` with reasons instead of pretending to
-be healthy — check it after any change.
-
-### 2. Accessing the Mobile Phone Companion (PWA)
-
-1. Connect your smartphone to the same Wi-Fi network as the Raspberry Pi.
-2. Open your mobile browser and navigate to:
-   ```
-   http://<RASPBERRY_PI_IP>:5000
-   ```
-3. Tap your browser menu and choose **"Add to Home Screen"** or **"Install BlindSight"**.
-4. Tap the large amber **"Tap & Speak"** button to start asking questions about your surroundings.
-
-### 3. Flashing the ESP32 Firmware
-
-#### Step A: Main ESP32
-
-> The main firmware exists in three forms (PlatformIO `src/main.cpp`, the
-> Arduino `.ino`, and the sketch inside the PowerShell installer). They must
-> stay behaviourally identical — see
-> [`firmware/FIRMWARE_VARIANTS.md`](firmware/FIRMWARE_VARIANTS.md).
-
-1. Open [`firmware/esp32_main/BlindSight_Main_ESP32.ino`](file:///firmware/esp32_main/BlindSight_Main_ESP32.ino) in Arduino IDE or [`firmware/esp32_main`](file:///firmware/esp32_main) in PlatformIO.
-   Arduino IDE requires a sketch to live in a folder of its own name, so it will
-   offer to move the `.ino` into `BlindSight_Main_ESP32/` — accept that when
-   building from the IDE. The in-repo layout is arranged for PlatformIO.
-2. Set your Wi-Fi SSID, password, and the Raspberry Pi IP address.
-3. Select board `ESP32 Dev Module` and flash.
-4. Open the Serial Monitor (115200 baud) and note the printed `MAIN MAC: XX:XX:XX:XX:XX:XX`.
-
-#### Option A: Using PlatformIO (VS Code)
-1. **Main ESP32 DevKit**: Open `firmware/esp32_main`, copy `include/secrets.example.h` to `include/secrets.h`, configure credentials, and click **Upload**.
-2. **ESP32-CAM**: Open `firmware/esp32_cam`, copy `include/secrets.example.h` to `include/secrets.h`, set `BLINDSIGHT_MAIN_ESP_MAC` to the main board MAC, bridge GPIO 0 to GND, and click **Upload**.
-3. **LittleFS Voice Clips**: In `firmware/esp32_main`, run `PlatformIO: Upload Filesystem Image` to flash the pre-packaged WAV voice clips in `data/`.
-
-#### Option B: Using Arduino IDE
-1. Open `firmware/esp32_main/BlindSight_Main_ESP32.ino` (select `ESP32 Dev Module`).
-2. Configure `WIFI_SSID`, `WIFI_PASSWORD`, and `PI_URL` in the sketch header and flash.
-3. Open `firmware/esp32_cam/BlindSight_Camera.ino` (select `AI Thinker ESP32-CAM`).
-4. Set `MAIN_ESP_MAC` to the MAC printed by the main board, ground GPIO 0, and flash.
+GitHub Actions (`.github/workflows/ci.yml`) runs a Node syntax check on the
+PWA, ruff, the WAV verifier and the pytest suite on every push and PR.
 
 ---
 
-## 🛠️ API Reference
+## Security & privacy
 
-| Endpoint | Method | Payload / Params | Description |
-|---|---|---|---|
-| `/` | `GET` | None | Serves the Accessible Voice Companion PWA |
-| `/health` | `GET` | None | Per-component health report; `503` with an `issues` list when degraded |
-| `/api/config` | `GET` | None | Tells the PWA whether a bearer token is required (never returns the token) |
-| `/analyse` | `POST` | Multipart `image` (JPEG) | Ingests camera frame, executes YOLOv8n, generates speech |
-| `/audio/<id>` | `GET` | Request ID in URL | Streams 16-bit PCM WAV generated by `espeak-ng` |
-| `/api/chat` | `POST` | `{"prompt": str, "use_camera": bool}`, optional `Authorization: Bearer <token>` | Multimodal voice query to the OpenRouter assistant with conversation history, memory and language context; `502` + `degraded:true` when the provider is unreachable; memory/language phrases are answered locally with `local_command:true` |
-| `/api/prefs` | `GET`/`POST` | `POST {"language": code}` | Reply-language preference and the supported language list; `POST` honours the optional access token |
-| `/api/latest-frame` | `GET` | None | JPEG of the most recent camera frame (≤30 s old); `404` when there is no fresh frame — never a placeholder |
-
----
-
-## ⚠️ Known Limitations & Roadmap
-
-Honest status as of this revision. These are tracked, not aspirations:
-
-* **Latency.** `edge_server/server.py` spawns a fresh interpreter per `/analyse`
-  request, which re-imports NumPy/Pillow/onnxruntime and reloads the ONNX model
-  every frame. Budget ~1.5 s per frame on a Pi 3B+, not the millisecond figures
-  quoted in older revisions of this document. A persistent in-process inference
-  worker (model loaded once, frames queued) is the planned fix and is the only
-  route to a sub-second reflex tier.
-* **Voice clips.** The offline ultrasonic fallback needs generated LittleFS
-  clips (`tools/generate_clips.py`: espeak-ng on Linux, built-in SAPI voice on
-  Windows). Verify with `tools/verify_wav.py` - it rejects wrong formats, implausible
-  durations and harmonic-tone fakes. A fresh clone is silent until you run it and
-  upload the filesystem image.
-* **Authentication.** Set `BLINDSIGHT_API_TOKEN` in `edge_server/.env`. Until you
-  do, `/api/chat` is reachable by anyone on your LAN and spends your OpenRouter
-  key; the server prints a loud warning at startup when the token is absent.
-* **Not a certified aid.** BlindSight is a research prototype. Nothing here has
-  been validated as a mobility aid; treat every "path clear" as unverified.
+* The gateway binds `0.0.0.0` by design (the Pi serves the LAN) — set
+  `BLINDSIGHT_API_TOKEN` and HTTPS in production.
+* Camera frames leave the device **only** when a chat request sets
+  `use_camera`, and only to OpenRouter. Reply text goes to Microsoft edge-tts
+  for neural speech. If you use wake-word/hands-free mode, your browser sends
+  speech audio to its recognition service (Google on Chrome) — *Button only*
+  mode plus typing avoids that entirely; iPhone dictation goes through Apple's
+  keyboard.
+* `state/companion.json` (memory, prefs, history) never leaves the device.
+* `.env`, `state/`, `runtime/`, `uploads/` are git-ignored; CI guards against
+  committing secrets, merge markers and backup artifacts.
 
 ---
 
-## 📄 License
+## Known limitations & roadmap
 
-This project is licensed under the [MIT License](LICENSE).
+* **No wake word on iPhone/iPad** — Apple grants no web app continuous
+  listening; dictation via the keyboard mic is the supported flow there. A
+  chip-level always-on wake word on the ESP32 is the intended hardware answer.
+* ~1.5 s/frame Tier-1 latency is measured-class, not bench-certified; the
+  ultrasonic band thresholds (25/45/100 cm) likewise await a bench session.
+* Browser wake word needs a Chromium browser and network, and only while the
+  page is open.
+* Neural voices need outbound internet on the gateway; offline you get
+  espeak-ng or browser voices.
+* Self-signed HTTPS shows a one-time certificate warning on phones; a real
+  certificate (or a tunnel like Tailscale) removes it.
+* ESP-NOW range is room-scale; the JPEG uplink is best-effort with stall
+  recovery, not a video stream.
+
+Full audit history (35 original findings, the parallel-remediation cross-review
+and the push audit) lives in [docs/REPO_AUDIT.md](docs/REPO_AUDIT.md).

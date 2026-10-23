@@ -1,20 +1,17 @@
-/* BlindSight voice-first PWA engine (v2 - reliable capture edition).
-   Fixes the four field failures of v1:
-   1. Chrome ends continuous recognition after silence; v1 only restarted from
-      'idle', so the wake listener died seconds after opening. Now every
-      recognition end schedules a guarded restart with backoff.
-   2. Background noise tripped the wake word through interim results. A live
-      energy gate (getUserMedia + AnalyserNode with noiseSuppression) computes
-      a calibrated noise floor; wake matches are only accepted while real
-      speech energy is present, or on a confident final result.
-   3. The browser's default TTS voice is a robot. Voices are enumerated and
-      "Natural"/neural voices are preferred; the user can pick one and the
-      choice persists.
-   4. "Auto detect voice, not clicking": a hands-free mode routes everything
-      you say (no wake word), segmented by silence, while the energy gate
-      keeps room noise out.
-   The screen stays a secondary display: earcons + assertive announcements for
-   every state change, as before. */
+/* BlindSight voice-first PWA engine (v3.2 - cross-platform edition).
+   One codebase, three honest experiences:
+   - Android (Chrome/Edge) & desktop: wake word, hands-free mode, button talk,
+     neural gateway voices, optional noise gate. Recognition restarts with
+     backoff after every end, so Chrome's silence timeout can never kill the
+     wake listener, and finals-only results keep room noise out.
+   - iPhone/iPad (Safari): Apple exposes no SpeechRecognition to web apps, so
+     instead of a dead mic button the app switches to dictation mode - the big
+     button opens the keyboard and tells the user to tap its microphone.
+     Replies are still spoken (gateway neural audio), and audio is unlocked on
+     the first touch because iOS blocks playback before any user gesture.
+   - Anywhere: gateway-rendered neural audio is preferred, browser speech
+     synthesis is the fallback, the Stop button silences both, and the screen
+     stays a secondary display with earcons and assertive announcements. */
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -42,6 +39,10 @@ const HELP_TEXT =
   'hindi. read status. clear chat. stop. help.';
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const hasSR = typeof SR === 'function';
+// iPadOS 13+ reports itself as MacIntel; the touch-point count gives it away.
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const synth = window.speechSynthesis || null;
 
 let appState = 'idle';         // idle | wake | listen | think | speak
@@ -54,6 +55,7 @@ let cmdRec = null;
 let restartDelay = 300;
 let lastRecEnd = 0;
 let audioCtx = null;
+let currentPlayer = null;   // gateway-audio element, so Stop really stops it
 let noiseGate = localStorage.getItem('blindsight_noisegate') === 'on';
 
 /* ---------------------------------------------------- mic energy / noise gate */
@@ -151,6 +153,33 @@ function earcon(kind) {
   } catch (err) { /* audio is a nicety, never a dependency */ }
 }
 
+/* ------------------------------------------------- mobile audio unlock (iOS) */
+// iOS (and some Android browsers) refuse every play() until the user has
+// touched the page once. Without this unlock the first spoken reply - the one
+// that matters most - is silently swallowed. A silent WAV plus a zero-volume
+// utterance inside the first gesture makes all later playback legitimate.
+let audioUnlocked = false;
+const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const silent = new Audio(SILENT_WAV);
+    silent.play().catch(() => { /* next gesture will unlock instead */ });
+    if (synth) {
+      const warm = new SpeechSynthesisUtterance(' ');
+      warm.volume = 0;
+      synth.speak(warm);
+    }
+  } catch (err) { /* unlocking is best-effort, never fatal */ }
+}
+document.addEventListener('touchend', unlockAudio);
+document.addEventListener('click', unlockAudio);
+document.addEventListener('keydown', unlockAudio);
+
 /* ------------------------------------------------------- status + announcing */
 const MODE_LABEL = { idle: 'Ready', wake: 'Listening for wake word', listen: 'Listening', think: 'Thinking', speak: 'Speaking' };
 
@@ -162,7 +191,9 @@ function setStatus(text, mode) {
   $('mic-btn').classList.toggle('listening', appState === 'listen');
   $('mic-btn').classList.toggle('speaking', appState === 'speak');
   $('mic-hint').textContent = {
-    idle: listenMode === 'button' ? 'Tap the big button and speak.' : (listenMode === 'handsfree' ? 'Hands-free: just speak.' : 'Say "hey BlindSight", or tap the button.'),
+    idle: !hasSR
+      ? (isIOS ? 'Tap the big button, then the keyboard mic to dictate.' : 'Type below, or use Chrome/Edge for voice.')
+      : (listenMode === 'button' ? 'Tap the big button and speak.' : (listenMode === 'handsfree' ? 'Hands-free: just speak.' : 'Say "hey BlindSight", or tap the button.')),
     wake: 'Say "hey BlindSight"…',
     listen: 'Go ahead, I am listening.',
     think: 'One moment…',
@@ -258,9 +289,10 @@ function speak(text, audioUrl) {
     // Gateway-rendered neural voice: the same human-sounding audio on every
     // browser and phone, independent of each OS's built-in robot voices.
     const player = new Audio(audioUrl);
-    player.onended = done;
-    player.onerror = () => browserSpeak(text, done);
-    player.play().catch(() => browserSpeak(text, done));
+    currentPlayer = player;
+    player.onended = () => { currentPlayer = null; done(); };
+    player.onerror = () => { currentPlayer = null; browserSpeak(text, done); };
+    player.play().catch(() => { currentPlayer = null; browserSpeak(text, done); });
     return;
   }
   browserSpeak(text, done);
@@ -279,7 +311,15 @@ function browserSpeak(text, done) {
   synth.speak(utter);
 }
 
-function stopSpeaking() { if (synth) synth.cancel(); }
+function stopSpeaking() {
+  // Stop must silence the gateway audio element too, not just browser synth -
+  // on a phone the neural mp3 is what is actually playing.
+  if (currentPlayer) {
+    try { currentPlayer.pause(); } catch (err) { /* already stopped */ }
+    currentPlayer = null;
+  }
+  if (synth) synth.cancel();
+}
 
 /* --------------------------------------------------------- recognition core */
 function normalize(text) {
@@ -314,7 +354,7 @@ function resumeListening() {
 }
 
 function startListening() {
-  if (!SR || appState === 'speak' || appState === 'think' || appState === 'listen') return;
+  if (!hasSR || appState === 'speak' || appState === 'think' || appState === 'listen') return;
   stopListeningAll();
   if (listenMode === 'handsfree') startCommandSession(true);
   else startWakeSession();
@@ -340,6 +380,7 @@ function handleRecError(event, label) {
 let wakeBuffer = '';
 
 function startWakeSession() {
+  if (!hasSR) return;
   wakeBuffer = '';
   wakeRec = new SR();
   wakeRec.lang = SPEECH_LANG[language] || 'en-US';
@@ -381,7 +422,20 @@ function startWakeSession() {
 let commandBuffer = '';
 let commandTimer = null;
 
+function focusDictation() {
+  // No SpeechRecognition (every iOS browser, some Android ones): the honest
+  // path is the on-screen keyboard's own dictation microphone.
+  const input = $('prompt-input');
+  if (input) input.focus();
+  const hint = isIOS
+    ? 'Tap the microphone on the iPhone keyboard to dictate, then tap Ask.'
+    : 'This browser has no speech input. Type your question, or use Chrome or Edge for voice.';
+  setStatus(hint, 'idle');
+  announce(hint);
+}
+
 function startCommandSession(continuousMode) {
+  if (!hasSR) { focusDictation(); return; }
   stopListeningAll();
   commandBuffer = '';
   cmdRec = new SR();
@@ -490,9 +544,11 @@ async function sendChat(prompt, useCamera) {
       body: JSON.stringify({ prompt, use_camera: useCamera })
     });
     if (res.status === 401) {
-      authToken = window.prompt('This gateway is password protected. Enter the access token:') || '';
-      if (authToken) localStorage.setItem('blindsight_token', authToken);
-      return sendChat(prompt, useCamera);
+      // window.prompt never appears in iOS home-screen PWAs, and re-prompting
+      // on a wrong token recursed forever. The inline token field in settings
+      // is visible, screen-reader friendly and cannot loop.
+      showTokenControl('This gateway is password protected. Enter the access token in settings, tap Save, then ask again.');
+      return;
     }
     if (res.status === 429) { speak('Please wait a moment and ask again.'); return; }
     const data = await res.json();
@@ -524,8 +580,10 @@ async function statusSummary() {
 /* ------------------------------------------------------------------- wiring */
 function wireEvents() {
   $('mic-btn').addEventListener('click', async () => {
+    unlockAudio();
     if (appState === 'speak') { stopSpeaking(); resumeListening(); return; }
     if (appState === 'listen') { stopListeningAll(); announce('Listening stopped.'); resumeListening(); return; }
+    if (!hasSR) { focusDictation(); return; }
     if (noiseGate) await openMicAnalytics();
     stopSpeaking();
     startCommandSession(false);
@@ -583,6 +641,20 @@ function wireEvents() {
       speak('This is the voice I will use.', null);
     }
   });
+
+  const tokenSave = $('token-save');
+  if (tokenSave) {
+    tokenSave.addEventListener('click', () => {
+      const value = ($('token-input').value || '').trim();
+      if (!value) { announce('Enter the access token first.'); return; }
+      authToken = value;
+      localStorage.setItem('blindsight_token', authToken);
+      $('token-control').hidden = true;
+      earcon('ok');
+      setStatus('Token saved.', 'idle');
+      announce('Token saved. Ask your question again.');
+    });
+  }
 
   $('chat-form').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -644,14 +716,24 @@ async function loadPrefs() {
   } catch (err) { /* gateway unreachable at boot */ }
 }
 
+function showTokenControl(message) {
+  const control = $('token-control');
+  if (control) {
+    control.hidden = false;
+    const input = $('token-input');
+    if (input && !input.value) input.focus();
+  }
+  setStatus(message, 'idle');
+  announce(message);
+}
+
 async function bootstrapConfig() {
   try {
     const res = await fetch('/api/config');
     if (!res.ok) return;
     const cfg = await res.json();
     if (cfg.auth_required && !authToken) {
-      authToken = window.prompt('This BlindSight gateway is password protected. Enter the access token:') || '';
-      if (authToken) localStorage.setItem('blindsight_token', authToken);
+      showTokenControl('This BlindSight gateway is password protected. Enter the access token in settings and tap Save.');
     }
   } catch (err) { /* offline boot */ }
 }
@@ -661,7 +743,9 @@ window.addEventListener('load', async () => {
     // Browsers only expose the microphone on localhost or HTTPS. Opening the
     // app as http://192.168.x.x:5000 silently kills every voice feature, which
     // is the most common cause of "the button does nothing".
-    const msg = 'Voice input needs localhost or HTTPS. Open http://localhost:5000 on this device, or restart the gateway with BLINDSIGHT_TLS set and accept the certificate once.';
+    const msg = isIOS || /android/i.test(navigator.userAgent)
+      ? 'Voice input needs HTTPS on a phone. Ask your helper to open the https:// address the Raspberry Pi starter prints, and accept the certificate warning once.'
+      : 'Voice input needs localhost or HTTPS. Open http://localhost:5000 on this device, or restart the gateway with BLINDSIGHT_TLS set and accept the certificate once.';
     window.setTimeout(() => {
       setStatus(msg, 'idle');
       announce(msg);
@@ -676,21 +760,36 @@ window.addEventListener('load', async () => {
   await bootstrapConfig();
   await loadPrefs();
   fillVoiceSelect();
-  $('mode-select').value = listenMode;
   const gate = $('noise-gate-toggle');
   if (gate) gate.checked = noiseGate;
   wireEvents();
-  setStatus('Ready', 'idle');
-  announce('BlindSight ready. ' + (listenMode === 'handsfree' ? 'Hands-free mode: just speak.' : 'Say hey BlindSight, or tap the big button.') + ' Say help for the command list.');
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).catch(() => { /* optional */ });
   }
-  if (!SR) {
-    $('mode-select').value = 'button';
+  if (!hasSR) {
+    // iPhone Safari (and every iOS browser) exposes no SpeechRecognition at
+    // all. Degrade honestly: dictation through the keyboard mic, spoken
+    // replies as usual, and say so out loud instead of leaving a dead button.
     listenMode = 'button';
-    setStatus('Ready. This browser has no speech input; use the button or text box.', 'idle');
+    localStorage.setItem('blindsight_mode', 'button');
+    const modeSel = $('mode-select');
+    modeSel.value = 'button';
+    Array.from(modeSel.options).forEach((opt) => {
+      if (opt.value !== 'button') {
+        opt.disabled = true;
+        opt.textContent += isIOS ? ' (not on iPhone)' : ' (needs Chrome/Edge)';
+      }
+    });
+    if (gate) gate.disabled = true;
+    setStatus(isIOS ? 'Tap the big button, then the keyboard mic.' : 'Type below, or use Chrome/Edge for voice.', 'idle');
+    announce(isIOS
+      ? 'BlindSight ready. On iPhone the browser cannot listen for a wake word. Tap the big button to open the keyboard, then tap its microphone to dictate. My answers will still be spoken to you. Type help for the command list.'
+      : 'BlindSight ready. This browser has no speech input. Type your question, or use Chrome or Edge for voice. Type help for the command list.');
     return;
   }
+  $('mode-select').value = listenMode;
+  setStatus('Ready', 'idle');
+  announce('BlindSight ready. ' + (listenMode === 'handsfree' ? 'Hands-free mode: just speak.' : 'Say hey BlindSight, or tap the big button.') + ' Say help for the command list.');
   // Open the mic analytics eagerly so the noise floor calibrates before the
   // first wake word; recognition itself starts only after a gesture if the
   // browser refuses pre-gesture capture.

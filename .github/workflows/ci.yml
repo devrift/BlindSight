@@ -18,6 +18,15 @@ jobs:
           cache-dependency-path: |
             edge_server/requirements.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JavaScript syntax (PWA + service worker)
+        run: |
+          node --check edge_server/static/app.js
+          node --check edge_server/static/sw.js
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -30,7 +39,7 @@ jobs:
         run: ruff check .
 
       - name: Voice clip format (skips when clips are not generated)
-        run: python tools/verify_wav.py || echo "::warning::LittleFS clips not generated; offline fallback is silent until generate_clips.sh runs"
+        run: python tools/verify_wav.py || echo "::warning::LittleFS clips not generated; offline fallback is silent until tools/generate_clips.py runs"
 
       - name: Tests
         run: pytest -q tests/

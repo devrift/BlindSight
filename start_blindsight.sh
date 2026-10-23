@@ -23,10 +23,24 @@ fi
 echo "Installing or updating the requirements..."
 .venv/bin/python -m pip install -q -r edge_server/requirements.txt
 
+if ! command -v espeak-ng >/dev/null 2>&1; then
+  echo "Tip: 'sudo apt install espeak-ng' adds offline spoken answers (neural voices need internet)."
+fi
+
 IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+SCHEME="http"
+if [ -n "${BLINDSIGHT_TLS:-}" ]; then SCHEME="https"; fi
 echo
 echo "  BlindSight is starting on  http://localhost:5000  (or https if shown above)"
-[ -n "${IP}" ] && echo "  Phone on the same Wi-Fi:   http://${IP}:5000"
+if [ -n "${IP}" ]; then
+  echo "  Phone on the same Wi-Fi:   ${SCHEME}://${IP}:5000"
+  if [ "${SCHEME}" = "https" ]; then
+    echo "  Phone tip: accept the certificate warning once (Android: Advanced >"
+    echo "  Continue; iPhone: Show Details > visit this website)."
+  else
+    echo "  Note: phone microphones need HTTPS. Install openssl and re-run to enable it."
+  fi
+fi
 echo "  Keep this terminal open while using the app. Ctrl+C stops it."
 echo
 exec .venv/bin/python edge_server/server.py

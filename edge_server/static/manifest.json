@@ -4,9 +4,9 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0a0a0c",
-  "theme_color": "#0a0a0c",
-  "description": "Accessible real-time voice and vision companion for low-vision navigation and awareness.",
+  "background_color": "#05070c",
+  "theme_color": "#05070c",
+  "description": "Voice-first navigation companion for blind and low-vision users. Works on Android, iPhone and desktop browsers.",
   "orientation": "portrait-primary",
   "icons": [
     {
