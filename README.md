@@ -28,6 +28,21 @@ neural audio too.
 
 ---
 
+## Android app (APK)
+
+A real installed Android app ships with the repo: `android/` is a thin,
+auditable WebView shell (launcher icon, native mic/camera permission prompts,
+self-signed-cert trust scoped to your saved gateway host, friendly
+"gateway not reachable" retry screen). The **Android APK** workflow compiles
+it on every push — download `blindsight-debug-apk` from the Actions run page,
+no Android Studio required. Install guide, honest limits and the
+first-run gateway-address flow: [docs/ANDROID_APP.md](docs/ANDROID_APP.md).
+
+iPhone stays a home-screen PWA (Apple forbids sideloaded wrappers without a
+paid developer account); it received the same voice fixes in the PWA itself.
+
+---
+
 ## How it works
 
 ```
