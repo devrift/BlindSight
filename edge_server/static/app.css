@@ -38,7 +38,7 @@ html, body {
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -361,4 +361,13 @@ header {
   color: var(--muted);
   font-size: calc(0.95rem * var(--font-scale));
   text-align: center;
+}
+
+/* ---- mobile field fixes (v3.3) ---- */
+header { padding-top: calc(8px + env(safe-area-inset-top)); }
+.text-input-form { padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+#mic-btn.cue { box-shadow: 0 0 0 8px rgba(94, 234, 212, 0.35); }
+@media (max-width: 480px) {
+  #token-control { flex-direction: column; align-items: stretch; }
+  #token-control input[type="password"] { max-width: 100%; }
 }

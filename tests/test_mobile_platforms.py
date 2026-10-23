@@ -74,7 +74,7 @@ def test_manifest_matches_theme_and_platform_copy(client):
 
 def test_service_worker_cache_bumped_for_mobile_release(client):
     sw = client.get("/static/sw.js").get_data(as_text=True)
-    assert "blindsight-v4" in sw
+    assert "blindsight-v5" in sw
     assert "/static/apple-touch-icon.png" in sw
 
 
