@@ -30,7 +30,15 @@ jobs:
       - name: Build debug APK
         # No --no-daemon: KSP2's shaded IntelliJ core needs daemon services and
         # crashes with "ApplicationManager.getApplication() is null" without it.
-        run: gradle assembleDebug
+        run: gradle assembleDebug --stacktrace > /tmp/gradle-build.log 2>&1
+
+      - name: Upload build log (also on failure, for diagnosis)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: /tmp/gradle-build.log
+          if-no-files-found: error
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
