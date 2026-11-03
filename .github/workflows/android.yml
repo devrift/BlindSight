@@ -1,5 +1,8 @@
 name: Android APK
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: ["**"]
@@ -21,18 +24,52 @@ jobs:
       - name: Ensure SDK packages
         run: |
           yes | "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 || true
+          "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" > /dev/null 2>&1 || true
 
       - uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: "8.7"
+          gradle-version: "9.3.1"
+
+      - name: Provide debug keystore when absent
+        # AI Studio generates debug.keystore locally and it is never committed;
+        # CI recreates the standard Android debug key so assembleDebug can sign.
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build debug APK
-        run: cd android && gradle assembleDebug --no-daemon
+        # No --no-daemon: KSP2's shaded IntelliJ core needs daemon services and
+        # crashes with "ApplicationManager.getApplication() is null" without it.
+        run: gradle assembleDebug --stacktrace > /tmp/gradle-build.log 2>&1
+
+      - name: Upload build log (also on failure, for diagnosis)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: /tmp/gradle-build.log
+          if-no-files-found: error
+
+      # Actions log/artifact storage is unreachable from some dev environments;
+      # mirror the failure log into a ci-logs branch so it stays readable.
+      - name: Publish failure log to ci-logs branch
+        if: failure()
+        run: |
+          git config user.email "ci@blindsight.local"
+          git config user.name "CI log bot"
+          git checkout --orphan ci-logs
+          git rm -rfq . > /dev/null 2>&1 || true
+          cp /tmp/gradle-build.log gradle-build.log
+          git add gradle-build.log
+          git commit -q -m "ci log ${GITHUB_RUN_ID}"
+          git push -f origin ci-logs
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: blindsight-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

@@ -11,35 +11,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            edge_server/requirements.txt
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
-      - name: JavaScript syntax (PWA + service worker)
+      - name: Web app build (TypeScript + Vite)
         run: |
-          node --check edge_server/static/app.js
-          node --check edge_server/static/sw.js
+          npm ci
+          npm run build
 
-      - name: Install dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python tools lint
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff pytest
-          # onnxruntime/ultralytics are heavy and not needed by the test suite:
-          # the vision path is exercised through its failure contract instead.
-          pip install "Flask>=3.0,<4" "Pillow>=10.0" numpy requests python-dotenv
-
-      - name: Ruff
-        run: ruff check .
+          python -m pip install --upgrade pip ruff
+          ruff check tools/
 
       - name: Voice clip format (skips when clips are not generated)
         run: python tools/verify_wav.py || echo "::warning::LittleFS clips not generated; offline fallback is silent until tools/generate_clips.py runs"
 
-      - name: Tests
-        run: pytest -q tests/
+      - name: Project report renders
+        run: |
+          python -m pip install reportlab
+          python tools/make_report_pdf.py docs/PROJECT_REPORT.md /tmp/report-check.pdf

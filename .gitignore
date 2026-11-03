@@ -57,6 +57,18 @@ state/*
 !firmware/esp32_main/data/
 !firmware/esp32_main/data/*.wav
 
+# Web + Android build artifacts (regenerable, never source)
+node_modules/
+dist/
+.gradle/
+app/build/
+local.properties
+
+# Signing material: never commit keys
+debug.keystore
+my-upload-key.jks
+*.jks
+
 # OS Noise
 .DS_Store
 Thumbs.db
