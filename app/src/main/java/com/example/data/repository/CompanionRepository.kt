@@ -240,25 +240,25 @@ class CompanionRepository(context: Context) {
         return null
     }
 
-    // --- Scene Description Generator ---
+    // --- Honest vision fallback ---
+    // HONESTY CONTRACT: never invent a scene. Without a connected vision AI
+    // the only safe answer is to say so, in the user's language.
     fun generateSceneDescription(language: SupportedLanguage): String {
-        val facts = _facts.value
-        val memoryNote = if (facts.isNotEmpty()) " Remembering that ${facts.first().text}." else ""
         return when (language) {
             SupportedLanguage.HINDI ->
-                "आपके सामने का रास्ता खुला है। दाहिनी ओर चलने की जगह है और बाईं ओर कुछ कुर्सियाँ हैं। आगे लगभग दो मीटर पर दरवाज़ा है।$memoryNote"
+                "चित्र लिया गया, पर दृष्टि AI जुड़ा नहीं है, इसलिए मैं अनुमान नहीं लगाऊँगा। Offline कमांड के लिए help बोलें।"
             SupportedLanguage.SPANISH ->
-                "Frente a ti hay un espacio despejado con un pasillo para caminar a la derecha y asientos a tu izquierda. Suelo nivelado.$memoryNote"
+                "Capturé la imagen, pero la IA de visión no está conectada; no adivinaré tu entorno. Di help para comandos offline."
             SupportedLanguage.FRENCH ->
-                "Devant vous se trouve un espace ouvert avec un couloir de marche dégagé sur votre droite. Le sol est nivelé sans obstacle.$memoryNote"
+                "Image capturée, mais l'IA visuelle n'est pas connectée ; je ne devinerai pas votre environnement. Dites help."
             SupportedLanguage.BENGALI ->
-                "আপনার সামনে একটি খোলা জায়গা রয়েছে, ডান দিকে হাঁটার পথ পরিষ্কার। কোনো বাধা নেই।$memoryNote"
+                "ছবি নেওয়া হয়েছে, কিন্তু ভিশন AI সংযুক্ত নয়, তাই আমি অনুমান করব না। offline কমান্ডের জন্য help বলুন।"
             SupportedLanguage.TAMIL ->
-                "உங்கள் முன் நடைபாதை தெளிவாக உள்ளது. வலதுபுறம் தடையின்றி நடக்கலாம். தரை சமமாக உள்ளது.$memoryNote"
+                "படம் பிடிக்கப்பட்டது, ஆனால் விஷன் AI இணைக்கப்படவில்லை; நான் ஊகிக்க மாட்டேன். help சொல்லவும்."
             SupportedLanguage.TELUGU ->
-                "మీ ముందు నడక మార్గం స్పష్టంగా ఉంది. కుడి వైపున ఎటువంటి అడ్డంకులు లేవు.$memoryNote"
+                "చిత్రం తీసుకోబడింది, కానీ విజన్ AI కనెక్ట్ కాలేదు; నేను ఊహించను. help చెప్పండి."
             else ->
-                "In front of you is an open indoor area with a clear walking corridor on the right and seating to your left. Surface is level with no tripping hazards ahead.$memoryNote"
+                "I captured the frame, but the vision AI is not connected on this device, so I will not guess your surroundings. Connect the BlindSight gateway for real scene answers, or say help for offline commands."
         }
     }
 }

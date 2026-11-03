@@ -71,7 +71,7 @@ export class VisionAiService {
     // If an OpenRouter / external gateway endpoint exists on the LAN, try querying it
     // If not or in local mode, generate intelligent fail-closed perception response
     try {
-      if (typeof window !== 'undefined' && options.apiToken) {
+      if (typeof window !== 'undefined') {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {
@@ -110,62 +110,28 @@ export class VisionAiService {
         };
       }
 
-      // If we have an image frame, provide a structured natural spoken description
-      const sceneDescriptions: Record<LanguageCode, string[]> = {
-        en: [
-          'In front of you is an open indoor area with a clear walking corridor on the right and seating to your left.',
-          'There is a doorway ahead approximately two meters away. Ground surface is level with no immediate tripping hazards.',
-          'A table is located in front of you with everyday items within arm reach. The path on either side is accessible.'
-        ],
-        hi: [
-          'आपके सामने का रास्ता खुला है। दाहिनी ओर चलने की जगह है और बाईं ओर कुछ कुर्सियाँ हैं।',
-          'आगे लगभग दो मीटर की दूरी पर एक दरवाज़ा है। फ़र्श समतल है और कोई रुकावट नहीं है।'
-        ],
-        bn: [
-          'আপনার সামনে একটি খোলা জায়গা রয়েছে, ডান দিকে হাঁটার পথ পরিষ্কার।'
-        ],
-        ta: [
-          'உங்கள் முன் நடைபாதை தெளிவாக உள்ளது. வலதுபுறம் தடையின்றி நடக்கலாம்.'
-        ],
-        te: [
-          'మీ ముందు నడక మార్గం స్పష్టంగా ఉంది. కుడి వైపున ఎటువంటి అడ్డంకులు లేవు.'
-        ],
-        es: [
-          'Frente a ti hay un espacio despejado con un pasillo para caminar a la derecha y asientos a tu izquierda.',
-          'Hay una puerta adelante a unos dos metros de distancia. El suelo está nivelado sin obstáculos visibles.'
-        ],
-        fr: [
-          'Devant vous se trouve un espace ouvert avec un couloir de marche dégagé sur votre droite.',
-          'Il y a une porte devant vous à environ deux mètres. Le sol est plat sans obstacle immédiat.'
-        ]
-      };
-
-      const optionsList = sceneDescriptions[langCode] || sceneDescriptions.en;
-      const selected = optionsList[Math.floor(Math.random() * optionsList.length)];
+      // HONESTY CONTRACT: without a reachable vision AI we must never invent
+      // a scene. Guessing "path clear" for a blind user is a hazard, not a
+      // feature.
       return {
-        reply: selected,
-        ok: true,
+        reply:
+          langCode === 'en'
+            ? 'I captured the image, but the vision AI is not connected right now, so I will not guess what is around you. Start the BlindSight gateway for real scene answers, or say help for offline commands.'
+            : `${langInfo.label}: vision AI not connected. I will not guess your surroundings. Say help for offline commands.`,
+        ok: false,
+        reason: 'vision_ai_unreachable',
         imageAttached: true
       };
     }
 
-    // General conversational query answering with memory
-    const memoryMention = memoryFacts.length > 0 ? ` Remembering that ${memoryFacts[0]}.` : '';
-    let replyText = '';
-
-    if (langCode === 'hi') {
-      replyText = `मैं आपकी बात समझ रहा हूँ।${memoryMention ? ' मुझे याद है कि ' + memoryFacts[0] + '।' : ''} मैं आपका ब्लाइंडसाइट सहायक हूँ।`;
-    } else if (langCode === 'es') {
-      replyText = `Te escucho con claridad.${memoryMention ? ' Recordando que ' + memoryFacts[0] + '.' : ''} ¿Cómo más te puedo guiar?`;
-    } else if (langCode === 'fr') {
-      replyText = `Je vous écoute attentivement.${memoryMention ? ' En me rappelant que ' + memoryFacts[0] + '.' : ''} Que puis-je faire pour vous guider?`;
-    } else {
-      replyText = `I hear you clearly.${memoryMention} I am here to help guide and describe your surroundings whenever you need.`;
-    }
-
+    // No gateway/AI reachable: say so plainly. Local commands above still work.
     return {
-      reply: replyText,
-      ok: true,
+      reply:
+        langCode === 'en'
+          ? 'The cloud companion is not connected right now, so I can only run on-device commands: remember, forget, language, read status, stop, help. Say help for the full list.'
+          : `${langInfo.label}: companion offline. On-device commands only. Say help.`,
+      ok: false,
+      reason: 'companion_unreachable',
       imageAttached: false
     };
   }

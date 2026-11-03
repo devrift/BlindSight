@@ -185,7 +185,6 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         )
 
         viewModelScope.launch {
-            delay(1200) // Realistic perception inference delay
             val description = repository.generateSceneDescription(_uiState.value.language)
             _uiState.value = _uiState.value.copy(
                 isCameraScanning = false,
