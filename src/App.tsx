@@ -65,6 +65,7 @@ export const App: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   const isContinuousRef = useRef<boolean>(false);
   const isListeningRef = useRef<boolean>(false);
+  const lastNetworkRetryRef = useRef<number>(0);
 
   const announce = useCallback((text: string) => {
     setAnnouncement('');
@@ -153,8 +154,21 @@ export const App: React.FC = () => {
 
       // Check Status
       if (['read status', 'system status', 'status report'].includes(low.replace(/[?!.]/g, ''))) {
-        const tel = ReflexService.getTelemetry();
-        const statusSummary = `BlindSight system status: Speech active. Vision active. Ultrasonic reflex tier reports ${tel.message}. All modules operating normally.`;
+        // Never claim health we did not observe: probe what is observable.
+        const srOk = AudioService.isSpeechRecognitionSupported();
+        const ttsOk = typeof window !== 'undefined' && !!window.speechSynthesis;
+        let gateway = 'unreachable';
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 1500);
+          const r = await fetch('/api/config', { signal: ctrl.signal });
+          gateway = r.ok ? 'reachable' : 'unreachable';
+          clearTimeout(timer);
+        } catch {
+          gateway = 'unreachable';
+        }
+        const statusSummary =
+          `System status: speech recognition ${srOk ? 'available' : 'not available in this browser'}, spoken replies ${ttsOk ? 'ready' : 'unavailable'}, companion gateway ${gateway}. The ultrasonic reflex runs on the head unit and cannot be observed from this phone.`;
         announce(statusSummary);
         speakReply(statusSummary);
         return;
@@ -203,19 +217,6 @@ export const App: React.FC = () => {
     },
     [language, includeCamera, token, updateStatus, speakReply, announce]
   );
-
-  // Stop active speech / listening
-  const handleStop = useCallback(() => {
-    AudioService.stopSpeaking();
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-    }
-    setAppState('idle');
-    updateStatus('Stopped.', 'idle');
-    announce('Stopped.');
-  }, [updateStatus, announce]);
 
   // Speech Recognition Session
   const startRecognition = useCallback(
@@ -271,9 +272,10 @@ export const App: React.FC = () => {
           const matched = WAKE_PHRASES.some(phrase => normalized.includes(phrase));
           if (matched) {
             // Wake word detected! Flash visual cue and transition to command session
+            // Visual cue only: a beep here steals Android audio focus from
+            // the recognizer that opens next (the v3.3 mic-killer).
             setIsCue(true);
             setTimeout(() => setIsCue(false), 450);
-            AudioService.playEarcon('wake');
 
             // Extract prompt after wake word if spoken in one breath
             let remaining = transcript;
@@ -297,8 +299,24 @@ export const App: React.FC = () => {
       };
 
       rec.onerror = (event: any) => {
-        if (event.error !== 'no-speech' && event.error !== 'aborted') {
-          console.warn('Speech recognition error:', event.error);
+        const err = event.error;
+        if (err === 'no-speech' || err === 'aborted') return; // ordinary endings
+        const msg =
+          err === 'not-allowed' || err === 'service-not-allowed'
+            ? 'Microphone permission denied. Tap the big button and allow the microphone.'
+            : err === 'audio-capture'
+            ? 'No microphone found. Plug one in or pick another input.'
+            : err === 'network'
+            ? 'Speech cannot reach its internet service. Check the connection; trying again.'
+            : `Speech recognition problem: ${err}. Tap the button to retry.`;
+        announce(msg);
+        speakReply(msg);
+        if (err === 'network') {
+          const now = Date.now();
+          if (now - lastNetworkRetryRef.current > 5000) {
+            lastNetworkRetryRef.current = now;
+            setTimeout(() => startRecognition(mode), 2000);
+          }
         }
       };
 
@@ -325,8 +343,27 @@ export const App: React.FC = () => {
         rec.start();
       } catch {}
     },
-    [language, listenMode, appState, updateStatus, handleCommand, announce]
+    [language, listenMode, appState, updateStatus, handleCommand, announce, speakReply]
   );
+
+  // Stop speech/listening, then restore the chosen mode so the companion
+  // never stays dead after a Stop command.
+  const handleStop = useCallback(() => {
+    AudioService.stopSpeaking();
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+    }
+    setAppState('idle');
+    updateStatus('Stopped.', 'idle');
+    announce('Stopped.');
+    if (listenMode === 'wake') {
+      setTimeout(() => startRecognition('wake'), 400);
+    } else if (listenMode === 'handsfree') {
+      setTimeout(() => startRecognition('command'), 400);
+    }
+  }, [updateStatus, announce, listenMode, startRecognition]);
 
   // Big Mic Button click handler
   const handleMicClick = () => {
@@ -354,8 +391,10 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Start single command session on button click
-    AudioService.playEarcon('listen');
+    // Start single command session on button click. Visual cue only (see
+    // mic-killer note above).
+    setIsCue(true);
+    setTimeout(() => setIsCue(false), 450);
     startRecognition('command');
   };
 
