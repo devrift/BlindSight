@@ -30,6 +30,16 @@ jobs:
         with:
           gradle-version: "9.3.1"
 
+      - name: Provide debug keystore when absent
+        # AI Studio generates debug.keystore locally and it is never committed;
+        # CI recreates the standard Android debug key so assembleDebug can sign.
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Build debug APK
         # No --no-daemon: KSP2's shaded IntelliJ core needs daemon services and
         # crashes with "ApplicationManager.getApplication() is null" without it.

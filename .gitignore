@@ -64,6 +64,11 @@ dist/
 app/build/
 local.properties
 
+# Signing material: never commit keys
+debug.keystore
+my-upload-key.jks
+*.jks
+
 # OS Noise
 .DS_Store
 Thumbs.db
