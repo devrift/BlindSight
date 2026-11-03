@@ -1,0 +1,165 @@
+{
+  "name": "AI Studio Default Template",
+  "short-name": "aistudio-default",
+  "schema-version": "0.1",
+  "arguments": [
+    {
+      "id": "name",
+      "description": "The application display name on the Android Device",
+      "default-value": "My Application"
+    },
+    {
+      "id": "applicationId",
+      "description": "The application ID for the Gradle Android Plugin, i.e. the Android package name of the application",
+      "default-value": "com.example.${name.toAndroidPackageSegment()}"
+    },
+    {
+      "id": "namespace",
+      "description": "The namespace for resources and package name for Kotlin source files",
+      "default-value": "com.example.${name.toJavaPackageSegment()}"
+    }
+  ],
+  "transformations": [
+    {
+      "string-replace": {
+        "description": "Replace the application name in settings.gradle.kts",
+        "selector": {
+          "glob": "settings.gradle.kts"
+        },
+        "from": "My Application",
+        "to": "${name}"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace the application name in strings.xml",
+        "selector": {
+          "glob": "app/src/main/res/values/strings.xml"
+        },
+        "from": "My Application",
+        "to": "${name}"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Set the application name in metadata.json",
+        "selector": {
+          "glob": "metadata.json"
+        },
+        "from": "\"name\": \"\"",
+        "to": "\"name\": \"${name}\""
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace the application ID in app/build.gradle.kts",
+        "selector": {
+          "glob": "app/build.gradle.kts"
+        },
+        "from": "applicationId = \"com.example\"",
+        "to": "applicationId = \"${applicationId}\""
+      }
+    },
+
+    {
+      "string-replace": {
+        "description": "Replace namespace in app/build.gradle.kts",
+        "selector": {
+          "glob": "app/build.gradle.kts"
+        },
+        "from": "namespace = \"com.example\"",
+        "to": "namespace = \"${namespace}\""
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace package name in Kotlin source files",
+        "selector": {
+          "glob": "**/*.kt"
+        },
+        "from": "com.example",
+        "to": "${namespace}"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace package name in XML resource files",
+        "selector": {
+          "glob": "**/*.xml"
+        },
+        "from": "com.example",
+        "to": "${namespace}"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace application name in Kotlin source files",
+        "selector": {
+          "glob": "**/*.kt"
+        },
+        "from": "My Application",
+        "to": "${name}"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace compose theme name in Kotlin source files",
+        "selector": {
+          "glob": "**/*.kt"
+        },
+        "from": "MyApplicationTheme",
+        "to": "${name.toJavaClassName()}Theme"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace theme name in themes.xml",
+        "selector": {
+          "glob": "app/src/main/res/values/themes.xml"
+        },
+        "from": "Theme.MyApplication",
+        "to": "Theme.${name.toJavaClassName()}"
+      }
+    },
+    {
+      "string-replace": {
+        "description": "Replace theme name in AndroidManifest.xml",
+        "selector": {
+          "glob": "app/src/main/AndroidManifest.xml"
+        },
+        "from": "Theme.MyApplication",
+        "to": "Theme.${name.toJavaClassName()}"
+      }
+    },
+    {
+      "rename-file": {
+        "description": "Move main Kotlin source files to package directory",
+        "selector": {
+          "glob": "app/src/main/java/com/example/**"
+        },
+        "source-path": "com/example",
+        "target-path": "${namespace.replace('.', '/')}"
+      }
+    },
+    {
+      "rename-file": {
+        "description": "Move androidTest Kotlin source files to package directory",
+        "selector": {
+          "glob": "app/src/androidTest/java/com/example/**"
+        },
+        "source-path": "com/example",
+        "target-path": "${namespace.replace('.', '/')}"
+      }
+    },
+    {
+      "rename-file": {
+        "description": "Move test Kotlin source files to package directory",
+        "selector": {
+          "glob": "app/src/test/java/com/example/**"
+        },
+        "source-path": "com/example",
+        "target-path": "${namespace.replace('.', '/')}"
+      }
+    }
+  ]
+}

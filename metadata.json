@@ -1,0 +1,11 @@
+{
+  "name": "BlindSight",
+  "description": "Voice-first navigation companion for blind and low-vision users with wake word, real-time ultrasonic reflex alerts, scene description, and conversational memory.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
