@@ -57,6 +57,13 @@ state/*
 !firmware/esp32_main/data/
 !firmware/esp32_main/data/*.wav
 
+# Web + Android build artifacts (regenerable, never source)
+node_modules/
+dist/
+.gradle/
+app/build/
+local.properties
+
 # OS Noise
 .DS_Store
 Thumbs.db
