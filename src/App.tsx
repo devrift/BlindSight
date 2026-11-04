@@ -66,6 +66,8 @@ export const App: React.FC = () => {
   const isContinuousRef = useRef<boolean>(false);
   const isListeningRef = useRef<boolean>(false);
   const lastNetworkRetryRef = useRef<number>(0);
+  const appStateRef = useRef<AppState>(appState);
+  appStateRef.current = appState;
 
   const announce = useCallback((text: string) => {
     setAnnouncement('');
@@ -323,13 +325,13 @@ export const App: React.FC = () => {
       rec.onend = () => {
         isListeningRef.current = false;
         // Auto-restart if in wake mode and not speaking/thinking
-        if (listenMode === 'wake' && appState === 'wake') {
+        if (listenMode === 'wake' && appStateRef.current === 'wake') {
           setTimeout(() => {
-            if (listenMode === 'wake' && appState !== 'speak' && appState !== 'think') {
+            if (listenMode === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
               startRecognition('wake');
             }
           }, 400);
-        } else if (listenMode === 'handsfree' && appState !== 'speak' && appState !== 'think') {
+        } else if (listenMode === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
           setTimeout(() => {
             if (listenMode === 'handsfree') {
               startRecognition('command');

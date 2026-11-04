@@ -144,7 +144,7 @@ export class AudioService {
 
       this.micInterval = window.setInterval(() => {
         if (!this.analyser || !this.levelBuf) return;
-        this.analyser.getByteTimeDomainData(this.levelBuf);
+        this.analyser.getByteTimeDomainData(this.levelBuf as any);
         let sum = 0;
         for (let i = 0; i < this.levelBuf.length; i++) {
           const v = (this.levelBuf[i] - 128) / 128;

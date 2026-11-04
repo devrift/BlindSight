@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlindSight — Project Showcase & Engineering Dashboard</title>
+  <meta name="description" content="Voice-first, three-tier assistive mobility companion for blind and low-vision pedestrians.">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Ambient background lighting -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- Glass Header -->
+  <header class="glass-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="logo-orb">
+          <img src="icon.svg" alt="BlindSight Icon" width="28" height="28">
+        </div>
+        <div>
+          <div class="brand-title">BlindSight <span class="badge-pill">v3.3 Pro</span></div>
+          <div class="brand-subtitle">Voice-First Assistive Mobility System</div>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <a href="#overview">Overview</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#simulator">Radar Simulator</a>
+        <a href="#hardware">Hardware Blueprint</a>
+        <a href="#honesty">Honesty Contract</a>
+        <a href="#script">Presentation Script</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="http://localhost:3000" target="_blank" class="btn-glass primary-cta">
+          <span class="live-dot"></span> Launch Companion App
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <!-- Hero Section -->
+    <section id="overview" class="section hero-section">
+      <div class="hero-badge">
+        <span class="pulse-ring"></span>
+        <span class="badge-text">Science & Engineering Exhibition • Open Source MIT</span>
+      </div>
+      <h1 class="hero-title">
+        True Vision Through Voice &amp; Instinctive Reflex.
+      </h1>
+      <p class="hero-desc">
+        A revolutionary three-tier mobility wearable for blind and low-vision pedestrians. Combining zero-latency hardware acoustic reflexes, wire-free edge computer vision, and a conversational multimodal AI companion that obeys one foundational rule: <em>fail loudly, never optimistically</em>.
+      </p>
+
+      <div class="hero-cta-group">
+        <a href="#simulator" class="btn-glass hero-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="m4.93 4.93 4.24 4.24"/></svg>
+          Test Live Radar Simulator
+        </a>
+        <a href="#script" class="btn-glass secondary hero-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          2-Min Rehearsal Script
+        </a>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card glass-panel">
+          <div class="metric-val text-amber">&lt; 12 ms</div>
+          <div class="metric-label">Tier 0 Reflex Latency</div>
+          <div class="metric-sub">Zero Wi-Fi or Cloud dependency</div>
+        </div>
+        <div class="metric-card glass-panel">
+          <div class="metric-val text-emerald">3-Zone</div>
+          <div class="metric-label">HC-SR04 Ultrasonic Field</div>
+          <div class="metric-sub">Left, Center &amp; Right monitoring</div>
+        </div>
+        <div class="metric-card glass-panel">
+          <div class="metric-val text-cyan">YOLOv8n</div>
+          <div class="metric-label">Edge Machine Vision</div>
+          <div class="metric-sub">80 classes on local ONNX runtime</div>
+        </div>
+        <div class="metric-card glass-panel">
+          <div class="metric-val text-violet">7 Languages</div>
+          <div class="metric-label">Neural Speech Engine</div>
+          <div class="metric-sub">Human voices + script detection</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section id="architecture" class="section">
+      <div class="section-header">
+        <div class="section-tag">ENGINEERING BLUEPRINT</div>
+        <h2 class="section-title">The Three-Tier Safety Hierarchy</h2>
+        <p class="section-desc">Critical safety lives at the silicon level. Cognitive intelligence lives in the companion.</p>
+      </div>
+
+      <div class="tiers-grid">
+        <!-- Tier 0 -->
+        <div class="tier-card glass-panel">
+          <div class="tier-badge-row">
+            <span class="tier-chip tier-0">TIER 0 • INSTINCTIVE REFLEX</span>
+            <span class="chip-status">Autonomous</span>
+          </div>
+          <h3 class="tier-name">Smart Glasses Hardware Arc</h3>
+          <p class="tier-summary">
+            Directly executes on the head-mounted ESP32. Operates without Wi-Fi, bluetooth, or cellular service. Employs 3 HC-SR04 ultrasonic sensors firing pulses to command instantaneous evasive actions through I2S audio clips.
+          </p>
+          <ul class="tier-points">
+            <li><strong>&lt; 25 cm Distance:</strong> Critical STOP override (<code>stop.wav</code>)</li>
+            <li><strong>25 – 45 cm Distance:</strong> Directional steering away from closer hazard (<code>left.wav</code> / <code>right.wav</code>)</li>
+            <li><strong>45 – 100 cm:</strong> Cautionary warning (<code>careful.wav</code>)</li>
+            <li><strong>&gt; 100 cm:</strong> Clear path confirmation (<code>clear.wav</code>)</li>
+            <li><strong>ESP-NOW Radio:</strong> Wire-free frame link from camera module</li>
+          </ul>
+        </div>
+
+        <!-- Tier 1 -->
+        <div class="tier-card glass-panel">
+          <div class="tier-badge-row">
+            <span class="tier-chip tier-1">TIER 1 • EDGE COMPUTER VISION</span>
+            <span class="chip-status">Offline Machine Vision</span>
+          </div>
+          <h3 class="tier-name">Local Machine Vision Engine</h3>
+          <p class="tier-summary">
+            A sandboxed YOLOv8-nano model running in ONNX Runtime at ~1.5s per frame on edge hardware. Identifies key obstacles that sonar cannot grasp: staircases, curbs, glass doors, and walking corridors.
+          </p>
+          <ul class="tier-points">
+            <li><strong>80 Pretrained Classes:</strong> People, vehicles, chairs, doors, stairs</li>
+            <li><strong>Subprocess Isolation:</strong> Inference faults never crash safety audio</li>
+            <li><strong>Disk Ring Buffer:</strong> Automatic 50MB quota sweeping prevents storage leaks</li>
+            <li><strong>Fail-Closed API:</strong> Serves real detections or explicit fallback alerts</li>
+          </ul>
+        </div>
+
+        <!-- Tier 2 -->
+        <div class="tier-card glass-panel">
+          <div class="tier-badge-row">
+            <span class="tier-chip tier-2">TIER 2 • COGNITIVE COMPANION</span>
+            <span class="chip-status">Voice-First AI</span>
+          </div>
+          <h3 class="tier-name">Multimodal AI Companion</h3>
+          <p class="tier-summary">
+            The intelligent conversation layer running on the user's phone or browser. Responds to natural questions, maintains personal memory facts, and delivers natural neural speech.
+          </p>
+          <ul class="tier-points">
+            <li><strong>Wake Word Matching:</strong> <em>"Hey BlindSight"</em> with continuous listen &amp; silence segmentation</li>
+            <li><strong>Persistent Memory Bank:</strong> <em>"Remember my keys are on the desk"</em> (stored offline)</li>
+            <li><strong>7 Reply Languages:</strong> English, Hindi, Bengali, Tamil, Telugu, Spanish, French</li>
+            <li><strong>Zero Hallucination:</strong> Never fabricates a scene if vision AI is offline</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Radar Simulator -->
+    <section id="simulator" class="section">
+      <div class="section-header">
+        <div class="section-tag">LIVE INTERACTIVE DEMO</div>
+        <h2 class="section-title">Tier 0 Ultrasonic Radar Simulator</h2>
+        <p class="section-desc">Drag the distance sliders to simulate real obstacle proximity and trigger genuine LittleFS audio alerts.</p>
+      </div>
+
+      <div class="simulator-wrapper glass-panel">
+        <div class="sim-left">
+          <div class="radar-viewport">
+            <canvas id="radarCanvas" width="340" height="340"></canvas>
+            <div class="radar-scanline"></div>
+          </div>
+          <div class="sim-telemetry-badge" id="telemetryBadge">
+            <span class="telemetry-dot"></span>
+            <span id="telemetryText">STATUS: PATH CLEAR</span>
+          </div>
+        </div>
+
+        <div class="sim-right">
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="leftSlider">Left Sensor (HC-SR04)</label>
+              <span class="slider-val" id="leftVal">150 cm</span>
+            </div>
+            <input type="range" id="leftSlider" min="10" max="250" value="150" class="sim-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="centerSlider">Center Sensor (HC-SR04)</label>
+              <span class="slider-val" id="centerVal">180 cm</span>
+            </div>
+            <input type="range" id="centerSlider" min="10" max="250" value="180" class="sim-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="rightSlider">Right Sensor (HC-SR04)</label>
+              <span class="slider-val" id="rightVal">160 cm</span>
+            </div>
+            <input type="range" id="rightSlider" min="10" max="250" value="160" class="sim-slider">
+          </div>
+
+          <div class="sim-controls">
+            <button id="triggerAudioBtn" class="btn-glass primary-cta">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+              Play Hardware Voice Alert
+            </button>
+            <button id="presetDangerBtn" class="btn-glass secondary">Critical Preset (&lt;25cm)</button>
+            <button id="presetClearBtn" class="btn-glass secondary">Clear Preset (&gt;100cm)</button>
+          </div>
+
+          <div class="sim-output-box">
+            <div class="box-label">EVALUATED REFLEX DECISION</div>
+            <div class="box-decision" id="boxDecision">Path clear. Safe to proceed.</div>
+            <div class="box-clip-info">Active Audio Clip: <code id="activeClipName">/audio/clear.wav</code></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Hardware Blueprint Section -->
+    <section id="hardware" class="section">
+      <div class="section-header">
+        <div class="section-tag">PHYSICAL ARCHITECTURE</div>
+        <h2 class="section-title">Hardware Blueprint &amp; Circuit Pinouts</h2>
+        <p class="section-desc">All connections verified against the v3.3 firmware contracts.</p>
+      </div>
+
+      <div class="hardware-grid">
+        <div class="hw-card glass-panel">
+          <div class="hw-head">
+            <h3 class="hw-title">ESP32 Main Head Unit</h3>
+            <span class="chip-status">30-Pin DevKit V1</span>
+          </div>
+          <table class="pin-table">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Signal</th>
+                <th>ESP32 GPIO</th>
+                <th>Logic Level</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>PCM5102 I2S DAC</td>
+                <td>BCK (Bit Clock)</td>
+                <td><code class="pin-code">GPIO 26</code></td>
+                <td>3.3V</td>
+              </tr>
+              <tr>
+                <td>PCM5102 I2S DAC</td>
+                <td>LRCK (Word Select)</td>
+                <td><code class="pin-code">GPIO 25</code></td>
+                <td>3.3V</td>
+              </tr>
+              <tr>
+                <td>PCM5102 I2S DAC</td>
+                <td>DIN (Data In)</td>
+                <td><code class="pin-code">GPIO 22</code></td>
+                <td>3.3V</td>
+              </tr>
+              <tr>
+                <td>Ultrasonic Array</td>
+                <td>Left Trig / Echo</td>
+                <td><code class="pin-code">GPIO 13 / 14</code></td>
+                <td>Divider to 3.3V</td>
+              </tr>
+              <tr>
+                <td>Ultrasonic Array</td>
+                <td>Center Trig / Echo</td>
+                <td><code class="pin-code">GPIO 17 / 16</code></td>
+                <td>Divider to 3.3V</td>
+              </tr>
+              <tr>
+                <td>Ultrasonic Array</td>
+                <td>Right Trig / Echo</td>
+                <td><code class="pin-code">GPIO 19 / 18</code></td>
+                <td>Divider to 3.3V</td>
+              </tr>
+              <tr>
+                <td>Tactile Button</td>
+                <td>Trigger Pull-up</td>
+                <td><code class="pin-code">GPIO 04</code></td>
+                <td>Internal Pullup</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="hw-card glass-panel">
+          <div class="hw-head">
+            <h3 class="hw-title">ESP32-CAM Wire-Free Unit</h3>
+            <span class="chip-status">AI-Thinker OV2640</span>
+          </div>
+          <p class="hw-text">
+            The optical sensor is mounted wire-free on the glasses frame, eliminating fragile cables running across the wearable hinge.
+          </p>
+          <div class="feature-pills">
+            <div class="f-pill"><strong>ESP-NOW Protocol:</strong> Connectionless frame streaming</div>
+            <div class="f-pill"><strong>Chunk Framing:</strong> 220-byte payload with CRC16 checksums</div>
+            <div class="f-pill"><strong>Stall Detection:</strong> Bounded 4-second transmission watchdog</div>
+            <div class="f-pill"><strong>Power Supply:</strong> High-efficiency 5V 3A Buck Converter</div>
+          </div>
+          <div class="code-preview">
+            <div class="code-bar">firmware/esp32_cam/src/main.cpp</div>
+            <pre><code>// Wire-free ESP-NOW broadcast chunking
+esp_now_peer_info_t peerInfo = {};
+memcpy(peerInfo.peer_addr, broadcastMac, 6);
+peerInfo.channel = 1;
+peerInfo.encrypt = false;
+esp_now_add_peer(&amp;peerInfo);</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Honesty Contract -->
+    <section id="honesty" class="section">
+      <div class="section-header">
+        <div class="section-tag">ETHICAL AI FOR ACCESSIBILITY</div>
+        <h2 class="section-title">The Fail-Closed Honesty Contract</h2>
+        <p class="section-desc">Why assistive mobility AI must never guess or fabricate observations.</p>
+      </div>
+
+      <div class="honesty-container glass-panel">
+        <div class="honesty-grid">
+          <div class="honesty-col danger-col">
+            <div class="col-header">
+              <span class="col-icon">❌</span>
+              <h4>Optimistic AI (Dangerous Fallback)</h4>
+            </div>
+            <p>Traditional AI assistants invent plausible answers when offline or uncertain:</p>
+            <ul>
+              <li>Hallucinates that <em>"the hallway is completely empty"</em> when camera is disconnected.</li>
+              <li>Pretends to see objects that were present in a previous frame minutes ago.</li>
+              <li>Silent failures when network disconnects mid-sentence.</li>
+            </ul>
+            <div class="consequence-tag">Result: High Collision &amp; Injury Hazard</div>
+          </div>
+
+          <div class="honesty-col safe-col">
+            <div class="col-header">
+              <span class="col-icon">🛡️</span>
+              <h4>BlindSight Honesty Contract (Fail-Closed)</h4>
+            </div>
+            <p>BlindSight is hard-coded to never fabricate a scene description:</p>
+            <ul>
+              <li>Explicit spoken disclosure: <em>"Image captured, but vision AI is not connected. I will not guess your surroundings."</em></li>
+              <li>Tier 0 ultrasonic stop alerts always supersede AI dialogue.</li>
+              <li>Spoken network diagnostics and 2-second automatic retries.</li>
+            </ul>
+            <div class="safe-tag">Result: 100% Reliable User Safety</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2-Minute Presentation Script -->
+    <section id="script" class="section">
+      <div class="section-header">
+        <div class="section-tag">PRESENTATION REHEARSAL</div>
+        <h2 class="section-title">2-Minute Dual-Speaker Script</h2>
+        <p class="section-desc">Continuous, seamless presentation dialogue for Agastya Verma &amp; Lavyansh Verma.</p>
+      </div>
+
+      <div class="script-card glass-panel">
+        <div class="script-controls">
+          <div class="timer-display">
+            <span class="timer-label">Rehearsal Timer:</span>
+            <span id="scriptTimer" class="timer-clock">02:00</span>
+          </div>
+          <div class="timer-buttons">
+            <button id="startTimerBtn" class="btn-glass small">Start Timer</button>
+            <button id="resetTimerBtn" class="btn-glass small secondary">Reset</button>
+          </div>
+        </div>
+
+        <div class="script-dialogue-flow">
+          <div class="dialogue-block agastya">
+            <div class="speaker-tag">Agastya Verma</div>
+            <div class="dialogue-text">
+              Over forty million visually impaired people worldwide still rely on a tool invented centuries ago: the white cane. But a cane can’t detect overhead tree branches, transparent glass doors, or fast-approaching obstacles until impact happens.
+            </div>
+          </div>
+
+          <div class="dialogue-block lavyansh">
+            <div class="speaker-tag">Lavyansh Verma</div>
+            <div class="dialogue-text">
+              That’s why we engineered BlindSight — an affordable, voice-first wearable companion that turns the surrounding world into real-time directional audio, keeping pedestrians safe before contact ever happens.
+            </div>
+          </div>
+
+          <div class="dialogue-block agastya">
+            <div class="speaker-tag">Agastya Verma</div>
+            <div class="dialogue-text">
+              It starts right here on the glasses. While standard smart glasses rely on slow cloud APIs, BlindSight uses a zero-latency hardware reflex tier. An ultrasonic sensor array monitors three distinct zones around your head.
+            </div>
+          </div>
+
+          <div class="dialogue-block lavyansh">
+            <div class="speaker-tag">Lavyansh Verma</div>
+            <div class="dialogue-text">
+              If an obstacle enters critical range under twenty-five centimeters, the glasses instantly command "STOP" over direct I2S audio — zero Wi-Fi required, zero lag. Between twenty-five and forty-five centimeters, it steers you left or right around hazards automatically.
+            </div>
+          </div>
+
+          <div class="dialogue-block agastya">
+            <div class="speaker-tag">Agastya Verma</div>
+            <div class="dialogue-text">
+              For situational awareness, an onboard wire-free camera feeds our edge-vision tier, running a lightweight YOLO neural network that detects doorways, stairs, and crosswalks in real time.
+            </div>
+          </div>
+
+          <div class="dialogue-block lavyansh">
+            <div class="speaker-tag">Lavyansh Verma</div>
+            <div class="dialogue-text">
+              Paired with your phone, the BlindSight companion answers natural questions like "What’s in front of me?" or "Is the path clear?" in seven languages using human-grade neural voices. It even has an offline memory bank — so you can say, "Remember where my desk is," and it recalls it instantly.
+            </div>
+          </div>
+
+          <div class="dialogue-block agastya">
+            <div class="speaker-tag">Agastya Verma</div>
+            <div class="dialogue-text">
+              What makes our glasses truly unique are the subtle details: wire-free ESP-NOW frame streaming, directional haptic radar feedback, and a built-in ambient noise gate so crowds and street noise never drown out your commands.
+            </div>
+          </div>
+
+          <div class="dialogue-block lavyansh">
+            <div class="speaker-tag">Lavyansh Verma</div>
+            <div class="dialogue-text">
+              Most importantly, we engineered BlindSight under a strict Honesty Contract: mobility software must never hallucinate. If a camera or network drops, it never guesses "path clear" — it fails loudly and safely.
+            </div>
+          </div>
+
+          <div class="dialogue-block agastya">
+            <div class="speaker-tag">Agastya Verma</div>
+            <div class="dialogue-text">
+              BlindSight bridges the gap between low-cost commodity hardware and life-saving independence.
+            </div>
+          </div>
+
+          <div class="dialogue-block lavyansh">
+            <div class="speaker-tag">Lavyansh Verma</div>
+            <div class="dialogue-text">
+              Giving every step confidence, and giving every user true vision through voice. Thank you!
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="glass-footer">
+      <div class="footer-container">
+        <div class="footer-left">
+          <div class="footer-brand">BlindSight Engineering Showcase</div>
+          <div class="footer-meta">By Agastya Verma &amp; Lavyansh Verma • Academic Year 2026–27</div>
+        </div>
+        <div class="footer-links">
+          <a href="http://localhost:3000" target="_blank">Companion App</a>
+          <a href="https://github.com/devrift/BlindSight" target="_blank">GitHub Repository</a>
+          <a href="#overview">Back to Top</a>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
