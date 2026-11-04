@@ -13,7 +13,20 @@ const win = typeof window !== 'undefined' ? (window as unknown as IWindow) : nul
 const SpeechRecognitionClass = win ? (win.SpeechRecognition || win.webkitSpeechRecognition) : null;
 const AudioContextClass = win ? (win.AudioContext || win.webkitAudioContext) : null;
 
-export const WAKE_PHRASES = ['hey blindsight', 'hey blind sight', 'ok blindsight', 'okay blindsight', 'blindsight'];
+export const WAKE_PHRASES = [
+  'hey blindsight',
+  'hey blind sight',
+  'hey blind site',
+  'ok blindsight',
+  'okay blindsight',
+  'ok blind sight',
+  'okay blind sight',
+  'blindsight',
+  'blind sight',
+  'blind site',
+  'hi blindsight',
+  'hi blind sight'
+];
 export const STOP_WORDS = ['stop', 'be quiet', 'quiet', 'cancel', 'shush'];
 export const SCENE_WORDS = ['describe', 'describe the scene', 'what is around me', "what's around me", 'what is in front of me', 'look for me'];
 

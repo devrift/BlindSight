@@ -68,6 +68,9 @@ export const App: React.FC = () => {
   const lastNetworkRetryRef = useRef<number>(0);
   const appStateRef = useRef<AppState>(appState);
   appStateRef.current = appState;
+  const listenModeRef = useRef<ListenMode>(listenMode);
+  listenModeRef.current = listenMode;
+  const startRecognitionRef = useRef<(mode: 'wake' | 'command') => void>(() => {});
 
   const announce = useCallback((text: string) => {
     setAnnouncement('');
@@ -122,6 +125,13 @@ export const App: React.FC = () => {
           setAppState('idle');
           updateStatus('Ready', 'idle');
           if (onDone) onDone();
+          setTimeout(() => {
+            if (listenModeRef.current === 'wake') {
+              startRecognitionRef.current('wake');
+            } else if (listenModeRef.current === 'handsfree') {
+              startRecognitionRef.current('command');
+            }
+          }, 350);
         }
       );
     },
@@ -243,27 +253,25 @@ export const App: React.FC = () => {
 
       const rec = new SpeechRecognition();
       const langConfig = LANGUAGES[language] || LANGUAGES.en;
-      rec.lang = langConfig.speechLang;
-      rec.continuous = mode === 'wake' || listenMode === 'handsfree';
-      rec.interimResults = false;
+      rec.lang = langConfig.speechLang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+      rec.continuous = mode === 'wake' || listenModeRef.current === 'handsfree';
+      rec.interimResults = mode === 'wake';
 
       rec.onstart = () => {
         isListeningRef.current = true;
         if (mode === 'wake') {
           setAppState('wake');
-          updateStatus('Waiting for wake word…', 'wake');
+          updateStatus('Waiting for "hey BlindSight"…', 'wake');
         } else {
           setAppState('listen');
-          updateStatus('Listening…', 'listen');
+          updateStatus('Listening… go ahead.', 'listen');
         }
       };
 
       rec.onresult = (event: any) => {
         let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            transcript += event.results[i][0].transcript + ' ';
-          }
+          transcript += event.results[i][0].transcript + ' ';
         }
         transcript = transcript.trim();
         if (!transcript) return;
@@ -273,9 +281,8 @@ export const App: React.FC = () => {
         if (mode === 'wake') {
           const matched = WAKE_PHRASES.some(phrase => normalized.includes(phrase));
           if (matched) {
-            // Wake word detected! Flash visual cue and transition to command session
-            // Visual cue only: a beep here steals Android audio focus from
-            // the recognizer that opens next (the v3.3 mic-killer).
+            // Wake word detected! Abort continuous wake listener to switch to command
+            try { rec.abort(); } catch {}
             setIsCue(true);
             setTimeout(() => setIsCue(false), 450);
 
@@ -295,57 +302,83 @@ export const App: React.FC = () => {
             }
           }
         } else {
-          // Command mode
-          handleCommand(transcript);
+          // Command mode: process when finalized
+          let finalTranscript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript + ' ';
+            }
+          }
+          finalTranscript = finalTranscript.trim();
+          if (finalTranscript) {
+            handleCommand(finalTranscript);
+          }
         }
       };
 
       rec.onerror = (event: any) => {
         const err = event.error;
         if (err === 'no-speech' || err === 'aborted') return; // ordinary endings
-        const msg =
-          err === 'not-allowed' || err === 'service-not-allowed'
-            ? 'Microphone permission denied. Tap the big button and allow the microphone.'
-            : err === 'audio-capture'
-            ? 'No microphone found. Plug one in or pick another input.'
-            : err === 'network'
-            ? 'Speech cannot reach its internet service. Check the connection; trying again.'
-            : `Speech recognition problem: ${err}. Tap the button to retry.`;
-        announce(msg);
-        speakReply(msg);
-        if (err === 'network') {
-          const now = Date.now();
-          if (now - lastNetworkRetryRef.current > 5000) {
-            lastNetworkRetryRef.current = now;
-            setTimeout(() => startRecognition(mode), 2000);
-          }
+
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          const msg = 'Microphone permission denied. Tap the big button and allow the microphone.';
+          updateStatus(msg, 'idle');
+          announce(msg);
+          speakReply(msg);
+          return;
         }
+
+        if (err === 'audio-capture') {
+          const msg = 'No microphone found. Please connect a microphone.';
+          updateStatus(msg, 'idle');
+          announce(msg);
+          return;
+        }
+
+        if (err === 'network') {
+          // Silent backoff retry: never speak aloud on network glitch as it locks speech synthesis and microphone
+          updateStatus('Connecting to speech service… retrying…', 'idle');
+          const now = Date.now();
+          if (now - lastNetworkRetryRef.current > 3000) {
+            lastNetworkRetryRef.current = now;
+            setTimeout(() => {
+              if (appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+                if (listenModeRef.current === 'wake') startRecognition('wake');
+                else if (listenModeRef.current === 'handsfree') startRecognition('command');
+              }
+            }, 1800);
+          }
+          return;
+        }
+
+        updateStatus(`Speech note: ${err}. Retrying…`, 'idle');
       };
 
       rec.onend = () => {
         isListeningRef.current = false;
         // Auto-restart if in wake mode and not speaking/thinking
-        if (listenMode === 'wake' && appStateRef.current === 'wake') {
+        if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
           setTimeout(() => {
-            if (listenMode === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+            if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
               startRecognition('wake');
             }
-          }, 400);
-        } else if (listenMode === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+          }, 350);
+        } else if (listenModeRef.current === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
           setTimeout(() => {
-            if (listenMode === 'handsfree') {
+            if (listenModeRef.current === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
               startRecognition('command');
             }
-          }, 500);
+          }, 450);
         }
       };
 
       recognitionRef.current = rec;
+      startRecognitionRef.current = startRecognition;
       try {
         rec.start();
       } catch {}
     },
-    [language, listenMode, appState, updateStatus, handleCommand, announce, speakReply]
+    [language, updateStatus, handleCommand, announce, speakReply]
   );
 
   // Stop speech/listening, then restore the chosen mode so the companion
@@ -424,11 +457,19 @@ export const App: React.FC = () => {
       });
     }
 
+    // Auto-start wake listener on boot if in wake or handsfree mode
+    const bootTimer = setTimeout(() => {
+      if (listenModeRef.current === 'wake' || listenModeRef.current === 'handsfree') {
+        startRecognition(listenModeRef.current === 'handsfree' ? 'command' : 'wake');
+      }
+    }, 600);
+
     return () => {
+      clearTimeout(bootTimer);
       AudioService.stopMicAnalytics();
       AudioService.stopSpeaking();
     };
-  }, []);
+  }, [startRecognition]);
 
   // Noise gate toggle
   const handleNoiseGateToggle = (enabled: boolean) => {
