@@ -67,6 +67,7 @@ export const App: React.FC = () => {
   const activeSessionRef = useRef<'wake' | 'command' | null>(null);
   const isTransitioningRef = useRef<boolean>(false);
   const networkRetriesRef = useRef<number>(0);
+  const hasErrorRef = useRef<boolean>(false);
   const appStateRef = useRef<AppState>(appState);
   appStateRef.current = appState;
   const listenModeRef = useRef<ListenMode>(listenMode);
@@ -270,6 +271,7 @@ export const App: React.FC = () => {
 
       rec.onstart = () => {
         isListeningRef.current = true;
+        hasErrorRef.current = false;
         networkRetriesRef.current = 0;
         if (mode === 'wake') {
           setAppState('wake');
@@ -334,6 +336,8 @@ export const App: React.FC = () => {
         const err = event.error;
         if (err === 'no-speech' || err === 'aborted') return; // ordinary endings
 
+        hasErrorRef.current = true;
+
         if (err === 'not-allowed' || err === 'service-not-allowed') {
           const msg = 'Microphone permission denied. Tap the big button and allow microphone access in your browser.';
           updateStatus(msg, 'idle');
@@ -349,6 +353,14 @@ export const App: React.FC = () => {
         }
 
         if (err === 'network') {
+          const isBrave = typeof (navigator as any).brave !== 'undefined' || !!(window as any).chrome?.brave;
+          if (isBrave) {
+            const msg = 'Brave blocks Google speech services. Enable "Google services for voice recognition" in brave://settings/system, or use Chrome/Edge.';
+            updateStatus(msg, 'idle');
+            announce(msg);
+            return;
+          }
+
           if (listenModeRef.current === 'button') {
             const msg = 'Could not reach speech service. Tap to retry or use text below.';
             updateStatus(msg, 'idle');
@@ -365,13 +377,14 @@ export const App: React.FC = () => {
           if (networkRetriesRef.current <= 2) {
             updateStatus('Connecting to speech service… retrying…', 'idle');
             setTimeout(() => {
+              hasErrorRef.current = false;
               if (appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
                 if (listenModeRef.current === 'wake') startRecognition('wake');
                 else if (listenModeRef.current === 'handsfree') startRecognition('command');
               }
-            }, 2000);
+            }, 2500);
           } else {
-            const msg = 'Speech service temporarily unavailable. Use text input below or tap button to retry.';
+            const msg = 'Speech service unavailable. If using Brave, enable Google speech in brave://settings/system, or use Chrome/Edge.';
             updateStatus(msg, 'idle');
             announce(msg);
           }
@@ -383,6 +396,11 @@ export const App: React.FC = () => {
 
       rec.onend = () => {
         isListeningRef.current = false;
+
+        // If an error occurred, do NOT auto-restart here! Let the error handler or user action restart it
+        if (hasErrorRef.current) {
+          return;
+        }
 
         // If intentionally transitioning to command, do not re-run wake
         if (isTransitioningRef.current) {
