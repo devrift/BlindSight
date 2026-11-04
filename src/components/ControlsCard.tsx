@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ListenMode, LanguageCode, TextSize, VoiceOption } from '../types';
 import { LANGUAGES } from '../services/companionState';
+import { AudioService } from '../services/audioService';
 
 interface ControlsCardProps {
   listenMode: ListenMode;
@@ -47,6 +48,19 @@ export const ControlsCard: React.FC<ControlsCardProps> = ({
 }) => {
   const [inputToken, setInputToken] = useState(token);
   const [showTokenSettings, setShowTokenSettings] = useState(false);
+  const [useSvara, setUseSvara] = useState<boolean>(() => AudioService.isSvaraEnabled());
+  const [showSvaraConfig, setShowSvaraConfig] = useState(false);
+  const [svaraUrl, setSvaraUrl] = useState<string>(() => AudioService.getSvaraUrl());
+
+  const handleSvaraToggle = (enabled: boolean) => {
+    setUseSvara(enabled);
+    AudioService.setSvaraEnabled(enabled);
+  };
+
+  const handleSaveSvaraUrl = () => {
+    AudioService.setSvaraUrl(svaraUrl.trim());
+    setShowSvaraConfig(false);
+  };
 
   return (
     <section className="card controls-card" aria-label="Companion settings">
@@ -98,6 +112,23 @@ export const ControlsCard: React.FC<ControlsCardProps> = ({
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Svara-TTS v1 Indian Neural Voice Integration */}
+      <div className="control">
+        <label htmlFor="svara-toggle">
+          Svara-TTS v1
+          <small>{useSvara ? 'Port 8000 (Hindi/Indian neural)' : 'Docker neural Indian TTS'}</small>
+        </label>
+        <span className="switch">
+          <input
+            type="checkbox"
+            id="svara-toggle"
+            checked={useSvara}
+            onChange={e => handleSvaraToggle(e.target.checked)}
+          />
+          <span className="track" aria-hidden="true"></span>
+        </span>
       </div>
 
       {/* Include Camera */}

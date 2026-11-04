@@ -57,6 +57,36 @@ export class AudioService {
   private static audioUnlocked = false;
   private static currentWavAudio: HTMLAudioElement | null = null;
 
+  // Svara-TTS v1 OpenAI-compatible configuration
+  private static svaraUrl = typeof window !== 'undefined'
+    ? localStorage.getItem('blindsight_svara_url') || 'http://localhost:8000/v1/audio/speech'
+    : 'http://localhost:8000/v1/audio/speech';
+  private static svaraEnabled = typeof window !== 'undefined'
+    ? localStorage.getItem('blindsight_use_svara') === 'on'
+    : false;
+
+  static isSvaraEnabled(): boolean {
+    return this.svaraEnabled;
+  }
+
+  static setSvaraEnabled(enabled: boolean): void {
+    this.svaraEnabled = enabled;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('blindsight_use_svara', enabled ? 'on' : 'off');
+    }
+  }
+
+  static getSvaraUrl(): string {
+    return this.svaraUrl;
+  }
+
+  static setSvaraUrl(url: string): void {
+    this.svaraUrl = url;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('blindsight_svara_url', url);
+    }
+  }
+
   static isSpeechRecognitionSupported(): boolean {
     return !!SpeechRecognitionClass;
   }
@@ -226,7 +256,58 @@ export class AudioService {
     return this.speechWindow.length > 0;
   }
 
-  // --- Speech Synthesis (Speaking) ---
+  // --- Svara-TTS v1 Caller ---
+  static async speakWithSvara(
+    text: string,
+    langCode: LanguageCode,
+    onStart?: () => void,
+    onEnd?: () => void
+  ): Promise<boolean> {
+    const svaraVoices: Record<LanguageCode, string> = {
+      hi: 'Hindi (Female)',
+      en: 'English (Female)',
+      bn: 'Bengali (Female)',
+      ta: 'Tamil (Female)',
+      te: 'Telugu (Female)',
+      es: 'English (Female)',
+      fr: 'English (Female)'
+    };
+    const voice = svaraVoices[langCode] || 'Hindi (Female)';
+
+    try {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 4000);
+
+      const resp = await fetch(this.svaraUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'svara-tts-v1',
+          voice: voice,
+          input: text,
+          response_format: 'mp3'
+        }),
+        signal: ctrl.signal
+      });
+      window.clearTimeout(timer);
+
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        if (onStart) onStart();
+        this.playAudioClip(blobUrl, () => {
+          URL.revokeObjectURL(blobUrl);
+          if (onEnd) onEnd();
+        });
+        return true;
+      }
+    } catch {
+      // Svara-TTS server not reachable on port 8000
+    }
+    return false;
+  }
+
+  // --- Speech Synthesis Router ---
   static speak(
     text: string,
     langCode: LanguageCode,
@@ -235,13 +316,35 @@ export class AudioService {
     onEnd?: () => void
   ): void {
     this.stopSpeaking();
+
+    // 1. If Svara-TTS is enabled, attempt calling it
+    if (this.svaraEnabled) {
+      this.speakWithSvara(text, langCode, onStart, onEnd).then(success => {
+        if (!success) {
+          // If Svara-TTS endpoint is not running, seamlessly fallback to natural voice
+          this.speakNative(text, langCode, voiceURI, onStart, onEnd);
+        }
+      });
+      return;
+    }
+
+    // 2. Default browser neural voice
+    this.speakNative(text, langCode, voiceURI, onStart, onEnd);
+  }
+
+  private static speakNative(
+    text: string,
+    langCode: LanguageCode,
+    voiceURI?: string,
+    onStart?: () => void,
+    onEnd?: () => void
+  ): void {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
       if (onEnd) onEnd();
       return;
     }
 
     try {
-      // Resume synthesis if browser paused it
       if (window.speechSynthesis.paused) {
         try { window.speechSynthesis.resume(); } catch {}
       }
@@ -255,7 +358,6 @@ export class AudioService {
         const found = voices.find(v => v.voiceURI === voiceURI);
         if (found) utter.voice = found;
       } else {
-        // Choose best match for language
         const prefix = langConfig.speechLang.split('-')[0].toLowerCase();
         const matching = voices.filter(v => v.lang.toLowerCase().startsWith(prefix));
         const natural = matching.find(v => /natural|neural|online|google/i.test(v.name));
@@ -278,7 +380,6 @@ export class AudioService {
       utter.onend = () => finishOnce();
       utter.onerror = () => finishOnce();
 
-      // Browser speech watchdog in case utter.onend fails to trigger
       const maxDuration = Math.max(3500, text.length * 80);
       window.setTimeout(() => {
         if (!finished) {
