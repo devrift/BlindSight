@@ -34,7 +34,13 @@ export const WAKE_PHRASES = [
   'hi blind sight',
   'hello blindsight',
   'hello blind sight',
-  'yo blindsight'
+  'yo blindsight',
+  'jarvis',
+  'hey jarvis',
+  'hi jarvis',
+  'hello jarvis',
+  'ok jarvis',
+  'okay jarvis'
 ];
 
 export const STOP_WORDS = ['stop', 'be quiet', 'quiet', 'cancel', 'shush'];
@@ -406,6 +412,164 @@ export class AudioService {
         window.speechSynthesis.cancel();
       } catch {}
     }
+  }
+
+  // --- Direct PCM WAV Recorder (Zero Browser Cloud Dependencies) ---
+  private static wavStream: MediaStream | null = null;
+  private static scriptProcessor: ScriptProcessorNode | null = null;
+  private static pcmSamples: Float32Array[] = [];
+
+  static async recordWav(durationMs = 3800, onLevel?: (lvl: number) => void): Promise<Blob | null> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) return null;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+      this.wavStream = stream;
+
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass({ sampleRate: 16000 });
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      
+      this.pcmSamples = [];
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        this.pcmSamples.push(new Float32Array(input));
+        if (onLevel) {
+          let sum = 0;
+          for (let i = 0; i < input.length; i++) sum += Math.abs(input[i]);
+          onLevel(Math.min(1.0, (sum / input.length) * 5));
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(ctx.destination);
+      this.scriptProcessor = processor;
+
+      await new Promise(r => setTimeout(r, durationMs));
+
+      processor.disconnect();
+      source.disconnect();
+      stream.getTracks().forEach(t => t.stop());
+      ctx.close().catch(() => {});
+      this.wavStream = null;
+      this.scriptProcessor = null;
+
+      let totalLen = 0;
+      for (const chunk of this.pcmSamples) totalLen += chunk.length;
+      const merged = new Float32Array(totalLen);
+      let offset = 0;
+      for (const chunk of this.pcmSamples) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      return this.encodeWAV(merged, 16000);
+    } catch (e) {
+      console.warn('WAV recording error:', e);
+      return null;
+    }
+  }
+
+  private static encodeWAV(samples: Float32Array, sampleRate: number): Blob {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+
+  // --- Open.Jarvis Round-trip Voice Engine (/api/voice) ---
+  static async sendVoiceToJarvis(
+    audioBlob: Blob,
+    lang = 'en',
+    onStart?: () => void,
+    onEnd?: () => void
+  ): Promise<{ transcript: string; reply: string; wakeDetected: boolean; success: boolean }> {
+    try {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 20000);
+      const resp = await fetch(`/api/voice?lang=${encodeURIComponent(lang)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: audioBlob,
+        signal: ctrl.signal
+      });
+      window.clearTimeout(timer);
+
+      if (resp.ok) {
+        const transcript = decodeURIComponent(resp.headers.get('X-Transcript') || '');
+        const reply = decodeURIComponent(resp.headers.get('X-Reply') || '');
+        const wakeDetected = resp.headers.get('X-Wake-Detected') === '1';
+
+        const audioData = await resp.blob();
+        if (audioData.size > 100) {
+          const audioUrl = URL.createObjectURL(audioData);
+          if (onStart) onStart();
+          this.playAudioClip(audioUrl, () => {
+            URL.revokeObjectURL(audioUrl);
+            if (onEnd) onEnd();
+          });
+        } else if (onEnd) {
+          onEnd();
+        }
+
+        return { transcript, reply, wakeDetected, success: true };
+      }
+    } catch (e) {
+      console.warn('sendVoiceToJarvis error:', e);
+    }
+    return { transcript: '', reply: '', wakeDetected: false, success: false };
+  }
+
+  // --- Hardware PC / Pi Microphone Trigger (/api/listen) ---
+  static async triggerHardwareMic(
+    lang = 'en',
+    onStart?: () => void,
+    onEnd?: () => void
+  ): Promise<{ transcript: string; reply: string; success: boolean }> {
+    try {
+      const resp = await fetch(`/api/listen?lang=${encodeURIComponent(lang)}`, { method: 'POST' });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok) {
+          if (data.tts_url) {
+            if (onStart) onStart();
+            this.playAudioClip(data.tts_url, onEnd);
+          } else if (onEnd) {
+            onEnd();
+          }
+          return { transcript: data.transcript, reply: data.reply, success: true };
+        }
+      }
+    } catch (e) {
+      console.warn('triggerHardwareMic error:', e);
+    }
+    return { transcript: '', reply: '', success: false };
   }
 
   // --- Round-trip Gateway Audio (/api/voice) ---

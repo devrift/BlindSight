@@ -353,41 +353,10 @@ export const App: React.FC = () => {
         }
 
         if (err === 'network') {
-          const isBrave = typeof (navigator as any).brave !== 'undefined' || !!(window as any).chrome?.brave;
-          if (isBrave) {
-            const msg = 'Brave blocks Google speech services. Enable "Google services for voice recognition" in brave://settings/system, or use Chrome/Edge.';
-            updateStatus(msg, 'idle');
-            announce(msg);
-            return;
-          }
-
-          if (listenModeRef.current === 'button') {
-            const msg = 'Could not reach speech service. Tap to retry or use text below.';
-            updateStatus(msg, 'idle');
-            announce(msg);
-            setTimeout(() => {
-              if (appStateRef.current === 'idle') {
-                updateStatus('Tap the big button and speak.', 'idle');
-              }
-            }, 3500);
-            return;
-          }
-
-          networkRetriesRef.current += 1;
-          if (networkRetriesRef.current <= 2) {
-            updateStatus('Connecting to speech service… retrying…', 'idle');
-            setTimeout(() => {
-              hasErrorRef.current = false;
-              if (appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
-                if (listenModeRef.current === 'wake') startRecognition('wake');
-                else if (listenModeRef.current === 'handsfree') startRecognition('command');
-              }
-            }, 2500);
-          } else {
-            const msg = 'Speech service unavailable. If using Brave, enable Google speech in brave://settings/system, or use Chrome/Edge.';
-            updateStatus(msg, 'idle');
-            announce(msg);
-          }
+          hasErrorRef.current = true;
+          const msg = 'Open.Jarvis local voice engine ready. Tap the big button and speak.';
+          updateStatus(msg, 'idle');
+          announce(msg);
           return;
         }
 
@@ -503,6 +472,48 @@ export const App: React.FC = () => {
 
     // Reset network retries counter on user intentional tap
     networkRetriesRef.current = 0;
+
+    // If speech recognition had network error or not supported, use Open.Jarvis direct voice
+    if (hasErrorRef.current || !AudioService.isSpeechRecognitionSupported()) {
+      setIsCue(true);
+      setTimeout(() => setIsCue(false), 450);
+      (async () => {
+        setAppState('listen');
+        updateStatus('Listening with Open.Jarvis… speak now.', 'listen');
+        AudioService.playEarcon('listen');
+        const wavBlob = await AudioService.recordWav(3800, lvl => setMicLevel(lvl));
+        if (!wavBlob) {
+          setAppState('idle');
+          updateStatus('Could not capture audio from microphone.', 'idle');
+          return;
+        }
+        setAppState('think');
+        updateStatus('Open.Jarvis thinking…', 'think');
+        AudioService.playEarcon('think');
+        const turn = await AudioService.sendVoiceToJarvis(
+          wavBlob,
+          language,
+          () => {
+            setAppState('speak');
+            updateStatus('Speaking…', 'speak');
+          },
+          () => {
+            setAppState('idle');
+            updateStatus('Ready', 'idle');
+          }
+        );
+        if (turn.transcript) {
+          setHeardText(turn.transcript);
+          const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+          const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
+          setMessages(prev => [...prev, userMsg, assistantMsg]);
+        } else {
+          setAppState('idle');
+          updateStatus('Ready (Tap to speak)', 'idle');
+        }
+      })();
+      return;
+    }
 
     // Start single command session on button click. Visual cue only
     setIsCue(true);

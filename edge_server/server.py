@@ -3,10 +3,10 @@
 
 Permanent, 100% Free, Local Edge AI Server.
 Integrates:
+- Open.Jarvis Audio Assistant Engine (Wake Word, Google STT, Edge-TTS Neural Voices)
 - YOLOv8n ONNX Edge Reflex Obstacle Detection (ESP32-CAM)
-- faster-whisper Speech-to-Text
-- Ollama llama3.2:1b Local LLM (Brain)
-- Piper & svara-TTS Neural Voices
+- Local Intent Router & Multimodal Vision Perception
+- Zero Mandatory API Keys (100% Free)
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request, send_file
 
@@ -23,12 +24,17 @@ ROOT_DIR = SERVER_DIR.parent
 RUNTIME_DIR = SERVER_DIR / "runtime"
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
-# Lazy/resilient import of voice_ai and vision_ai
-try:
-    import voice_ai
-except ImportError:
-    voice_ai = None
+if str(SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(SERVER_DIR))
 
+# Import Open.Jarvis Audio Engine
+try:
+    from jarvis_voice import jarvis_assistant, VoiceState
+except ImportError as e:
+    print(f"Warning: jarvis_voice failed to load: {e}")
+    jarvis_assistant = None
+
+# Import YOLOv8n ONNX vision reflex
 try:
     import vision_ai
 except ImportError:
@@ -36,7 +42,7 @@ except ImportError:
 
 app = Flask(__name__)
 
-# State
+# System state
 last_vision_description = "Path ahead appears clear."
 last_frame_timestamp = 0.0
 
@@ -44,36 +50,42 @@ last_frame_timestamp = 0.0
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Expose-Headers"] = "X-Transcript, X-Reply, X-Wake-Detected"
     return response
 
 
 @app.route("/health", methods=["GET"])
+@app.route("/api/status", methods=["GET"])
 def health():
-    """Health check for edge reflex, voice AI, and models."""
-    whisper_ready = voice_ai is not None
+    """Health check for edge reflex, Open.Jarvis voice assistant, and camera."""
     yolo_model = (SERVER_DIR / "models" / "yolov8n.onnx").is_file()
-    
+    mic_name = jarvis_assistant.mic_name if jarvis_assistant else "None"
+    wake_words = jarvis_assistant.wake_words if jarvis_assistant else []
+
     return jsonify({
         "status": "healthy",
-        "service": "BlindSight Local Edge Gateway",
+        "service": "BlindSight Open.Jarvis Local Edge Gateway",
+        "voice_engine": "Open.Jarvis Audio Assistant",
         "tier1_edge_reflex": "ready" if yolo_model else "model_missing",
-        "tier2_voice_ai": "ready" if whisper_ready else "not_loaded",
-        "stt": "faster-whisper (local CPU int8)",
-        "llm": "Ollama llama3.2:1b (local CPU)",
-        "tts": "Piper + svara-TTS (local neural)",
-        "cost": "₹0 / permanent",
+        "tier2_voice_ai": "ready" if jarvis_assistant else "not_loaded",
+        "wake_words": wake_words,
+        "hardware_mic": mic_name,
+        "mic_available": jarvis_assistant.mic_available if jarvis_assistant else False,
+        "stt": "Google STT / speech_recognition (free, no key)",
+        "tts": "Microsoft Edge Neural TTS (en-GB-RyanNeural / hi-IN-SwaraNeural)",
+        "cost": "₹0 / permanent free",
     })
 
 
 @app.route("/api/voice", methods=["POST"])
 def api_voice():
-    """Full voice round-trip: raw audio bytes in -> WAV audio out.
+    """Full voice round-trip: raw audio bytes in -> audio response out.
     
-    1. STT: faster-whisper transcribes audio and detects language.
-    2. LLM: Ollama (llama3.2:1b) reasons using vision context.
-    3. TTS: Piper (hi/en) or svara-TTS (other Indic) synthesizes natural WAV.
+    1. STT: Open.Jarvis converts WAV/audio into transcript.
+    2. Intent / Reasoning: checks wake words, routes navigational & general questions.
+    3. TTS: Edge-TTS generates neural audio stream.
     """
     audio_data = request.get_data()
     if not audio_data or len(audio_data) < 100:
@@ -81,15 +93,26 @@ def api_voice():
 
     global last_vision_description
     vision_ctx = last_vision_description if (time.time() - last_frame_timestamp < 45.0) else ""
+    lang = request.args.get("lang", "en")
 
-    if voice_ai is not None:
-        try:
-            audio_out = voice_ai.process_voice(audio_data, vision_context=vision_ctx)
-            return Response(audio_out, mimetype="audio/wav")
-        except Exception as e:
-            print(f"Error in process_voice: {e}")
+    if jarvis_assistant is not None:
+        turn = jarvis_assistant.process_full_voice_turn(
+            audio_data,
+            vision_context=vision_ctx,
+            lang=lang,
+            play_local=False
+        )
+        audio_out = turn.get("audio_bytes", b"")
+        transcript = turn.get("transcript", "")
+        reply = turn.get("reply", "")
+        wake = turn.get("wake_detected", False)
 
-    # Fallback response
+        resp = Response(audio_out, mimetype="audio/mpeg")
+        resp.headers["X-Transcript"] = quote(transcript)
+        resp.headers["X-Reply"] = quote(reply)
+        resp.headers["X-Wake-Detected"] = "1" if wake else "0"
+        return resp
+
     return Response(b"", status=500, mimetype="text/plain")
 
 
@@ -98,14 +121,16 @@ def api_chat():
     """Text-based AI query endpoint for PWA companion."""
     data = request.get_json(silent=True) or {}
     prompt = str(data.get("prompt", "")).strip()
+    lang = str(data.get("lang", "en")).strip()
+
     if not prompt:
         return jsonify(error="missing prompt"), 400
 
     global last_vision_description
     vision_ctx = last_vision_description if (time.time() - last_frame_timestamp < 45.0) else ""
 
-    if voice_ai is not None:
-        reply = voice_ai.get_llm_response(prompt, vision_context=vision_ctx)
+    if jarvis_assistant is not None:
+        reply = jarvis_assistant.route_command(prompt, vision_context=vision_ctx, lang=lang)
     else:
         reply = "BlindSight local companion active. Obstacle sensors are monitoring your path."
 
@@ -114,6 +139,64 @@ def api_chat():
         "ok": True,
         "image_attached": bool(vision_ctx),
         "degraded": False,
+        "tts_url": f"/api/tts?text={quote(reply)}&lang={lang}"
+    })
+
+
+@app.route("/api/tts", methods=["GET", "POST"])
+def api_tts():
+    """Text-to-speech audio streaming endpoint."""
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        text = str(data.get("text", "")).strip()
+        lang = str(data.get("lang", "en")).strip()
+        voice = str(data.get("voice", "")).strip()
+    else:
+        text = str(request.args.get("text", "")).strip()
+        lang = str(request.args.get("lang", "en")).strip()
+        voice = str(request.args.get("voice", "")).strip()
+
+    if not text:
+        return jsonify(error="missing text"), 400
+
+    if jarvis_assistant is not None:
+        audio_bytes = jarvis_assistant.text_to_speech(text, lang=lang, voice_override=voice)
+        return Response(audio_bytes, mimetype="audio/mpeg")
+
+    return jsonify(error="TTS unavailable"), 500
+
+
+@app.route("/api/listen", methods=["POST", "GET"])
+def api_listen_mic():
+    """Triggers live hardware microphone listening on the host PC / Pi.
+    
+    Records 3.5s of audio, transcribes, routes the command, and returns the result.
+    """
+    if jarvis_assistant is None or not jarvis_assistant.mic_available:
+        return jsonify(error="Hardware microphone unavailable", ok=False), 503
+
+    global last_vision_description
+    vision_ctx = last_vision_description if (time.time() - last_frame_timestamp < 45.0) else ""
+    lang = request.args.get("lang", "en")
+
+    # Record from hardware mic
+    audio_raw = jarvis_assistant.record_mic_audio(duration=3.5)
+    if not audio_raw:
+        return jsonify(error="Failed to record audio", ok=False), 500
+
+    turn = jarvis_assistant.process_full_voice_turn(
+        audio_raw,
+        vision_context=vision_ctx,
+        lang=lang,
+        play_local=True  # also speak out PC speakers
+    )
+
+    return jsonify({
+        "ok": True,
+        "transcript": turn.get("transcript", ""),
+        "reply": turn.get("reply", ""),
+        "wake_detected": turn.get("wake_detected", False),
+        "tts_url": f"/api/tts?text={quote(turn.get('reply', ''))}&lang={lang}"
     })
 
 
@@ -167,5 +250,5 @@ def latest_frame():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    print(f"Starting BlindSight Local Gateway on http://0.0.0.0:{port}")
+    print(f"Starting BlindSight Open.Jarvis Gateway on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
