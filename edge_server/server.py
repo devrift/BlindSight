@@ -73,6 +73,8 @@ def health():
         "wake_words": wake_words,
         "hardware_mic": mic_name,
         "mic_available": jarvis_assistant.mic_available if jarvis_assistant else False,
+        "llm_brain": "Google Gemini 2.5 Flash Lite (Multimodal Vision + Voice)" if os.getenv("GEMINI_API_KEY") else "Local Intent Router / Ollama",
+        "gemini_active": bool(os.getenv("GEMINI_API_KEY")),
         "stt": "Google STT / speech_recognition (free, no key)",
         "tts": "Microsoft Edge Neural TTS (en-GB-RyanNeural / hi-IN-SwaraNeural)",
         "cost": "₹0 / permanent free",

@@ -1,20 +1,22 @@
 """
-BlindSight Voice Assistant - Powered by Open.Jarvis Architecture
-https://github.com/dmrr35/Open.Jarvis
+BlindSight Voice Assistant - Powered by Open.Jarvis Architecture & Gemini Multimodal
+https://github.com/dmrr35/Open.Jarvis | https://github.com/FatihMakes/Mark-LVI
 
 Features:
 - Dual Wake Words: "Hey BlindSight" & "Jarvis" (customizable)
 - Speech Recognition: Google STT + Offline speech processing
+- Multimodal AI Brain: Google Gemini 2.5 Flash Lite (live vision + voice reasoning)
 - Voice Synthesis: Microsoft Edge Neural TTS (Iron Man RyanNeural / SwaraNeural / Svara-TTS v1)
 - State Machine: STANDBY -> WAKE_WORD_DETECTED -> LISTENING -> PROCESSING -> SPEAKING
 - Native Microphone capture via sounddevice (hardware Realtek mic)
-- Multimodal Vision Integration (YOLOv8n ONNX obstacle reflex)
-- 100% Free, zero mandatory API keys.
+- Edge Reflex Integration: ESP32-CAM YOLOv8n ONNX obstacle alerts
+- 100% Free with offline graceful degradation.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import os
 import re
@@ -33,6 +35,16 @@ import speech_recognition as sr
 SERVER_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SERVER_DIR.parent
 JARVIS_DIR = PROJECT_DIR / "Open.Jarvis"
+RUNTIME_DIR = SERVER_DIR / "runtime"
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+
+# Load environment variables from .env files
+try:
+    from dotenv import load_dotenv
+    load_dotenv(SERVER_DIR / ".env")
+    load_dotenv(PROJECT_DIR / ".env")
+except ImportError:
+    pass
 
 if str(JARVIS_DIR) not in sys.path and JARVIS_DIR.is_dir():
     sys.path.insert(0, str(JARVIS_DIR))
@@ -57,6 +69,7 @@ VOICE_MAP = {
 SVARA_URL = os.getenv("SVARA_URL", "http://localhost:8000/v1/audio/speech")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 
 
 def normalize_voice_phrase(text: str) -> str:
@@ -194,31 +207,82 @@ class JarvisVoiceAssistant:
             print(f"[JarvisVoice] Mic record failed: {e}")
             return b""
 
+    def query_gemini(
+        self,
+        prompt: str,
+        image_path: Optional[Path] = None,
+        vision_context: str = "",
+        lang: str = "en"
+    ) -> Optional[str]:
+        """Query Google Gemini Multimodal Vision API."""
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            return None
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+        
+        system_instruction = (
+            "You are BlindSight JARVIS, an empathetic real-time AI vision and navigation assistant for a visually impaired user. "
+            "Rules:\n"
+            "- Keep responses under 2 direct, helpful sentences.\n"
+            "- For navigation and obstacles: clearly state if the path is clear, or identify obstacles with direction (left, right, ahead).\n"
+            "- For text reading: read signs, labels, or currency directly.\n"
+        )
+        if lang == "hi":
+            system_instruction += "- Respond in natural conversational Hindi.\n"
+
+        if vision_context:
+            system_instruction += f"- Real-time sensor reflex data: {vision_context}\n"
+
+        parts: list[dict[str, Any]] = [
+            {"text": f"{system_instruction}\n\nUser Question: {prompt}"}
+        ]
+
+        # Attach image frame if provided and valid
+        if image_path and image_path.is_file():
+            try:
+                with open(image_path, "rb") as f:
+                    img_bytes = f.read()
+                if len(img_bytes) > 200:
+                    parts.append({
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": base64.b64encode(img_bytes).decode("utf-8")
+                        }
+                    })
+            except Exception as e:
+                print(f"[JarvisVoice] Image attach notice: {e}")
+
+        try:
+            resp = requests.post(
+                url,
+                json={"contents": [{"parts": parts}]},
+                headers={"Content-Type": "application/json"},
+                timeout=9.0
+            )
+            if resp.ok:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    reply = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                    if reply:
+                        return reply
+            else:
+                print(f"[JarvisVoice] Gemini status {resp.status_code}: {resp.text[:120]}")
+        except Exception as e:
+            print(f"[JarvisVoice] Gemini request notice: {e}")
+
+        return None
+
     def route_command(self, command: str, vision_context: str = "", lang: str = "en") -> str:
-        """Route user voice command through fast local intent router + AI reasoning."""
+        """Route user voice command through fast local intent router + Gemini AI reasoning."""
         cmd_clean = self.strip_wake_word(command)
         if not cmd_clean:
             return "Yes? I'm listening." if lang == "en" else "हाँ? मैं सुन रहा हूँ।"
 
         norm = normalize_voice_phrase(cmd_clean)
 
-        # 1. Navigation & Surroundings
-        if any(k in norm for k in ["what is in front", "what do you see", "ahead", "surroundings", "describe", "look"]):
-            if vision_context:
-                return vision_context
-            return "Path ahead appears clear. Keep your white cane ready." if lang == "en" else "आगे का रास्ता साफ प्रतीत होता है।"
-
-        # 2. Obstacles & Safety Check
-        if any(k in norm for k in ["clear", "safe", "obstacle", "can i walk", "barrier"]):
-            if vision_context:
-                return f"Sensor status: {vision_context}"
-            return "No close obstacles detected in the immediate path. Proceed with caution."
-
-        # 3. Help & Commands
-        if any(k in norm for k in ["help", "what can you do", "commands"]):
-            return "You can ask: what is ahead, is the path clear, what time is it, battery status, or ask any general question."
-
-        # 4. Status, Time, Date, Battery
+        # 1. Immediate Fast System Actions (5ms local response)
         if any(k in norm for k in ["time", "current time"]):
             return f"The current time is {time.strftime('%I:%M %p')}."
         if any(k in norm for k in ["date", "today date", "day"]):
@@ -234,12 +298,35 @@ class JarvisVoiceAssistant:
             except Exception:
                 pass
             return "Glasses battery is at 88 percent. Normal operation."
-
-        # 5. Stop / Pause
         if any(k in norm for k in ["stop", "pause", "be quiet", "silence"]):
             return "Stopping."
+        if any(k in norm for k in ["help", "what can you do", "commands"]):
+            return "You can ask: what is ahead of me, is the path clear, read this sign, what time is it, or ask any general question."
 
-        # 6. Fallback to Local Ollama LLM if running
+        # 2. Check for latest camera frame
+        latest_frame = RUNTIME_DIR / "latest.jpg"
+        has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 120.0)
+
+        # 3. Primary AI Brain: Google Gemini 2.5 Flash Lite
+        is_scene_query = any(k in norm for k in ["what is in front", "what do you see", "ahead", "surroundings", "describe", "look", "clear", "obstacle", "can i walk", "read"])
+        image_to_use = latest_frame if (has_frame and is_scene_query) else None
+
+        gemini_reply = self.query_gemini(
+            cmd_clean,
+            image_path=image_to_use,
+            vision_context=vision_context,
+            lang=lang
+        )
+        if gemini_reply:
+            return gemini_reply
+
+        # 4. Fallback 1: Vision Reflex Context
+        if is_scene_query:
+            if vision_context:
+                return vision_context
+            return "Path ahead appears clear. Proceed with caution." if lang == "en" else "आगे का रास्ता साफ प्रतीत होता है।"
+
+        # 5. Fallback 2: Local Ollama LLM if running
         try:
             resp = requests.post(
                 OLLAMA_URL,
@@ -249,7 +336,7 @@ class JarvisVoiceAssistant:
                         {
                             "role": "system",
                             "content": (
-                                "You are BlindSight, a voice assistant for blind users. "
+                                "You are BlindSight JARVIS, a voice assistant for blind users. "
                                 "Keep responses under 2 sentences. Be direct and helpful. "
                                 f"Vision context: {vision_context}"
                             )
@@ -259,7 +346,7 @@ class JarvisVoiceAssistant:
                     "stream": False,
                     "options": {"num_predict": 75}
                 },
-                timeout=5.0
+                timeout=4.0
             )
             if resp.ok:
                 ans = resp.json().get("message", {}).get("content", "").strip()
@@ -268,17 +355,17 @@ class JarvisVoiceAssistant:
         except Exception:
             pass
 
-        # 7. Built-in Instant Conversational Fallback
+        # 6. Fallback 3: Built-in Conversational Responses
         if any(k in norm for k in ["hello", "hey", "hi", "good morning", "good evening"]):
-            return "Hello! I am BlindSight, your assistive navigation companion. How can I help you right now?"
+            return "Hello! I am BlindSight JARVIS, your assistive navigation companion. How can I help you right now?"
 
         if any(k in norm for k in ["who are you", "what are you"]):
-            return "I am BlindSight, powered by Open.Jarvis voice technology and edge AI to guide and assist you."
+            return "I am BlindSight JARVIS, powered by Google Gemini and Edge AI to guide and assist you."
 
         if any(k in norm for k in ["thank you", "thanks"]):
             return "You are very welcome! I am always here to assist."
 
-        return f"I heard: {cmd_clean}. Sensor reflex is active and monitoring your surroundings."
+        return f"I heard: {cmd_clean}. Obstacle sensors are active and monitoring your path."
 
     async def _synthesize_edge_tts(self, text: str, voice: str) -> bytes:
         """Synthesize audio bytes using Microsoft Edge Neural TTS."""
@@ -322,7 +409,6 @@ class JarvisVoiceAssistant:
             return asyncio.run(self._synthesize_edge_tts(text, voice))
         except Exception as e:
             print(f"[JarvisVoice] Edge-TTS error: {e}")
-            # Try English RyanNeural as safe fallback
             try:
                 return asyncio.run(self._synthesize_edge_tts(text, "en-GB-RyanNeural"))
             except Exception:
@@ -337,7 +423,6 @@ class JarvisVoiceAssistant:
             with open(tmp, "wb") as f:
                 f.write(audio_bytes)
 
-            # Windows MediaPlayer COM playback in PowerShell
             cmd = (
                 f'Add-Type -AssemblyName presentationCore; '
                 f'$p = New-Object System.Windows.Media.MediaPlayer; '
@@ -355,7 +440,7 @@ class JarvisVoiceAssistant:
         lang: str = "en",
         play_local: bool = False
     ) -> Dict[str, Any]:
-        """Full pipeline: Audio In -> STT -> Intent Routing -> TTS -> Audio Out."""
+        """Full pipeline: Audio In -> STT -> Gemini/Intent Routing -> TTS -> Audio Out."""
         self.set_state(VoiceState.PROCESSING, "Transcribing speech")
         
         # 1. Speech to Text
@@ -380,8 +465,8 @@ class JarvisVoiceAssistant:
             self.is_active = True
             print(f"[JarvisVoice] 🟢 Wake word detected in: '{text}'")
 
-        # 3. Route Command
-        self.set_state(VoiceState.PROCESSING, f"Answering: {text}")
+        # 3. Route Command via Gemini
+        self.set_state(VoiceState.PROCESSING, f"Answering with Gemini: {text}")
         reply = self.route_command(text, vision_context=vision_context, lang=lang)
 
         # 4. Synthesize Response
@@ -416,18 +501,15 @@ class JarvisVoiceAssistant:
             
             while not self._stop_listener.is_set():
                 try:
-                    # Record a 3.5s window
                     audio_raw = self.record_mic_audio(duration=3.5)
                     if not audio_raw:
                         time.sleep(1.0)
                         continue
 
-                    # Transcribe
                     transcript, _ = self.transcribe_audio_bytes(audio_raw)
                     if not transcript:
                         continue
 
-                    # Check wake word or active state
                     now = time.time()
                     wake = self.check_wake_word(transcript)
                     
