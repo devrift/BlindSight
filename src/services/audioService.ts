@@ -408,6 +408,41 @@ export class AudioService {
     }
   }
 
+  // --- Round-trip Gateway Audio (/api/voice) ---
+  static async sendVoiceToGateway(
+    audioBlob: Blob,
+    onStart?: () => void,
+    onEnd?: () => void
+  ): Promise<boolean> {
+    try {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 20000);
+      const resp = await fetch('/api/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: audioBlob,
+        signal: ctrl.signal
+      });
+      window.clearTimeout(timer);
+
+      if (resp.ok) {
+        const wavBlob = await resp.blob();
+        if (wavBlob.size > 100) {
+          const audioUrl = URL.createObjectURL(wavBlob);
+          if (onStart) onStart();
+          this.playAudioClip(audioUrl, () => {
+            URL.revokeObjectURL(audioUrl);
+            if (onEnd) onEnd();
+          });
+          return true;
+        }
+      }
+    } catch {
+      // Gateway not available or timed out
+    }
+    return false;
+  }
+
   static getAvailableVoices(): VoiceOption[] {
     if (typeof window === 'undefined' || !window.speechSynthesis) return [];
     const voices = window.speechSynthesis.getVoices();

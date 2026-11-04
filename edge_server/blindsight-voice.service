@@ -1,0 +1,18 @@
+[Unit]
+Description=BlindSight Voice AI (local, no API keys)
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/BlindSight/edge_server
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/BlindSight/edge_server/.venv/bin/python server.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
