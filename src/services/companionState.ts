@@ -6,7 +6,7 @@ export const LANGUAGES: Record<LanguageCode, LanguageOption> = {
     label: 'English',
     espeakVoice: 'en',
     neuralVoice: 'en-IN-NeerjaNeural',
-    speechLang: 'en-US',
+    speechLang: 'en-IN',
     confirmation: 'Language set to English.'
   },
   hi: {
@@ -23,7 +23,7 @@ export const LANGUAGES: Record<LanguageCode, LanguageOption> = {
     espeakVoice: 'bn',
     neuralVoice: 'bn-IN-TanishaaNeural',
     speechLang: 'bn-IN',
-    confirmation: 'ভাষা বাংলায় সেট করা হয়েছে।'
+    confirmation: 'भाषा বাংলায় সেট করা হয়েছে।'
   },
   ta: {
     code: 'ta',
@@ -173,30 +173,136 @@ export class CompanionStateService {
     newLanguage?: LanguageCode;
   } | null {
     const low = prompt.trim().toLowerCase();
+    const cleaned = low.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Remember
+    // 1. Greetings & Casual Interaction
+    const greetings = [
+      'hey', 'hi', 'hello', 'hey there', 'hello there', 'hi there',
+      'good morning', 'good afternoon', 'good evening', 'namaste', 'namaskar'
+    ];
+    if (greetings.includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'नमस्ते! मैं ब्लाइंडसाइट हूँ, आपकी दृष्टि सहायक। मैं सुन रही हूँ। आज मैं आपकी क्या मदद कर सकती हूँ?'
+        : "Hello! I'm BlindSight, your visual assistant. I am listening. How can I help you today?";
+      return { isLocal: true, reply };
+    }
+
+    // 2. Direct Wake Phrases addressed as commands (e.g. tapped button and said "hey blindsight")
+    const directWakeCalls = [
+      'hey blindsight', 'blindsight', 'blind sight', 'blind site', 'blindside', 'blind side',
+      'ok blindsight', 'okay blindsight', 'ok blind sight', 'hi blindsight', 'hello blindsight'
+    ];
+    if (directWakeCalls.includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'जी, मैं सुन रही हूँ! बताइए क्या सहायता चाहिए?'
+        : "I'm right here and listening! What would you like me to do?";
+      return { isLocal: true, reply };
+    }
+
+    // 3. Identity
+    const identityTriggers = [
+      'who are you', 'what are you', 'what is blindsight', 'who is blindsight',
+      'introduce yourself', 'tell me about yourself'
+    ];
+    if (identityTriggers.includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'मैं ब्लाइंडसाइट हूँ, दृष्टिबाधित लोगों के लिए एक सहायक साथी। मैं वस्तुओं की पहचान, बाधा निवारण और दैनिक नेविगेशन में आपकी सहायता करती हूँ।'
+        : 'I am BlindSight, your assistive smart companion. I help you navigate obstacles, recognize objects, remember important details, and describe your surroundings.';
+      return { isLocal: true, reply };
+    }
+
+    // 4. Health / Readiness check
+    const healthTriggers = [
+      'how are you', 'how are you doing', 'are you there', 'are you listening',
+      'can you hear me'
+    ];
+    if (healthTriggers.includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'मैं बिल्कुल ठीक हूँ और आपकी बात सुन रही हूँ! आप क्या जानना चाहते हैं?'
+        : 'I am active, healthy, and listening clearly! What can I help you with?';
+      return { isLocal: true, reply };
+    }
+
+    // 5. Creators / Attribution
+    const creatorTriggers = [
+      'who made you', 'who created you', 'who built you', 'who designed you', 'who is your creator'
+    ];
+    if (creatorTriggers.includes(cleaned)) {
+      return {
+        isLocal: true,
+        reply: 'I was designed and developed for BlindSight by Lavyansh and Agastaya Verma to empower visually impaired navigation.'
+      };
+    }
+
+    // 6. Time & Date (Useful offline utility for blind users)
+    const timeTriggers = ['what time is it', 'what is the time', 'tell me the time', 'time now', 'time'];
+    if (timeTriggers.includes(cleaned)) {
+      const timeStr = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return { isLocal: true, reply: `The current time is ${timeStr}.` };
+    }
+
+    const dateTriggers = ["what is today's date", 'what date is today', 'what is the date', "today's date", 'what day is it', 'what day is today'];
+    if (dateTriggers.includes(cleaned)) {
+      const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      return { isLocal: true, reply: `Today is ${dateStr}.` };
+    }
+
+    // 7. Capabilities
+    const capabilityTriggers = [
+      'what can you do', 'what are your features', 'how do i use you', 'how does this work'
+    ];
+    if (capabilityTriggers.includes(cleaned)) {
+      return {
+        isLocal: true,
+        reply: 'I can remember facts, check system status, change languages, stop speaking, and describe scenes using computer vision when connected. Say help to hear the full list of voice commands.'
+      };
+    }
+
+    // 8. Testing / Mic check
+    const testTriggers = [
+      'test', 'testing', 'mic check', 'check mic', 'test 1 2 3', 'testing 1 2 3'
+    ];
+    if (testTriggers.includes(cleaned)) {
+      return {
+        isLocal: true,
+        reply: 'Loud and clear! Speech recognition and audio synthesis are both working perfectly.'
+      };
+    }
+
+    // 9. Gratitude
+    const thanksTriggers = [
+      'thank you', 'thanks', 'thank you so much', 'thanks a lot'
+    ];
+    if (thanksTriggers.includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'आपका स्वागत है! मैं हमेशा आपकी मदद के लिए उपस्थित हूँ।'
+        : "You are very welcome! I'm always here whenever you need me.";
+      return { isLocal: true, reply };
+    }
+
+    // 10. Remember
     if (low.startsWith('remember ')) {
       const factText = prompt.trim().slice('remember '.length);
       const res = this.addFact(factText);
       return { isLocal: true, reply: res.message };
     }
 
-    // Forget All
+    // 11. Forget All
     if (low === 'forget everything' || low === 'forget all' || low === 'forget everything.') {
       const res = this.clearFacts();
       return { isLocal: true, reply: res.message };
     }
 
-    // Forget single
+    // 12. Forget single
     if (low.startsWith('forget ')) {
       const query = prompt.trim().slice('forget '.length);
       const res = this.forgetFact(query);
       return { isLocal: true, reply: res.message };
     }
 
-    // Recall Memory
-    const recallTriggers = ['what do you remember', 'list memories', 'your memory', 'what do you know'];
-    if (recallTriggers.some(t => low.replace(/[?!.]/g, '').trim() === t)) {
+    // 13. Recall Memory
+    const recallTriggers = ['what do you remember', 'list memories', 'your memory', 'what do you know', 'memories'];
+    if (recallTriggers.some(t => cleaned === t)) {
       const facts = this.getFacts();
       if (facts.length === 0) {
         return {
@@ -207,14 +313,14 @@ export class CompanionStateService {
       return { isLocal: true, reply: `I remember: ${facts.join('; ')}.` };
     }
 
-    // Clear Chat
+    // 14. Clear Chat
     const clearTriggers = ['clear chat', 'start over', 'new chat', 'reset chat'];
-    if (clearTriggers.some(t => low.replace(/[?!.]/g, '').trim() === t)) {
+    if (clearTriggers.some(t => cleaned === t)) {
       const reply = this.clearHistory();
       return { isLocal: true, reply };
     }
 
-    // Language switch
+    // 15. Language switch
     let wantLang: string | null = null;
     if (low.startsWith('switch language to ')) {
       wantLang = low.slice('switch language to '.length).replace(/[.!?]/g, '').trim();
@@ -243,9 +349,9 @@ export class CompanionStateService {
       }
     }
 
-    // Help
+    // 16. Help
     const helpTriggers = ['help', 'what can i say', 'commands', 'instructions'];
-    if (helpTriggers.includes(low.replace(/[?!.]/g, '').trim())) {
+    if (helpTriggers.includes(cleaned)) {
       return { isLocal: true, reply: HELP_TEXT };
     }
 

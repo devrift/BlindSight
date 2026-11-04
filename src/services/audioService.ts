@@ -17,18 +17,32 @@ export const WAKE_PHRASES = [
   'hey blindsight',
   'hey blind sight',
   'hey blind site',
+  'hey blindside',
+  'hey blind side',
   'ok blindsight',
   'okay blindsight',
   'ok blind sight',
   'okay blind sight',
+  'ok blind side',
+  'okay blind side',
   'blindsight',
   'blind sight',
   'blind site',
+  'blindside',
+  'blind side',
   'hi blindsight',
-  'hi blind sight'
+  'hi blind sight',
+  'hello blindsight',
+  'hello blind sight',
+  'yo blindsight'
 ];
+
 export const STOP_WORDS = ['stop', 'be quiet', 'quiet', 'cancel', 'shush'];
 export const SCENE_WORDS = ['describe', 'describe the scene', 'what is around me', "what's around me", 'what is in front of me', 'look for me'];
+
+export function cleanSpeech(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
 export class AudioService {
   private static audioCtx: AudioContext | null = null;
@@ -199,7 +213,9 @@ export class AudioService {
       this.micInterval = null;
     }
     if (this.micStream) {
-      this.micStream.getTracks().forEach(t => t.stop());
+      try {
+        this.micStream.getTracks().forEach(t => t.stop());
+      } catch {}
       this.micStream = null;
     }
     this.analyser = null;
@@ -225,6 +241,11 @@ export class AudioService {
     }
 
     try {
+      // Resume synthesis if browser paused it
+      if (window.speechSynthesis.paused) {
+        try { window.speechSynthesis.resume(); } catch {}
+      }
+
       const utter = new SpeechSynthesisUtterance(text);
       const langConfig = LANGUAGES[langCode] || LANGUAGES.en;
       utter.lang = langConfig.speechLang;
@@ -244,15 +265,26 @@ export class AudioService {
       utter.rate = 1.0;
       utter.pitch = 1.0;
 
+      let finished = false;
+      const finishOnce = () => {
+        if (finished) return;
+        finished = true;
+        if (onEnd) onEnd();
+      };
+
       utter.onstart = () => {
         if (onStart) onStart();
       };
-      utter.onend = () => {
-        if (onEnd) onEnd();
-      };
-      utter.onerror = () => {
-        if (onEnd) onEnd();
-      };
+      utter.onend = () => finishOnce();
+      utter.onerror = () => finishOnce();
+
+      // Browser speech watchdog in case utter.onend fails to trigger
+      const maxDuration = Math.max(3500, text.length * 80);
+      window.setTimeout(() => {
+        if (!finished) {
+          finishOnce();
+        }
+      }, maxDuration);
 
       window.speechSynthesis.speak(utter);
     } catch {

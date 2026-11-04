@@ -9,7 +9,7 @@ import {
   VoiceOption
 } from './types';
 import { LANGUAGES, CompanionStateService, HELP_TEXT } from './services/companionState';
-import { AudioService, WAKE_PHRASES, STOP_WORDS, SCENE_WORDS } from './services/audioService';
+import { AudioService, WAKE_PHRASES, STOP_WORDS, SCENE_WORDS, cleanSpeech } from './services/audioService';
 import { VisionAiService } from './services/visionAi';
 import { ReflexService } from './services/reflexService';
 import { Header } from './components/Header';
@@ -63,9 +63,10 @@ export const App: React.FC = () => {
 
   // Recognition refs
   const recognitionRef = useRef<any>(null);
-  const isContinuousRef = useRef<boolean>(false);
   const isListeningRef = useRef<boolean>(false);
-  const lastNetworkRetryRef = useRef<number>(0);
+  const activeSessionRef = useRef<'wake' | 'command' | null>(null);
+  const isTransitioningRef = useRef<boolean>(false);
+  const networkRetriesRef = useRef<number>(0);
   const appStateRef = useRef<AppState>(appState);
   appStateRef.current = appState;
   const listenModeRef = useRef<ListenMode>(listenMode);
@@ -90,24 +91,25 @@ export const App: React.FC = () => {
     announce(`Text size ${size === 'md' ? 'normal' : size === 'lg' ? 'large' : 'extra large'}`);
   };
 
-  // Status updates helper
-  const updateStatus = useCallback((line: string, mode?: AppState) => {
-    if (mode) setAppState(mode);
+  const updateStatus = useCallback((line: string, state?: AppState) => {
     setStatusLine(line);
+    if (state) setAppState(state);
+
+    const mode = state || appStateRef.current;
     const modeToHint: Record<AppState, string> = {
       idle:
-        listenMode === 'button'
+        listenModeRef.current === 'button'
           ? 'Tap the big button and speak.'
-          : listenMode === 'handsfree'
+          : listenModeRef.current === 'handsfree'
           ? 'Hands-free: just speak.'
           : 'Say "hey BlindSight", or tap the button.',
-      wake: 'Say "hey BlindSight"…',
+      wake: 'Waiting for "hey BlindSight"…',
       listen: 'Go ahead, I am listening.',
       think: 'One moment…',
       speak: 'Tap the button to interrupt me.'
     };
-    setMicHint(modeToHint[mode || appState]);
-  }, [appState, listenMode]);
+    setMicHint(modeToHint[mode]);
+  }, []);
 
   // Voice output helper
   const speakReply = useCallback(
@@ -147,9 +149,10 @@ export const App: React.FC = () => {
       AudioService.unlockAudio();
       setHeardText(prompt);
 
+      const cleaned = cleanSpeech(prompt);
+
       // Check Stop words
-      const low = prompt.toLowerCase();
-      if (STOP_WORDS.some(w => low === w || low.startsWith(w + ' '))) {
+      if (STOP_WORDS.some(w => cleaned === w || cleaned.startsWith(w + ' '))) {
         AudioService.stopSpeaking();
         AudioService.playEarcon('tick');
         updateStatus('Stopped.', 'idle');
@@ -158,21 +161,20 @@ export const App: React.FC = () => {
       }
 
       // Check Help
-      if (['help', 'commands', 'what can i say'].includes(low.replace(/[?!.]/g, ''))) {
+      if (['help', 'commands', 'what can i say', 'instructions'].includes(cleaned)) {
         announce(HELP_TEXT);
         speakReply(HELP_TEXT);
         return;
       }
 
       // Check Status
-      if (['read status', 'system status', 'status report'].includes(low.replace(/[?!.]/g, ''))) {
-        // Never claim health we did not observe: probe what is observable.
+      if (['read status', 'system status', 'status report', 'status'].includes(cleaned)) {
         const srOk = AudioService.isSpeechRecognitionSupported();
         const ttsOk = typeof window !== 'undefined' && !!window.speechSynthesis;
         let gateway = 'unreachable';
         try {
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 1500);
+          const timer = setTimeout(() => ctrl.abort(), 1200);
           const r = await fetch('/api/config', { signal: ctrl.signal });
           gateway = r.ok ? 'reachable' : 'unreachable';
           clearTimeout(timer);
@@ -190,7 +192,7 @@ export const App: React.FC = () => {
       const userMsg = CompanionStateService.addHistoryMessage('user', prompt);
       setMessages(prev => [...prev, userMsg]);
 
-      // Check for local state commands (remember, forget, language, etc.)
+      // Check for local state commands (greetings, remember, forget, language, time, etc.)
       const localResult = CompanionStateService.processLocalCommand(prompt, language);
       if (localResult && localResult.isLocal) {
         if (localResult.newLanguage) {
@@ -208,7 +210,7 @@ export const App: React.FC = () => {
       updateStatus('Thinking…', 'think');
       AudioService.playEarcon('think');
 
-      const isSceneQuery = SCENE_WORDS.some(p => low === p || low.startsWith(p + ' '));
+      const isSceneQuery = SCENE_WORDS.some(p => cleaned === p || cleaned.startsWith(p + ' '));
       const shouldAttachCamera = includeCamera || isSceneQuery;
 
       const result = await VisionAiService.askCompanion(prompt, {
@@ -240,6 +242,8 @@ export const App: React.FC = () => {
 
       AudioService.unlockAudio();
       AudioService.stopSpeaking();
+      // Release any open mic analytics stream to give Web Speech API exclusive mic access on Windows
+      AudioService.stopMicAnalytics();
 
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -251,14 +255,22 @@ export const App: React.FC = () => {
         }
       } catch {}
 
+      activeSessionRef.current = mode;
+      isTransitioningRef.current = false;
+
       const rec = new SpeechRecognition();
       const langConfig = LANGUAGES[language] || LANGUAGES.en;
-      rec.lang = langConfig.speechLang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+      let targetLang = langConfig.speechLang;
+      if (language === 'en' && typeof navigator !== 'undefined' && navigator.language && navigator.language.toLowerCase().startsWith('en')) {
+        targetLang = navigator.language;
+      }
+      rec.lang = targetLang || 'en-US';
       rec.continuous = mode === 'wake' || listenModeRef.current === 'handsfree';
       rec.interimResults = mode === 'wake';
 
       rec.onstart = () => {
         isListeningRef.current = true;
+        networkRetriesRef.current = 0;
         if (mode === 'wake') {
           setAppState('wake');
           updateStatus('Waiting for "hey BlindSight"…', 'wake');
@@ -276,30 +288,32 @@ export const App: React.FC = () => {
         transcript = transcript.trim();
         if (!transcript) return;
 
-        const normalized = transcript.toLowerCase();
+        const cleaned = cleanSpeech(transcript);
 
         if (mode === 'wake') {
-          const matched = WAKE_PHRASES.some(phrase => normalized.includes(phrase));
-          if (matched) {
-            // Wake word detected! Abort continuous wake listener to switch to command
+          const matchedPhrase = WAKE_PHRASES.find(phrase => cleaned.includes(phrase));
+          if (matchedPhrase) {
+            // Wake word detected! Transition safely to command session
+            isTransitioningRef.current = true;
             try { rec.abort(); } catch {}
             setIsCue(true);
             setTimeout(() => setIsCue(false), 450);
 
             // Extract prompt after wake word if spoken in one breath
-            let remaining = transcript;
-            for (const phrase of WAKE_PHRASES) {
-              const idx = remaining.toLowerCase().indexOf(phrase);
-              if (idx !== -1) {
-                remaining = remaining.substring(idx + phrase.length).trim();
-              }
-            }
+            const phraseIdx = cleaned.indexOf(matchedPhrase);
+            const remaining = cleaned.substring(phraseIdx + matchedPhrase.length).trim();
 
             if (remaining.length > 2) {
+              isTransitioningRef.current = false;
               handleCommand(remaining);
             } else {
-              startRecognition('command');
+              AudioService.playEarcon('wake');
+              setTimeout(() => {
+                isTransitioningRef.current = false;
+                startRecognition('command');
+              }, 180);
             }
+            return;
           }
         } else {
           // Command mode: process when finalized
@@ -321,10 +335,9 @@ export const App: React.FC = () => {
         if (err === 'no-speech' || err === 'aborted') return; // ordinary endings
 
         if (err === 'not-allowed' || err === 'service-not-allowed') {
-          const msg = 'Microphone permission denied. Tap the big button and allow the microphone.';
+          const msg = 'Microphone permission denied. Tap the big button and allow microphone access in your browser.';
           updateStatus(msg, 'idle');
           announce(msg);
-          speakReply(msg);
           return;
         }
 
@@ -336,30 +349,75 @@ export const App: React.FC = () => {
         }
 
         if (err === 'network') {
-          // Silent backoff retry: never speak aloud on network glitch as it locks speech synthesis and microphone
-          updateStatus('Connecting to speech service… retrying…', 'idle');
-          const now = Date.now();
-          if (now - lastNetworkRetryRef.current > 3000) {
-            lastNetworkRetryRef.current = now;
+          if (listenModeRef.current === 'button') {
+            const msg = 'Could not reach speech service. Tap to retry or use text below.';
+            updateStatus(msg, 'idle');
+            announce(msg);
+            setTimeout(() => {
+              if (appStateRef.current === 'idle') {
+                updateStatus('Tap the big button and speak.', 'idle');
+              }
+            }, 3500);
+            return;
+          }
+
+          networkRetriesRef.current += 1;
+          if (networkRetriesRef.current <= 2) {
+            updateStatus('Connecting to speech service… retrying…', 'idle');
             setTimeout(() => {
               if (appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
                 if (listenModeRef.current === 'wake') startRecognition('wake');
                 else if (listenModeRef.current === 'handsfree') startRecognition('command');
               }
-            }, 1800);
+            }, 2000);
+          } else {
+            const msg = 'Speech service temporarily unavailable. Use text input below or tap button to retry.';
+            updateStatus(msg, 'idle');
+            announce(msg);
           }
           return;
         }
 
-        updateStatus(`Speech note: ${err}. Retrying…`, 'idle');
+        updateStatus(`Speech note: ${err}.`, 'idle');
       };
 
       rec.onend = () => {
         isListeningRef.current = false;
-        // Auto-restart if in wake mode and not speaking/thinking
+
+        // If intentionally transitioning to command, do not re-run wake
+        if (isTransitioningRef.current) {
+          return;
+        }
+
+        // If this was a command session and ended while listening (e.g. silence timeout)
+        if (activeSessionRef.current === 'command') {
+          activeSessionRef.current = null;
+          if (appStateRef.current === 'listen') {
+            setAppState('idle');
+            if (listenModeRef.current === 'wake') {
+              updateStatus('Waiting for "hey BlindSight"…', 'wake');
+              setTimeout(() => {
+                if (listenModeRef.current === 'wake' && appStateRef.current === 'idle') {
+                  startRecognition('wake');
+                }
+              }, 400);
+            } else if (listenModeRef.current === 'handsfree') {
+              setTimeout(() => {
+                if (listenModeRef.current === 'handsfree' && appStateRef.current === 'idle') {
+                  startRecognition('command');
+                }
+              }, 400);
+            } else {
+              updateStatus('Tap the big button and speak.', 'idle');
+            }
+          }
+          return;
+        }
+
+        // Auto-restart wake listener if we were in wake mode and not speaking/thinking
         if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
           setTimeout(() => {
-            if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+            if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think' && activeSessionRef.current !== 'command') {
               startRecognition('wake');
             }
           }, 350);
@@ -378,11 +436,10 @@ export const App: React.FC = () => {
         rec.start();
       } catch {}
     },
-    [language, updateStatus, handleCommand, announce, speakReply]
+    [language, updateStatus, handleCommand, announce]
   );
 
-  // Stop speech/listening, then restore the chosen mode so the companion
-  // never stays dead after a Stop command.
+  // Stop speech/listening, then restore the chosen mode
   const handleStop = useCallback(() => {
     AudioService.stopSpeaking();
     if (recognitionRef.current) {
@@ -426,8 +483,10 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Start single command session on button click. Visual cue only (see
-    // mic-killer note above).
+    // Reset network retries counter on user intentional tap
+    networkRetriesRef.current = 0;
+
+    // Start single command session on button click. Visual cue only
     setIsCue(true);
     setTimeout(() => setIsCue(false), 450);
     startRecognition('command');
@@ -450,7 +509,7 @@ export const App: React.FC = () => {
       window.speechSynthesis.onvoiceschanged = loadVoiceList;
     }
 
-    if (noiseGate) {
+    if (noiseGate && listenModeRef.current === 'button') {
       AudioService.openMicAnalytics((pct, hot) => {
         setMicMeterPct(pct);
         setIsHot(hot);
@@ -461,6 +520,8 @@ export const App: React.FC = () => {
     const bootTimer = setTimeout(() => {
       if (listenModeRef.current === 'wake' || listenModeRef.current === 'handsfree') {
         startRecognition(listenModeRef.current === 'handsfree' ? 'command' : 'wake');
+      } else {
+        updateStatus('Tap the big button and speak.', 'idle');
       }
     }, 600);
 
@@ -469,17 +530,19 @@ export const App: React.FC = () => {
       AudioService.stopMicAnalytics();
       AudioService.stopSpeaking();
     };
-  }, [startRecognition]);
+  }, [startRecognition, noiseGate, textSize, updateStatus]);
 
   // Noise gate toggle
   const handleNoiseGateToggle = (enabled: boolean) => {
     setNoiseGate(enabled);
     localStorage.setItem('blindsight_noisegate', enabled ? 'on' : 'off');
     if (enabled) {
-      AudioService.openMicAnalytics((pct, hot) => {
-        setMicMeterPct(pct);
-        setIsHot(hot);
-      });
+      if (appState === 'idle' && listenMode === 'button') {
+        AudioService.openMicAnalytics((pct, hot) => {
+          setMicMeterPct(pct);
+          setIsHot(hot);
+        });
+      }
       announce('Noise gate on. Level bar reflects current audio.');
     } else {
       AudioService.stopMicAnalytics();
@@ -493,17 +556,21 @@ export const App: React.FC = () => {
   const handleModeChange = (mode: ListenMode) => {
     setListenMode(mode);
     localStorage.setItem('blindsight_mode', mode);
+    listenModeRef.current = mode;
+    networkRetriesRef.current = 0;
     handleStop();
 
     if (mode === 'wake') {
       announce('Wake word mode on. Say "hey BlindSight".');
-      setTimeout(() => startRecognition('wake'), 200);
+      updateStatus('Waiting for "hey BlindSight"…', 'wake');
+      setTimeout(() => startRecognition('wake'), 250);
     } else if (mode === 'handsfree') {
       announce('Hands-free mode on. Just speak.');
-      setTimeout(() => startRecognition('command'), 200);
+      updateStatus('Hands-free listening…', 'listen');
+      setTimeout(() => startRecognition('command'), 250);
     } else {
       announce('Button mode. Tap the button to speak.');
-      updateStatus('Button mode: tap to talk.', 'idle');
+      updateStatus('Tap the big button and speak.', 'idle');
     }
   };
 
