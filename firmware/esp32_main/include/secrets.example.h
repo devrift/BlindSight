@@ -1,8 +1,10 @@
 #pragma once
 
-// Copy this file to secrets.h and put your own values here.
-#define BLINDSIGHT_WIFI_SSID "BlindSight"
-#define BLINDSIGHT_WIFI_PASSWORD "CHANGE_ME"
-#define BLINDSIGHT_PI_HOST "192.168.4.1"
-#define BLINDSIGHT_PI_PORT 5000
+// BlindSight main ESP32 — optional hardware-pairing overrides.
+//
+// v1.5: Wi-Fi SSID/password and the edge-server IP/port are NO LONGER set
+// here. They are entered once in the "BlindSight-Setup" captive portal on the
+// device and stored in ESP32 NVS. Copy this file to secrets.h ONLY if you want
+// to override the ESP-NOW camera pairing MAC at compile time.
+
 #define BLINDSIGHT_CAMERA_MAC {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}

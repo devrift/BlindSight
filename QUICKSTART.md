@@ -1,4 +1,4 @@
-# BlindSight — get it running in 3 steps
+# BlindSight — get it running in 3 steps (v1.5)
 
 Everything lives on GitHub already (branch `main`). You do not need to be a
 programmer for this page.
@@ -14,46 +14,81 @@ Pick either way:
 
 To update later: download a fresh ZIP, or run `git pull` inside the folder.
 
-## Step 2 — start it (every time)
+## Step 2 — start the edge server (every time)
 
-* **Windows:** double-click `start_blindsight.bat`. The first run installs
-  everything (a minute or two); afterwards it opens
-  <http://localhost:5000> in your browser by itself.
-* **Raspberry Pi / Linux:** `./start_blindsight.sh`
-* **Any other setup:**
-  ```
-  python -m venv .venv
-  .venv\Scripts\pip install -r edge_server\requirements.txt   (Windows)
-  .venv\Scripts\python edge_server\server.py                  (Windows)
-  ```
+The edge server is the "brain" the glasses and the web app talk to. It binds to
+`0.0.0.0` (all network interfaces) so phones and the ESP32 can reach it over any
+Wi-Fi/hotspot.
 
-Keep the window/terminal open while using the app.
+```bash
+python -m venv .venv
+# Windows:
+.venv\Scripts\pip install -r edge_server\requirements.txt
+.venv\Scripts\python edge_server\server.py
+# Linux / Raspberry Pi:
+.venv/bin/pip install -r edge_server/requirements.txt
+.venv/bin/python edge_server/server.py
+```
 
-## Step 3 — use it
+Keep the window/terminal open. On startup it prints a banner like:
 
-* On the computer: <http://localhost:5000>
-* On your phone (same Wi-Fi): `http://<the computer's IP>:5000`
-  (the starter script prints that address on the Pi)
-* **Android phone (Chrome or Edge):** use the `https://` address the Pi
-  prints, accept the certificate once, allow the microphone, then say
-  **“hey BlindSight”** and ask your question — or tap the big button, or type.
-* **iPhone / iPad (Safari):** Apple does not let any web app listen for a wake
-  word, so BlindSight tells you what to do instead: tap the big button, then
-  tap the **microphone on the iPhone keyboard** to dictate, then tap Ask.
-  Answers are still spoken back in the same human-sounding voice.
-* **Windows computer (Chrome or Edge):** everything works on
-  <http://localhost:5000> — the easiest way to test before deploying to a Pi.
+```
+============================================================
+  BlindSight Edge Gateway v1.5.0
+  Listening on http://0.0.0.0:5000  (all interfaces)
+  Reachable LAN address(es) — type one into BlindSight-Setup:
+    http://192.168.1.42:5000
+  ESP32 portal: join 'BlindSight-Setup', enter the IP above + port.
+============================================================
+```
+
+**Write down that LAN IP** (e.g. `192.168.1.42`) — you'll type it into the
+glasses in Step 3.
+
+For the web companion app, run `npm install` then `npm run dev` and open
+<http://localhost:3000>. If the edge server runs on a different machine (e.g. a
+Pi), start Vite with `EDGE_SERVER_URL=http://<pi-ip>:5000 npm run dev`.
+
+## Step 3 — point the glasses at the server (no reflashing!)
+
+Since v1.5 you configure the ESP32 from your phone, not by editing code:
+
+1. Power the ESP32. If it can't reach the saved Wi-Fi or server, it opens a
+   Wi-Fi network called **`BlindSight-Setup`**. (You can also force this by
+   **holding the reflex button for 3 seconds**; a short press still works as
+   the normal reflex trigger.)
+2. On your phone, join **`BlindSight-Setup`**. A page pops up — or open
+   <http://192.168.4.1>.
+3. Select your venue Wi-Fi, enter its password, and type the **Edge Server IP**
+   and **Port** from the Step 2 banner (defaults: `192.168.1.100` / `5000`).
+4. Save. The ESP32 reboots, connects, and remembers the settings.
+
+**At a new exhibit, just repeat Step 3 — no laptop, no reflash.** The ESP32-CAM
+has its own **`BlindSight-Cam-Setup`** portal; join the *same* venue Wi-Fi there.
+
+> Firmware library dependency: **WiFiManager by tzapu** (≥ 2.0.17). PlatformIO
+> installs it automatically; in the Arduino IDE use Library Manager.
+
+## Using the app
+
+* On the computer: <http://localhost:3000> (Vite) or <http://localhost:5000>
+  (edge server directly).
+* On your phone (same Wi-Fi): `http://<the computer's LAN IP>:3000`.
+* **Android (Chrome/Edge):** allow the microphone, then say **"hey BlindSight"**
+  and ask your question — or tap the big button, or type.
+* **iPhone/iPad (Safari):** tap the big button, then tap the **microphone on the
+  iPhone keyboard** to dictate, then tap Ask. Answers are spoken back.
 * Say `help` and it reads every command aloud. `remember …`, `what do you
   remember?`, `language hindi`, `stop` all work with no internet.
 
-## Optional — real cloud answers
+## Optional — cloud answers
 
-1. Copy `edge_server/.env.example` to `edge_server/.env`.
-2. Put your OpenRouter key in it: `OPENROUTER_API_KEY=sk-or-...`
-3. Restart the starter script. Without this the app still works, but cloud
-   questions get an honest “cloud unavailable” reply.
+1. Copy `.env.example` to `.env`.
+2. Add your key (e.g. `GEMINI_API_KEY=...` or `OPENROUTER_API_KEY=sk-or-...`).
+3. Restart the edge server. Without a key the app still works using the local
+   intent router / Ollama.
 
 ## Using Antigravity or another editor?
 
 Just open the unpacked folder as the project. Nothing else is required — the
-starter scripts and the server are plain files inside it.
+server and firmware are plain files inside it.

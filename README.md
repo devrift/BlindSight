@@ -1,5 +1,7 @@
 # BlindSight — Voice-First Navigation Companion
 
+<!-- version: 1.5.0 -->
+
 **An accessible, voice-first navigation companion for blind and low-vision users.**
 
 BlindSight provides hands-free environmental awareness, wake word detection, multimodal camera scene descriptions, persistent memory, multi-language speech output, and Tier 0 ultrasonic reflex obstacle avoidance alerts.
@@ -44,6 +46,40 @@ Licensed MIT — see [LICENSE](LICENSE).
    - Single assertive screen-reader live region (`aria-live="assertive"`).
    - Dynamic text size switching: Normal (A), Large (A+), Extra Large (A++).
    - Web Audio earcons for wake, listening, thinking, confirmation, error, and tick.
+
+---
+
+## Moving to a new venue / exhibit (v1.5 — zero reflash)
+
+Since **v1.5** the ESP32 never needs reflashing when you change Wi-Fi networks
+or move between science-centre exhibits. Wi-Fi credentials and the edge-server
+IP/port are configured from a phone browser and stored on the chip.
+
+**One-time firmware dependency:** the [tzapu **WiFiManager**](https://github.com/tzapu/WiFiManager)
+library (≥ 2.0.17). PlatformIO installs it automatically (`lib_deps`); in the
+Arduino IDE install **"WiFiManager by tzapu"** from Library Manager.
+
+**At each new venue:**
+
+1. Start the edge server (`python edge_server/server.py`). Its startup banner
+   prints the LAN address(es) to use, e.g. `http://192.168.1.42:5000`. The
+   server binds `0.0.0.0`, so it accepts the ESP32 over any hotspot/router.
+2. Power the ESP32. If it can't reach the saved Wi-Fi **or** the saved server
+   (fast ~8 s check + 3 probes of `/health`), it automatically opens a Wi-Fi
+   access point named **`BlindSight-Setup`**.
+   - You can also open the portal any time by **holding the reflex button for
+     3 seconds** (boot or runtime). A normal short press still triggers the
+     ultrasonic reflex.
+3. On your phone, join **`BlindSight-Setup`**. A setup page pops up — or open
+   **`http://192.168.4.1`**.
+4. Select the venue Wi-Fi, enter its password, and type the **Edge Server IP**
+   (default `192.168.1.100`) and **Edge Server Port** (default `5000`) from the
+   server banner.
+5. Save. The ESP32 reboots, connects, and remembers everything in non-volatile
+   storage (`Preferences.h`). Done — no laptop, no reflash.
+
+The ESP32-CAM works the same way via its own **`BlindSight-Cam-Setup`** portal
+(select the *same* venue Wi-Fi as the main board so ESP-NOW shares a channel).
 
 ---
 

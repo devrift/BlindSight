@@ -50,6 +50,16 @@ export function cleanSpeech(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Default Svara-TTS URL derives from the host that served this page (the edge
+// server / Vite dev server), NOT "localhost" — on a phone at an exhibit,
+// "localhost" would point at the phone itself. A saved override still wins.
+function defaultSvaraUrl(): string {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:8000/v1/audio/speech`;
+  }
+  return 'http://localhost:8000/v1/audio/speech';
+}
+
 export class AudioService {
   private static audioCtx: AudioContext | null = null;
   private static analyser: AnalyserNode | null = null;
@@ -63,9 +73,9 @@ export class AudioService {
   private static audioUnlocked = false;
   private static currentWavAudio: HTMLAudioElement | null = null;
 
-  // Svara-TTS v1 OpenAI-compatible configuration
+  // Svara-TTS v1 OpenAI-compatible configuration (see defaultSvaraUrl above).
   private static svaraUrl = typeof window !== 'undefined'
-    ? localStorage.getItem('blindsight_svara_url') || 'http://localhost:8000/v1/audio/speech'
+    ? localStorage.getItem('blindsight_svara_url') || defaultSvaraUrl()
     : 'http://localhost:8000/v1/audio/speech';
   private static svaraEnabled = typeof window !== 'undefined'
     ? localStorage.getItem('blindsight_use_svara') === 'on'

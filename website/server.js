@@ -4,6 +4,7 @@
  */
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -57,11 +58,30 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// Best-effort LAN IPv4 list so exhibit staff can read the address to type into
+// a phone / the BlindSight-Setup portal without running ipconfig/hostname -I.
+function lanIPv4Addresses() {
+  const out = [];
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) out.push(iface.address);
+    }
+  }
+  return out;
+}
+
 server.listen(PORT, HOST, () => {
+  const lanIps = lanIPv4Addresses();
   console.log(`=======================================================`);
   console.log(` BlindSight Showcase & Documentation Website running!  `);
-  console.log(` Local URL:   http://localhost:${PORT}                  `);
-  console.log(` Network URL: http://${HOST}:${PORT}                  `);
-  console.log(` Serving:     ${__dirname}                              `);
+  console.log(` Local URL:   http://localhost:${PORT}`);
+  if (lanIps.length) {
+    console.log(` LAN URL(s):`);
+    for (const ip of lanIps) console.log(`   http://${ip}:${PORT}`);
+  } else {
+    console.log(` Network URL: http://${HOST}:${PORT} (no LAN IPv4 detected yet)`);
+  }
+  console.log(` Serving:     ${__dirname}`);
   console.log(`=======================================================`);
 });

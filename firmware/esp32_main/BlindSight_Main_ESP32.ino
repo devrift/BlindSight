@@ -1,5 +1,5 @@
 /* ============================================================
-   BlindSight - MAIN ESP32 DevKit V1   (Arduino IDE entry point)
+   BlindSight - MAIN ESP32 DevKit V1  (canonical firmware, v1.5.0)
    ------------------------------------------------------------
    UPLOAD THIS FIRST. It prints "MAIN MAC: xx:xx:..." in the
    Serial Monitor. You need that MAC for the camera sketch.
@@ -7,29 +7,50 @@
    Board to select in Arduino IDE:  "ESP32 Dev Module"
    Upload Speed: 115200
 
+   v1.5 — ZERO-REFLASH EXHIBIT SETUP
+   --------------------------------
+   Wi-Fi SSID/password and the edge-server IP/port are NO LONGER
+   hardcoded. They are configured once from a phone browser via the
+   tzapu/WiFiManager captive portal "BlindSight-Setup" and persisted
+   in ESP32 NVS (Preferences.h). Moving the glasses to a new venue /
+   hotspot never requires reflashing.
+
+   Required library (Arduino IDE: Sketch > Include Library > Manage Libraries):
+     - WiFiManager by tzapu  (>= 2.0.17)
+   PlatformIO installs it automatically via platformio.ini lib_deps.
+
    NOTE: Arduino IDE expects this file to live in a folder named
-   BlindSight_Main_ESP32. It is kept in firmware/esp32_main/ for the
-   PlatformIO build instead, so open this FILE via File -> Open and let
-   the IDE propose moving it into its own folder when it asks.
-   See firmware/FIRMWARE_VARIANTS.md.
+   BlindSight_Main_ESP32. Open this FILE via File -> Open and let the
+   IDE propose moving it into its own folder when it asks.
+   The PlatformIO entry point src/main.cpp simply #includes this file,
+   so there is exactly ONE source of truth. See firmware/FIRMWARE_VARIANTS.md.
    ============================================================ */
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiManager.h>   // tzapu/WiFiManager — captive configuration portal
+#include <Preferences.h>   // ESP32 non-volatile storage for server_ip / server_port
 #include <esp_now.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <driver/i2s.h>
 
+#define BLINDSIGHT_FIRMWARE_VERSION "1.5.0"
+
 // ##############################################################
-// ###############  EDIT THESE 4 LINES ONLY  ####################
-const char *WIFI_SSID     = "BlindSight";        // your hotspot name
-const char *WIFI_PASSWORD = "CHANGE_ME";         // your hotspot password
-const char *PI_URL        = "http://192.168.4.1:5000";  // Pi IP + :5000
-// Paste the CAM MAC printed by the camera sketch, e.g. {0x3C,0x71,0xBF,0x12,0x34,0x56}
-// Packets from any other transmitter are ignored.
-uint8_t CAMERA_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
+// Hardware pairing MAC. Wi-Fi credentials and the edge-server IP are
+// configured at runtime via the BlindSight-Setup portal, NOT here.
+// PlatformIO: put #define BLINDSIGHT_CAMERA_MAC {..} in include/secrets.h.
+// Arduino IDE: either create a secrets.h next to this sketch or edit the
+// default below. Paste the CAM MAC printed by the camera sketch.
 // ##############################################################
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+#ifndef BLINDSIGHT_CAMERA_MAC
+#define BLINDSIGHT_CAMERA_MAC {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
+#endif
+uint8_t CAMERA_MAC[6] = BLINDSIGHT_CAMERA_MAC;
 
 #define TRIG_L 13
 #define TRIG_C 14
@@ -42,15 +63,125 @@ uint8_t CAMERA_MAC[6] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
 #define I2S_WS  25
 #define I2S_DIN 22
 
-// Must stay identical to src/main.cpp - see firmware/FIRMWARE_VARIANTS.md.
 constexpr uint32_t CLIP_SAMPLE_RATE = 22050;
-constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
+constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 8000;    // fast saved-Wi-Fi attempt
+constexpr uint32_t SERVER_PROBE_TIMEOUT_MS = 2000;    // per /health probe
+constexpr int      SERVER_PROBE_RETRIES = 3;          // ~6-8 s total
+constexpr uint32_t PORTAL_TIMEOUT_S = 180;            // portal auto-closes after 3 min
+constexpr uint32_t BUTTON_HOLD_PORTAL_MS = 3000;      // hold reflex button 3 s -> portal
+constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 30000;    // background reconnect cadence
 constexpr int HTTP_TIMEOUT_MS = 60000;
 constexpr uint32_t FRAME_STALL_TIMEOUT_MS = 3000;
 constexpr uint16_t MAGIC = 0xB517;
 constexpr size_t   CHUNK = 220;
 constexpr size_t   MAX_JPEG = 66000;
 
+// ---------------- Persistent edge-server configuration ----------------
+Preferences prefs;
+char serverIp[16] = "192.168.1.100";   // default; overridden by NVS / portal
+uint16_t serverPort = 5000;
+char serverPortBuf[6] = "5000";
+
+WiFiManager wm;
+WiFiManagerParameter serverIpParam("server_ip", "Edge Server IP (e.g. 192.168.1.100)", serverIp, 15);
+WiFiManagerParameter serverPortParam("server_port", "Edge Server Port (e.g. 5000)", serverPortBuf, 5);
+
+String baseUrl() {
+  return String("http://") + serverIp + ":" + String(serverPort);
+}
+
+void loadServerConfig() {
+  prefs.begin("blindsight", true);  // read-only
+  String ip = prefs.getString("server_ip", "192.168.1.100");
+  uint16_t port = prefs.getUShort("server_port", 5000);
+  prefs.end();
+  ip.trim();
+  IPAddress parsed;
+  if (ip.length() > 0 && parsed.fromString(ip)) {
+    ip.toCharArray(serverIp, sizeof(serverIp));
+  }
+  if (port >= 1 && port <= 65535) serverPort = port;
+  snprintf(serverPortBuf, sizeof(serverPortBuf), "%u", serverPort);
+  serverIpParam.setValue(serverIp, 15);
+  serverPortParam.setValue(serverPortBuf, 5);
+}
+
+void saveParamsCallback() {
+  // Called by WiFiManager when the user submits the portal form.
+  const char *ip = serverIpParam.getValue();
+  const char *portStr = serverPortParam.getValue();
+  IPAddress parsed;
+  String ipStr = String(ip ? ip : "");
+  ipStr.trim();
+  int port = atoi(portStr ? portStr : "5000");
+  if (ipStr.length() == 0 || !parsed.fromString(ipStr)) {
+    Serial.println("[portal] Invalid server IP; keeping previous value.");
+  } else {
+    ipStr.toCharArray(serverIp, sizeof(serverIp));
+  }
+  if (port >= 1 && port <= 65535) serverPort = (uint16_t)port;
+  snprintf(serverPortBuf, sizeof(serverPortBuf), "%u", serverPort);
+
+  prefs.begin("blindsight", false);
+  prefs.putString("server_ip", serverIp);
+  prefs.putUShort("server_port", serverPort);
+  prefs.end();
+  Serial.printf("[portal] Saved edge server %s:%u\n", serverIp, serverPort);
+}
+
+bool connectSavedWiFiFast() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);  // ESP-NOW drops frames badly with modem sleep on
+  WiFi.begin();          // use credentials stored in NVS by WiFiManager / ESP core
+  Serial.print("Connecting to saved Wi-Fi");
+  uint32_t started = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - started < WIFI_CONNECT_TIMEOUT_MS) {
+    delay(150);
+    Serial.print('.');
+  }
+  Serial.println();
+  return WiFi.status() == WL_CONNECTED;
+}
+
+bool edgeServerReachable() {
+  for (int attempt = 0; attempt < SERVER_PROBE_RETRIES; attempt++) {
+    HTTPClient http;
+    http.setConnectTimeout(SERVER_PROBE_TIMEOUT_MS);
+    http.setTimeout(SERVER_PROBE_TIMEOUT_MS);
+    http.begin(baseUrl() + "/health");
+    int code = http.GET();
+    http.end();
+    if (code == 200) {
+      Serial.printf("[net] Edge server OK at %s (HTTP %d)\n", baseUrl().c_str(), code);
+      return true;
+    }
+    Serial.printf("[net] Edge server probe %d/%d failed (HTTP %d)\n",
+                  attempt + 1, SERVER_PROBE_RETRIES, code);
+    delay(300);
+  }
+  return false;
+}
+
+void startConfigPortal() {
+  Serial.println();
+  Serial.println("=====================================================");
+  Serial.println("  BlindSight-Setup captive portal");
+  Serial.println("  1. On your phone, join Wi-Fi network: BlindSight-Setup");
+  Serial.println("  2. Open http://192.168.4.1 if the page does not pop up");
+  Serial.println("  3. Pick the venue Wi-Fi and enter the Edge Server IP");
+  Serial.println("     shown in the edge server terminal, plus its port.");
+  Serial.println("=====================================================");
+  wm.setConfigPortalTimeout(PORTAL_TIMEOUT_S);
+  bool connected = wm.startConfigPortal("BlindSight-Setup");
+  if (connected) {
+    Serial.println("[portal] Configuration saved. Restarting to apply...");
+    delay(500);
+    ESP.restart();
+  }
+  Serial.println("[portal] Timed out. Continuing with offline ultrasonic fallback.");
+}
+
+// ---------------- ESP-NOW camera frame receiver ----------------
 struct __attribute__((packed)) ImagePacket {
   uint16_t magic, imageId, index, count, bytes, checksum;
   uint8_t data[CHUNK];
@@ -104,6 +235,7 @@ void onData(const uint8_t *mac, const uint8_t *data, int len) {
 }
 #endif
 
+// ---------------- Audio ----------------
 void initI2S() {
   i2s_config_t cfg = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
@@ -159,7 +291,6 @@ void playWavStream(HTTPClient &http) {
   i2s_set_sample_rates(I2S_NUM_0, CLIP_SAMPLE_RATE);
 }
 
-// Plays a local clip. If the file is missing it simply does nothing.
 void playFile(const char *path) {
   File f = LittleFS.open(path, "r");
   if (!f) return;
@@ -175,6 +306,7 @@ void playFile(const char *path) {
   f.close();
 }
 
+// ---------------- Ultrasonic reflex ----------------
 float distanceCM(int t, int e) {
   digitalWrite(t, LOW); delayMicroseconds(3);
   digitalWrite(t, HIGH); delayMicroseconds(10);
@@ -188,9 +320,6 @@ const char *quickRule() {
   float c = distanceCM(TRIG_C, ECHO_C); delay(55);
   float r = distanceCM(TRIG_R, ECHO_R);
   Serial.printf("L=%.0f C=%.0f R=%.0f cm\n", l, c, r);
-  // Audited obstacle band (documented in README + FIRMWARE_VARIANTS): inside
-  // 25 cm steering is the wrong advice, so the reflex says stop; /stop.wav
-  // exists for exactly this clip now.
   if (c < 25) return "Obstacle critical. Stop.";
   if (c < 45) return l > r ? "Obstacle ahead. Move left." : "Obstacle ahead. Move right.";
   if (l < 45) return "Obstacle on left. Move right.";
@@ -199,8 +328,17 @@ const char *quickRule() {
   return "Path clear.";
 }
 
-// POST /analyse answers with JSON containing "audio_url":"/audio/<id>".
-// The bare "/audio" path is a 404 - the route needs the request id.
+void triggerReflex() {
+  const char *rule = quickRule();
+  Serial.println(rule);
+  if (strstr(rule, "Stop"))                 playFile("/stop.wav");
+  else if (strstr(rule, "Move left"))       playFile("/left.wav");
+  else if (strstr(rule, "Move right"))      playFile("/right.wav");
+  else if (strstr(rule, "carefully"))       playFile("/careful.wav");
+  else                                      playFile("/clear.wav");
+}
+
+// ---------------- Edge upload ----------------
 String audioPathFromReply(const String &reply) {
   const char *key = "\"audio_url\":\"";
   int start = reply.indexOf(key);
@@ -212,12 +350,12 @@ String audioPathFromReply(const String &reply) {
 
 void uploadAndPlay() {
   acceptingFrame = false;
-  Serial.printf("Uploading %u bytes\n", (unsigned)imageLen);
+  Serial.printf("Uploading %u bytes to %s\n", (unsigned)imageLen, baseUrl().c_str());
   playFile("/analysing.wav");
 
   HTTPClient http;
   http.setTimeout(HTTP_TIMEOUT_MS);
-  http.begin(String(PI_URL) + "/analyse");
+  http.begin(baseUrl() + "/analyse");
   String boundary = "BlindSightBoundary";
   http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
   String pre = "--" + boundary +
@@ -239,13 +377,14 @@ void uploadAndPlay() {
   if (audioPath.length()) {
     HTTPClient audio;
     audio.setTimeout(HTTP_TIMEOUT_MS);
-    audio.begin(String(PI_URL) + audioPath);
+    audio.begin(baseUrl() + audioPath);
     if (audio.GET() == 200) playWavStream(audio);
     audio.end();
   }
   acceptingFrame = true;
 }
 
+// ---------------- Setup / loop ----------------
 void setup() {
   Serial.begin(115200);
   pinMode(TRIG_L, OUTPUT); pinMode(TRIG_C, OUTPUT); pinMode(TRIG_R, OUTPUT);
@@ -254,39 +393,80 @@ void setup() {
   LittleFS.begin(true);
   initI2S();
 
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.println();
-  Serial.println("Connecting to WiFi...");
-  uint32_t started = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - started < WIFI_CONNECT_TIMEOUT_MS) { delay(300); Serial.print('.'); }
-  Serial.println();
+  Serial.printf("BlindSight main firmware v%s\n", BLINDSIGHT_FIRMWARE_VERSION);
   Serial.println("=====================================");
-  Serial.printf ("  MAIN MAC: %s\n", WiFi.macAddress().c_str());
+  Serial.printf("  MAIN MAC: %s\n", WiFi.macAddress().c_str());
   Serial.println("  ^^ COPY THIS INTO THE CAMERA SKETCH");
   Serial.println("=====================================");
+
+  loadServerConfig();
+  wm.addParameter(&serverIpParam);
+  wm.addParameter(&serverPortParam);
+  wm.setSaveParamsCallback(saveParamsCallback);
+  wm.setConfigPortalTimeout(PORTAL_TIMEOUT_S);
+  wm.setConnectTimeout(WIFI_CONNECT_TIMEOUT_MS / 1000);
+  wm.setConnectRetries(2);
+
+  // Manual portal: hold the reflex button for 3+ seconds during boot.
+  bool forcePortal = false;
+  if (digitalRead(BUTTON) == LOW) {
+    uint32_t holdStart = millis();
+    while (digitalRead(BUTTON) == LOW && millis() - holdStart < BUTTON_HOLD_PORTAL_MS) delay(20);
+    forcePortal = (digitalRead(BUTTON) == LOW);
+  }
+
+  if (forcePortal) {
+    Serial.println("[boot] Button held 3 s — opening setup portal.");
+    startConfigPortal();
+  } else {
+    bool wifiOk = connectSavedWiFiFast();
+    bool serverOk = wifiOk && edgeServerReachable();
+    if (!wifiOk || !serverOk) {
+      Serial.println(wifiOk ? "[boot] Edge server unreachable." : "[boot] Saved Wi-Fi unavailable.");
+      startConfigPortal();
+    }
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("Wi-Fi channel: %d\n", WiFi.channel());
+    Serial.printf("Edge server: %s\n", baseUrl().c_str());
+    Serial.printf("ESP IP: %s\n", WiFi.localIP().toString().c_str());
   } else {
     Serial.println("Wi-Fi not connected. Ultrasonic fallback remains available.");
   }
+
   if (esp_now_init() != ESP_OK) { Serial.println("ESP-NOW init failed"); return; }
   esp_now_register_recv_cb(onData);
-  Serial.println("Ready. Press the button to test the sensors.");
+  Serial.println("Ready. Short-press the button to test sensors; hold 3 s for setup portal.");
 }
 
 void loop() {
-  if (digitalRead(BUTTON) == LOW) {
-    const char *rule = quickRule();
-    Serial.println(rule);
-    if (strstr(rule, "Stop"))                 playFile("/stop.wav");
-    else if (strstr(rule, "Move left"))       playFile("/left.wav");
-    else if (strstr(rule, "Move right"))      playFile("/right.wav");
-    else if (strstr(rule, "carefully"))       playFile("/careful.wav");
-    else                                      playFile("/clear.wav");
-    delay(500);
+  // --- Button: short press = reflex, hold >= 3 s = setup portal ---
+  static bool buttonWasDown = false;
+  static bool portalFired = false;
+  static uint32_t buttonDownAt = 0;
+  bool down = (digitalRead(BUTTON) == LOW);
+  if (down && !buttonWasDown) { buttonDownAt = millis(); portalFired = false; }
+  if (down && !portalFired && millis() - buttonDownAt >= BUTTON_HOLD_PORTAL_MS) {
+    portalFired = true;
+    Serial.println("[button] Hold detected — opening setup portal.");
+    startConfigPortal();  // restarts on save; otherwise returns after timeout
   }
+  if (!down && buttonWasDown && !portalFired) {
+    uint32_t held = millis() - buttonDownAt;
+    if (held > 30 && held < BUTTON_HOLD_PORTAL_MS) triggerReflex();
+  }
+  buttonWasDown = down;
+
+  // --- Background Wi-Fi reconnect (does not block the reflex path) ---
+  static uint32_t lastWifiRetry = 0;
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetry > WIFI_RETRY_INTERVAL_MS) {
+    lastWifiRetry = millis();
+    Serial.println("[net] Wi-Fi dropped; attempting reconnect...");
+    WiFi.begin();
+  }
+
   if (expectedCount && !imageReady && millis() - lastPacketAt > FRAME_STALL_TIMEOUT_MS) {
     Serial.println("Abandoning stalled frame");
     expectedCount = receivedCount = imageLen = 0;

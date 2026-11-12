@@ -95,16 +95,16 @@ Documents\Arduino\BlindSight_Main_ESP32\BlindSight_Main_ESP32.ino
 
 ---
 
-## ⬛ PART E — EDIT 3 LINES
+## ⬛ PART E — NOTHING TO EDIT (v1.5 portal setup)
 
-43. [ ] Scroll to the top of the sketch
-44. [ ] Find the box marked `EDIT THESE 3 LINES ONLY`
-45. [ ] Double-click the words `BlindSight` inside the quotes on the `WIFI_SSID` line
-46. [ ] Type your Wi-Fi / hotspot name (keep the quote marks)
-47. [ ] Double-click `CHANGE_ME` inside the quotes on the `WIFI_PASSWORD` line
-48. [ ] Type your Wi-Fi password (keep the quote marks)
-49. [ ] Leave the `PI_URL` line alone for now
-50. [ ] Press **Ctrl + S** to save
+43. [ ] Scroll to the top of the sketch — **leave every line as-is**
+44. [ ] Since v1.5 there is no `WIFI_SSID` / `WIFI_PASSWORD` / `PI_URL` to edit
+45. [ ] Install the library instead: **Sketch → Include Library → Manage Libraries**
+46. [ ] Search **WiFiManager** → install **"WiFiManager by tzapu"** (≥ 2.0.17)
+47. [ ] Press **Ctrl + S** to save (no changes needed)
+48. [ ] After upload, join the **`BlindSight-Setup`** Wi-Fi on your phone
+49. [ ] Open `http://192.168.4.1`, pick the venue Wi-Fi, enter the Edge Server IP + port
+50. [ ] Save — the ESP32 reboots and remembers the settings (no re-upload at new venues)
 
 ### ⚠️ FIRST: make sure your network is 2.4GHz
 ESP32 cannot see 5GHz. Ever.
