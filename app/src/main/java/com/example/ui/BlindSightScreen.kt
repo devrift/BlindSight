@@ -250,6 +250,8 @@ fun BlindSightScreen(
             onTextSizeChange = { viewModel.setTextSize(it) },
             highContrastYellow = uiState.highContrastYellow,
             onToggleHighContrast = { viewModel.toggleHighContrastYellow() },
+            geminiApiKey = viewModel.getGeminiApiKey(),
+            onGeminiApiKeyChange = { viewModel.setGeminiApiKey(it) },
             onReadHelp = {
                 viewModel.onSpeechResult("help")
                 showSettingsDialog = false

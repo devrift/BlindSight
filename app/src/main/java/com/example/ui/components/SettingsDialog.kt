@@ -18,15 +18,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,7 +49,6 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.model.ListenMode
 import com.example.data.model.SupportedLanguage
 import com.example.ui.theme.BlindSightAmber
-import com.example.ui.theme.BlindSightAmberStrong
 import com.example.ui.theme.BlindSightCard
 import com.example.ui.theme.BlindSightCardEdge
 import com.example.ui.theme.BlindSightTextMuted
@@ -59,8 +65,12 @@ fun SettingsDialog(
     highContrastYellow: Boolean,
     onToggleHighContrast: () -> Unit,
     onReadHelp: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    geminiApiKey: String = "",
+    onGeminiApiKeyChange: (String) -> Unit = {}
 ) {
+    var keyInput by remember { mutableStateOf(geminiApiKey) }
+
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -101,49 +111,86 @@ fun SettingsDialog(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = null,
+                        contentDescription = "Close",
                         tint = BlindSightTextMuted
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Reply Language
+            // Google Gemini API Key Input
             Text(
-                text = "Reply Language",
-                fontSize = 15.sp,
+                text = "Gemini API Key (Vision & Deep QA)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = BlindSightTextPrimary
+            )
+            Text(
+                text = "Used for camera scene descriptions. Falls back to offline local mode if empty.",
+                fontSize = 12.sp,
+                color = BlindSightTextMuted
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = keyInput,
+                onValueChange = { keyInput = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Paste Gemini API Key", color = BlindSightTextMuted, fontSize = 12.sp) },
+                singleLine = true,
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Key, contentDescription = null, tint = BlindSightAmber)
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = BlindSightAmber,
+                    unfocusedBorderColor = BlindSightCardEdge,
+                    focusedTextColor = BlindSightTextPrimary,
+                    unfocusedTextColor = BlindSightTextPrimary,
+                    cursorColor = BlindSightAmber
+                ),
+                shape = RoundedCornerShape(10.dp)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Button(
+                onClick = { onGeminiApiKeyChange(keyInput) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = BlindSightAmber),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(text = "Save Key", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Language Selection
+            Text(
+                text = "Spoken Language",
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = BlindSightTextPrimary
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SupportedLanguage.entries.forEach { lang ->
-                    val isSelected = lang == currentLanguage
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color(0xFF05070C))
-                            .border(1.dp, if (isSelected) BlindSightAmber else BlindSightCardEdge, RoundedCornerShape(10.dp))
-                            .clickable { onLanguageChange(lang) }
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                            .semantics {
-                                role = Role.RadioButton
-                                contentDescription = "${lang.label}. ${if (isSelected) "Selected" else "Double tap to select"}"
-                            },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = lang.label,
-                            color = if (isSelected) BlindSightAmberStrong else BlindSightTextPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                        )
-                        if (isSelected) {
-                            Text(text = "✓", color = BlindSightAmber, fontWeight = FontWeight.Bold)
-                        }
+            SupportedLanguage.entries.forEach { lang ->
+                val isSelected = currentLanguage == lang
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color.Transparent)
+                        .clickable { onLanguageChange(lang) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = lang.label,
+                        fontSize = 14.sp,
+                        color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                    if (isSelected) {
+                        Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -153,47 +200,49 @@ fun SettingsDialog(
             // Listening Mode
             Text(
                 text = "Listening Mode",
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = BlindSightTextPrimary
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ListenMode.entries.forEach { mode ->
-                    val isSelected = mode == currentMode
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) BlindSightAmber else Color(0xFF05070C))
-                            .border(1.dp, if (isSelected) BlindSightAmber else BlindSightCardEdge, RoundedCornerShape(10.dp))
-                            .clickable { onModeChange(mode) }
-                            .padding(vertical = 10.dp, horizontal = 4.dp)
-                            .semantics {
-                                role = Role.RadioButton
-                                contentDescription = "${mode.displayName} mode. ${mode.hint}."
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
+            ListenMode.entries.forEach { mode ->
+                val isSelected = currentMode == mode
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color.Transparent)
+                        .clickable { onModeChange(mode) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
                         Text(
                             text = mode.displayName,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.Black else BlindSightTextPrimary
+                            fontSize = 14.sp,
+                            color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
+                        Text(
+                            text = mode.description,
+                            fontSize = 11.sp,
+                            color = BlindSightTextMuted
+                        )
+                    }
+                    if (isSelected) {
+                        Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Text Size switcher
+            // Text Size
             Text(
-                text = "Text Scaling",
-                fontSize = 15.sp,
+                text = "Text Size",
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = BlindSightTextPrimary
             )

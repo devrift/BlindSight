@@ -12,6 +12,7 @@ import com.example.data.model.ReflexTelemetry
 import com.example.data.model.SupportedLanguage
 import com.example.data.repository.CompanionRepository
 import com.example.service.HapticHelper
+import com.example.service.SpeechRecognizerHelper
 import com.example.service.TtsHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -46,6 +47,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private val repository = CompanionRepository(application)
     private val hapticHelper = HapticHelper(application)
     private var ttsHelper: TtsHelper? = null
+    private var speechRecognizerHelper: SpeechRecognizerHelper? = null
 
     val facts: StateFlow<List<MemoryFact>> = repository.facts
     val history: StateFlow<List<ChatMessage>> = repository.history
@@ -59,10 +61,37 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     init {
         ttsHelper = TtsHelper(application) { ready ->
             if (ready) {
-                // Initial welcoming announcement for blind users
                 speak("BlindSight companion active. Double-tap the giant center button to speak, or monitor physical obstacles on the Obstacles tab.")
             }
         }
+
+        speechRecognizerHelper = SpeechRecognizerHelper(
+            context = application,
+            onResult = { text ->
+                onSpeechResult(text)
+            },
+            onError = { err ->
+                _uiState.value = _uiState.value.copy(
+                    appState = AppState.IDLE,
+                    statusText = err
+                )
+                ttsHelper?.playEarcon(TtsHelper.EarconType.ERROR)
+            },
+            onListeningStateChanged = { listening ->
+                if (!listening && _uiState.value.appState == AppState.COMMAND_LISTENING) {
+                    _uiState.value = _uiState.value.copy(appState = AppState.IDLE)
+                }
+            }
+        )
+    }
+
+    fun getGeminiApiKey(): String = repository.getGeminiApiKey()
+
+    fun setGeminiApiKey(key: String) {
+        repository.setGeminiApiKey(key)
+        hapticHelper.vibrateConfirm()
+        val msg = if (key.isNotBlank()) "Gemini API key saved." else "Gemini API key cleared. Using local offline mode."
+        speak(msg)
     }
 
     fun selectTab(tab: AppTab) {
@@ -86,6 +115,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         if (currentState == AppState.COMMAND_LISTENING) {
+            speechRecognizerHelper?.stopListening()
             _uiState.value = _uiState.value.copy(
                 appState = AppState.IDLE,
                 statusText = "Listening paused."
@@ -99,6 +129,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             appState = AppState.COMMAND_LISTENING,
             statusText = "Listening… Go ahead, say a question or command."
         )
+
+        val langTag = _uiState.value.language.code
+        speechRecognizerHelper?.startListening(langTag)
     }
 
     fun onSpeechResult(spokenText: String) {
@@ -130,7 +163,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         // Add user turn
         repository.addMessage(isUser = true, text = prompt)
 
-        // Check local command
+        // 1. Check local offline command (Google Assistant Offline Clone)
         val localRes = repository.evaluateLocalCommand(prompt, _uiState.value.language)
         if (localRes != null) {
             if (localRes.newLanguage != null) {
@@ -145,14 +178,20 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // Scene description check
-        if (low in listOf("describe", "describe the scene", "what is around me", "what's around me", "what is in front of me", "look for me")) {
+        // 2. Scene description check
+        if (low in listOf("describe", "describe the scene", "what is around me", "what's around me", "what is in front of me", "look for me", "what do you see", "read this label", "look ahead")) {
             describeScene()
             return
         }
 
-        // General AI assistance
-        val reply = buildConversationalAnswer(prompt)
+        // 3. Try Gemini Multimodal / Deep QA if configured
+        val geminiReply = repository.queryGemini(prompt, lang = _uiState.value.language)
+        val reply = if (!geminiReply.isNullOrBlank()) {
+            geminiReply
+        } else {
+            buildConversationalAnswer(prompt)
+        }
+
         repository.addMessage(isUser = false, text = reply)
         _uiState.value = _uiState.value.copy(
             appState = AppState.SPEAKING,
@@ -166,13 +205,13 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val memPrefix = if (facts.isNotEmpty()) "Relying on your saved memory that ${facts.first().text}. " else ""
         return when (_uiState.value.language) {
             SupportedLanguage.HINDI ->
-                "मैं समझ गया। ${if (facts.isNotEmpty()) "मुझे याद है कि " + facts.first().text + "। " else ""}मैं आपकी सुरक्षित यात्रा के लिए हमेशा तैयार हूँ।"
+                "मैंने सुना: \"$prompt\"। ${if (facts.isNotEmpty()) "मुझे याद है कि " + facts.first().text + "। " else ""}मैं आपकी सुरक्षित यात्रा के लिए हमेशा तैयार हूँ।"
             SupportedLanguage.SPANISH ->
-                "Entendido. ${if (facts.isNotEmpty()) "Recordando que " + facts.first().text + ". " else ""}Estoy aquí para guiarte en todo momento."
+                "Entendido: \"$prompt\". ${if (facts.isNotEmpty()) "Recordando que " + facts.first().text + ". " else ""}Estoy aquí para guiarte en todo momento."
             SupportedLanguage.FRENCH ->
-                "Bien reçu. ${if (facts.isNotEmpty()) "En gardant en mémoire que " + facts.first().text + ". " else ""}Je suis là pour vous accompagner."
+                "Bien reçu : \"$prompt\". ${if (facts.isNotEmpty()) "En gardant en mémoire que " + facts.first().text + ". " else ""}Je suis là pour vous accompagner."
             else ->
-                "${memPrefix}I hear you clearly. Path forward is monitored and I am ready to guide or describe anything you need."
+                "${memPrefix}I hear you ask: \"$prompt\". Path forward is monitored and I am ready to guide or describe anything you need."
         }
     }
 
@@ -218,118 +257,123 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             1.45f -> "Extra large text"
             else -> "Normal text"
         }
-        speak("Text size set to $label.")
+        speak("Text size: $label.")
     }
 
     fun toggleHighContrastYellow() {
-        val next = !_uiState.value.highContrastYellow
-        _uiState.value = _uiState.value.copy(highContrastYellow = next)
-        hapticHelper.vibrateTap()
-        speak(if (next) "High contrast yellow-on-black mode enabled." else "Standard amber high contrast mode enabled.")
+        val newVal = !_uiState.value.highContrastYellow
+        _uiState.value = _uiState.value.copy(highContrastYellow = newVal)
+        hapticHelper.vibrateConfirm()
+        val status = if (newVal) "High contrast yellow-on-black mode enabled." else "Standard amber theme restored."
+        speak(status)
     }
 
     fun updateSensorDistance(leftCm: Int, centerCm: Int, rightCm: Int) {
         val tel = repository.updateSensors(leftCm, centerCm, rightCm)
-        handleReflexHapticsAndAudio(tel)
-    }
-
-    private fun handleReflexHapticsAndAudio(tel: ReflexTelemetry) {
         when (tel.alert) {
             ReflexAlert.STOP -> {
-                hapticHelper.vibrateCriticalStop()
+                hapticHelper.vibrateAlert()
                 ttsHelper?.playEarcon(TtsHelper.EarconType.OBSTACLE_CRITICAL)
-                speak("Critical obstacle! Stop immediately.")
             }
-            ReflexAlert.STEER_LEFT -> {
-                hapticHelper.vibrateWarning()
-                speak("Obstacle on right. Steer left.")
-            }
-            ReflexAlert.STEER_RIGHT -> {
-                hapticHelper.vibrateWarning()
-                speak("Obstacle on left. Steer right.")
+            ReflexAlert.STEER_LEFT, ReflexAlert.STEER_RIGHT -> {
+                hapticHelper.vibrateAlert()
             }
             ReflexAlert.CAREFUL -> {
                 hapticHelper.vibrateTap()
-                speak("Obstacle ahead. Proceed carefully.")
             }
-            ReflexAlert.CLEAR -> {
-                // Clear state
-            }
+            ReflexAlert.CLEAR -> {}
         }
     }
 
     fun toggleAutoSweep() {
         val next = !_uiState.value.isAutoSweeping
         _uiState.value = _uiState.value.copy(isAutoSweeping = next)
-        hapticHelper.vibrateTap()
+        hapticHelper.vibrateConfirm()
 
         if (next) {
-            speak("Obstacle simulation radar active. Moving objects simulated.")
-            autoSweepJob = viewModelScope.launch {
-                val scenarios = listOf(
-                    Triple(160, 180, 170), // Clear
-                    Triple(70, 85, 75),   // Careful
-                    Triple(30, 60, 140),  // Steer right
-                    Triple(18, 22, 24),   // Stop
-                    Triple(140, 50, 28),  // Steer left
-                    Triple(190, 210, 180) // Clear
-                )
-                var index = 0
-                while (_uiState.value.isAutoSweeping) {
-                    val (l, c, r) = scenarios[index % scenarios.size]
-                    updateSensorDistance(l, c, r)
-                    index++
-                    delay(3500)
-                }
-            }
+            speak("Auto reflex sweep enabled. Simulating sensor distance variations.")
+            startAutoSweepLoop()
         } else {
             autoSweepJob?.cancel()
-            autoSweepJob = null
-            updateSensorDistance(150, 180, 160)
-            speak("Obstacle simulation stopped.")
+            speak("Auto sweep disabled.")
         }
     }
 
-    fun addManualFact(fact: String) {
-        val reply = repository.addFact(fact)
+    private fun startAutoSweepLoop() {
+        autoSweepJob?.cancel()
+        autoSweepJob = viewModelScope.launch {
+            var step = 0
+            while (_uiState.value.isAutoSweeping) {
+                delay(2200)
+                step++
+                when (step % 5) {
+                    0 -> updateSensorDistance(150, 180, 200)
+                    1 -> updateSensorDistance(80, 95, 110)
+                    2 -> updateSensorDistance(35, 60, 120)
+                    3 -> updateSensorDistance(18, 15, 22)
+                    4 -> updateSensorDistance(120, 40, 30)
+                }
+            }
+        }
+    }
+
+    fun addMemoryFact(text: String) {
+        val result = repository.addFact(text)
         hapticHelper.vibrateConfirm()
-        speak(reply)
+        speak(result)
     }
 
-    fun forgetFact(factText: String) {
-        val reply = repository.forgetFact(factText)
+    fun removeMemoryFact(query: String) {
+        val result = repository.forgetFact(query)
         hapticHelper.vibrateTap()
-        speak(reply)
+        speak(result)
     }
 
-    fun clearAllFacts() {
-        val reply = repository.clearAllFacts()
-        hapticHelper.vibrateTap()
-        speak(reply)
+    fun clearAllMemories() {
+        val result = repository.clearAllFacts()
+        hapticHelper.vibrateAlert()
+        speak(result)
     }
 
     fun clearConversationHistory() {
-        val reply = repository.clearHistory()
+        val result = repository.clearHistory()
         hapticHelper.vibrateTap()
-        speak(reply)
+        speak(result)
+    }
+
+    fun readHelpCommands() {
+        hapticHelper.vibrateConfirm()
+        val help = "BlindSight Voice Commands: 1. Tap the giant mic to ask questions. 2. Say 'what time is it' or 'battery level'. 3. Say 'turn on flashlight'. 4. Say 'describe' to inspect the surroundings. 5. Say 'remember' followed by an item location. 6. Say 'stop' anytime to silence audio."
+        speak(help)
     }
 
     fun speak(text: String) {
-        ttsHelper?.speak(text)
+        _uiState.value = _uiState.value.copy(
+            appState = AppState.SPEAKING,
+            statusText = text
+        )
+        ttsHelper?.speak(text) {
+            _uiState.value = _uiState.value.copy(
+                appState = AppState.IDLE,
+                statusText = "Ready"
+            )
+        }
     }
 
     fun stopSpeaking() {
         ttsHelper?.stop()
+        speechRecognizerHelper?.stopListening()
+        hapticHelper.vibrateTap()
         _uiState.value = _uiState.value.copy(
             appState = AppState.IDLE,
             statusText = "Stopped."
         )
-        hapticHelper.vibrateTap()
     }
 
     override fun onCleared() {
         super.onCleared()
         autoSweepJob?.cancel()
         ttsHelper?.shutdown()
+        speechRecognizerHelper?.destroy()
     }
 }

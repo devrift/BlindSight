@@ -20,6 +20,21 @@ export class VisionAiService {
     return this.lastCapturedFrame;
   }
 
+  static getGeminiApiKey(): string {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('blindsight_gemini_api_key');
+      if (stored && stored.trim()) return stored.trim();
+    }
+    const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.GEMINI_API_KEY;
+    return (envKey && String(envKey).trim()) || '';
+  }
+
+  static setGeminiApiKey(key: string): void {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('blindsight_gemini_api_key', key.trim());
+    }
+  }
+
   /**
    * Captures a single image frame from an active video element
    */
@@ -41,6 +56,58 @@ export class VisionAiService {
   }
 
   /**
+   * Directly queries Google Gemini Multimodal API (gemini-flash-lite-latest)
+   */
+  static async queryGeminiDirect(
+    prompt: string,
+    imageDataUrl: string | null,
+    langCode: LanguageCode
+  ): Promise<string | null> {
+    const key = this.getGeminiApiKey();
+    if (!key) return null;
+
+    try {
+      const parts: any[] = [];
+      const sysInstruction = langCode === 'hi'
+        ? "आप ब्लाइंडसाइट हैं, दृष्टिबाधित व्यक्तियों के लिए एक वॉयस और विज़न असिस्टेंट। उत्तर अधिकतम 2 वाक्यों में सीधा और सुरक्षित नेविगेशन के लिए उपयोगी रखें।"
+        : "You are BlindSight, an empathetic voice and vision assistant for visually impaired users. Keep responses under 2 concise sentences. Be direct, clear, and focus on obstacle hazards and safe navigation.";
+
+      parts.push({ text: `${sysInstruction}\n\nUser Question: ${prompt}` });
+
+      if (imageDataUrl) {
+        const base64Data = imageDataUrl.includes(',') ? imageDataUrl.split(',')[1] : imageDataUrl;
+        parts.push({
+          inline_data: {
+            mime_type: 'image/jpeg',
+            data: base64Data
+          }
+        });
+      }
+
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 9000);
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts }] }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text && text.trim()) {
+          return text.trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Gemini direct query notice:', e);
+    }
+    return null;
+  }
+
+  /**
    * Answers a multimodal or conversational prompt
    */
   static async askCompanion(
@@ -53,7 +120,6 @@ export class VisionAiService {
     }
   ): Promise<VisionResult> {
     const { useCamera, imageDataUrl, langCode } = options;
-    const langInfo = LANGUAGES[langCode] || LANGUAGES.en;
 
     const low = prompt.trim().toLowerCase();
     const isSceneQuery = [
@@ -62,16 +128,19 @@ export class VisionAiService {
       'what is around me',
       "what's around me",
       'what is in front of me',
-      'look for me'
+      'look for me',
+      'look ahead',
+      'what do you see',
+      'read this label'
     ].some(trigger => low === trigger || low.startsWith(trigger + ' '));
 
     const imageToUse = imageDataUrl || (useCamera ? this.lastCapturedFrame : null);
 
-    // If an external AI gateway / server endpoint exists on the LAN, try querying it
+    // 1. If an external AI gateway / server endpoint exists on the LAN, try querying it
     try {
       if (typeof window !== 'undefined') {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 2000);
+        const timeout = setTimeout(() => ctrl.abort(), 2500);
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {
@@ -80,7 +149,8 @@ export class VisionAiService {
           },
           body: JSON.stringify({
             prompt,
-            use_camera: useCamera || isSceneQuery
+            use_camera: useCamera || isSceneQuery,
+            lang: langCode
           }),
           signal: ctrl.signal
         });
@@ -98,10 +168,20 @@ export class VisionAiService {
         }
       }
     } catch {
-      // Gateway unreachable or timed out: fall back smoothly to AssistantBrain!
+      // Gateway unreachable or timed out
     }
 
-    // Multimodal scene requests
+    // 2. Direct Google Gemini Multimodal API query (using GEMINI_API_KEY from .env)
+    const geminiDirect = await this.queryGeminiDirect(prompt, imageToUse, langCode);
+    if (geminiDirect) {
+      return {
+        reply: geminiDirect,
+        ok: true,
+        imageAttached: !!imageToUse
+      };
+    }
+
+    // 3. Multimodal scene requests without Gemini answer
     if (isSceneQuery || imageToUse) {
       if (!imageToUse) {
         return {
@@ -114,6 +194,7 @@ export class VisionAiService {
         };
       }
 
+      // Calm, reassuring navigation fallback
       return {
         reply:
           langCode === 'hi'
@@ -124,7 +205,7 @@ export class VisionAiService {
       };
     }
 
-    // Google Assistant-style response engine (Hey BlindSight) - NEVER fails or says "offline"
+    // 4. Google Assistant-style response engine (Hey BlindSight) - NEVER fails or says "offline"
     const reply = AssistantBrain.answer(prompt, langCode);
     return {
       reply,
