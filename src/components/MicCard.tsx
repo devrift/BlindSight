@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Mic, Volume2, Sparkles } from 'lucide-react';
+import React, { useMemo, useRef } from 'react';
+import { Mic, Volume2, Sparkles, Camera, Image } from 'lucide-react';
 import { AppState, ListenMode } from '../types';
 
 interface MicCardProps {
@@ -11,6 +11,7 @@ interface MicCardProps {
   isHot: boolean;
   isCue: boolean;
   onMicClick: () => void;
+  onUploadImage?: (dataUrl: string) => void;
 }
 
 export const MicCard: React.FC<MicCardProps> = ({
@@ -21,11 +22,27 @@ export const MicCard: React.FC<MicCardProps> = ({
   micMeterPct,
   isHot,
   isCue,
-  onMicClick
+  onMicClick,
+  onUploadImage
 }) => {
   const isListening = appState === 'listen';
   const isSpeaking = appState === 'speak';
   const isThinking = appState === 'think';
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string;
+      if (dataUrl && onUploadImage) {
+        onUploadImage(dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const btnClass = [
     isListening ? 'listening' : '',
@@ -114,6 +131,30 @@ export const MicCard: React.FC<MicCardProps> = ({
           />
         ))}
       </div>
+
+      {/* Direct Picture Upload & Describe Button */}
+      {onUploadImage && (
+        <div className="mic-actions-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+            aria-hidden="true"
+          />
+          <button
+            type="button"
+            className="upload-photo-btn"
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="Upload a photo from your device to immediately describe what is in front of you"
+            title="Upload photo to describe scene"
+          >
+            <Camera size={18} aria-hidden="true" />
+            <span>Upload Photo to Describe</span>
+          </button>
+        </div>
+      )}
     </section>
   );
 };

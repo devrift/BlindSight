@@ -11,6 +11,7 @@ Integrates:
 from __future__ import annotations
 
 import io
+import base64
 import os
 import sys
 import time
@@ -57,6 +58,7 @@ def add_cors_headers(response):
 
 
 @app.route("/health", methods=["GET"])
+@app.route("/api/health", methods=["GET"])
 @app.route("/api/status", methods=["GET"])
 def health():
     """Health check for edge reflex, Open.Jarvis voice assistant, and camera."""
@@ -163,26 +165,69 @@ def api_upload_frame():
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    """Text-based AI query endpoint for PWA companion."""
+    """Text-based and multimodal AI query endpoint for PWA companion."""
     data = request.get_json(silent=True) or {}
     prompt = str(data.get("prompt", "")).strip()
     lang = str(data.get("lang", "en")).strip()
+    image_b64 = str(data.get("image", "")).strip()
+
+    if not prompt and not image_b64:
+        return jsonify(error="missing prompt or image"), 400
 
     if not prompt:
-        return jsonify(error="missing prompt"), 400
+        prompt = "describe what is in front of me"
+
+    global last_frame_timestamp
+    has_uploaded_image = False
+    latest_file = RUNTIME_DIR / "latest.jpg"
+
+    if image_b64:
+        if "," in image_b64:
+            image_b64 = image_b64.split(",", 1)[1]
+        try:
+            raw_img = base64.b64decode(image_b64)
+            if len(raw_img) > 100:
+                with open(latest_file, "wb") as f:
+                    f.write(raw_img)
+                last_frame_timestamp = time.time()
+                has_uploaded_image = True
+        except Exception as e:
+            print(f"[api_chat] Image base64 decode notice: {e}")
+
+    # Check if this query is asking about visual surroundings / scene
+    scene_triggers = [
+        "describe", "front", "ahead", "see", "around", "clear", "walk",
+        "label", "sign", "samne", "aage", "dikh", "dekho", "photo", "image",
+        "picture", "tasveer", "color", "shape", "rang", "aakar", "surface"
+    ]
+    prompt_low = prompt.lower()
+    is_scene_query = any(trigger in prompt_low for trigger in scene_triggers)
 
     global last_vision_description
-    vision_ctx = last_vision_description if (time.time() - last_frame_timestamp < 45.0) else ""
+    is_fresh_frame = (time.time() - last_frame_timestamp < 60.0)
+    vision_ctx = last_vision_description if is_fresh_frame else ""
+
+    # Attach frame ONLY when user uploaded one or query asks about surroundings!
+    if has_uploaded_image or is_scene_query:
+        frame_to_use = latest_file if (has_uploaded_image or is_fresh_frame) else None
+    else:
+        frame_to_use = None
 
     if jarvis_assistant is not None:
-        reply = jarvis_assistant.route_command(prompt, vision_context=vision_ctx, lang=lang)
+        reply = jarvis_assistant.route_command(
+            prompt,
+            image_path=frame_to_use,
+            has_uploaded_image=has_uploaded_image,
+            vision_context=vision_ctx,
+            lang=lang
+        )
     else:
         reply = "BlindSight local companion active. Obstacle sensors are monitoring your path."
 
     return jsonify({
         "reply": reply,
         "ok": True,
-        "image_attached": bool(vision_ctx),
+        "image_attached": bool(frame_to_use),
         "degraded": False,
         "tts_url": f"/api/tts?text={quote(reply)}&lang={lang}"
     })
@@ -295,5 +340,8 @@ def latest_frame():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    print(f"Starting BlindSight Open.Jarvis Gateway on http://0.0.0.0:{port}")
+    print(f"Starting BlindSight AI Gateway on http://0.0.0.0:{port}")
+    if jarvis_assistant is not None and jarvis_assistant.mic_available:
+        print(f"[Server] 🎙️ Internal microphone listener active on {jarvis_assistant.mic_name}. Wake word: 'Hey BlindSight'")
+        jarvis_assistant.start_background_mic_listener()
     app.run(host="0.0.0.0", port=port, debug=False)

@@ -73,12 +73,12 @@ export class VisionAiService {
 
       if (isVisionQuery) {
         sysInstruction = langCode === 'hi'
-          ? "आप ब्लाइंडसाइट जार्विस हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक सहायक नेविगेशन साथी। कैमरे में जो वास्तव में दिख रहा है, केवल वही 1-2 सीधे वाक्यों में बताएं। यदि सामने सादी दीवार, लकड़ी का बोर्ड या कोई सतह है, तो सीधे कहें कि सामने दीवार या सतह है और रास्ता रुका हुआ है। '10 बजे की दिशा' या '2 बजे की दिशा' जैसे शब्द कभी न बोलें, सामान्य शब्द बोलें जैसे 'सीधे आपके आगे', 'बाईं तरफ', 'दाईं तरफ'। कभी भी झूठी या बिना दिखी चीजें न बनाएं।"
-          : "You are BlindSight JARVIS, an assistive navigation companion for a blind or visually impaired user. Describe ONLY what is genuinely visible in the camera view in 1 to 2 direct sentences. If facing a plain wall, wooden surface, or obstacle, state directly that a wall or surface is in front of the user and the path ahead is blocked. Never invent unviewed objects. Use natural directions: 'Straight ahead', 'To your left', 'To your right'. Never use clock numbers like '10 o'clock'.";
+          ? "आप ब्लाइंडसाइट हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक सहायक नेविगेशन साथी। कैमरे में जो वास्तव में दिख रहा है, केवल वही 1-2 सीधे वाक्यों में बताएं। यदि सामने सादी दीवार, लकड़ी का बोर्ड या कोई सतह है, तो सीधे कहें कि सामने दीवार या सतह है और रास्ता रुका हुआ है। '10 बजे की दिशा' या '2 बजे की दिशा' जैसे शब्द कभी न बोलें, सामान्य शब्द बोलें जैसे 'सीधे आपके आगे', 'बाईं तरफ', 'दाईं तरफ'। कभी भी झूठी या बिना दिखी चीजें न बनाएं।"
+          : "You are BlindSight, an assistive navigation companion for a blind or visually impaired user. Describe ONLY what is genuinely visible in the camera view in 1 to 2 direct sentences. If facing a plain wall, wooden surface, or obstacle, state directly that a wall or surface is in front of the user and the path ahead is blocked. Never invent unviewed objects. Use natural directions: 'Straight ahead', 'To your left', 'To your right'. Never use clock numbers like '10 o'clock'.";
       } else {
         sysInstruction = langCode === 'hi'
-          ? "आप ब्लाइंडसाइट जार्विस हैं, एक बुद्धिमान, दोस्ताना और मददगार वॉयस असिस्टेंट साथी (गूगल असिस्टेंट या जार्विस की तरह)। सामान्य बातचीत करें, सवालों के जवाब दें, चुटकुले सुनाएं, गणित हल करें। उत्तर 2-3 वाक्यों में स्वाभाविक और संक्षिप्त रखें। जब तक उपयोगकर्ता खुद न पूछे, कैमरे या बाधाओं का ज़िक्र न करें। यदि नाम पूछा जाए, तो कहें कि आपका नाम 'ब्लाइंडसाइट जार्विस' है।"
-          : "You are BlindSight JARVIS, an intelligent, friendly, witty, and helpful AI conversational companion (like Google Assistant / J.A.R.V.I.S.). Chat naturally, answer questions, tell jokes, solve math, and assist with any topic. Keep answers concise under 2-3 natural sentences. DO NOT talk about camera, obstacles, or navigation unless the user specifically asks about their surroundings. If asked for your name, state clearly that you are BlindSight JARVIS.";
+          ? "आप ब्लाइंडसाइट हैं, एक बुद्धिमान, दोस्ताना और मददगार वॉयस असिस्टेंट साथी (गूगल असिस्टेंट की तरह)। सामान्य बातचीत करें, सवालों के जवाब दें, चुटकुले सुनाएं, गणित हल करें। उत्तर 2-3 वाक्यों में स्वाभाविक और संक्षिप्त रखें। जब तक उपयोगकर्ता खुद न पूछे, कैमरे या बाधाओं का ज़िक्र न करें। यदि नाम पूछा जाए, तो कहें कि आपका नाम 'ब्लाइंडसाइट' है।"
+          : "You are BlindSight, an intelligent, friendly, witty, and helpful AI conversational companion (like Google Assistant). Chat naturally, answer questions, tell jokes, solve math, and assist with any topic. Keep answers concise under 2-3 natural sentences. DO NOT talk about camera, obstacles, or navigation unless the user specifically asks about their surroundings. If asked for your name, state clearly that you are BlindSight.";
       }
 
       parts.push({ text: `${sysInstruction}\n\nUser Question: ${prompt}` });
@@ -158,14 +158,18 @@ export class VisionAiService {
     ];
     const isSceneQuery = sceneTriggers.some(trigger => low === trigger || low.startsWith(trigger + ' '));
 
-    // ONLY attach an image if this is ACTUALLY an explicit scene query!
-    const imageToUse = isSceneQuery ? (imageDataUrl || (useCamera ? this.lastCapturedFrame : null)) : null;
+    if (imageDataUrl) {
+      this.lastCapturedFrame = imageDataUrl;
+    }
+
+    const isVisionRequest = isSceneQuery || !!imageDataUrl;
+    const imageToUse = imageDataUrl || (isSceneQuery && useCamera ? this.lastCapturedFrame : null);
 
     // 1. If an external AI gateway / server endpoint exists on the LAN, try querying it
     try {
       if (typeof window !== 'undefined') {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 2500);
+        const timeout = setTimeout(() => ctrl.abort(), 6000);
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {
@@ -173,8 +177,9 @@ export class VisionAiService {
             ...(options.apiToken ? { Authorization: `Bearer ${options.apiToken}` } : {})
           },
           body: JSON.stringify({
-            prompt,
-            use_camera: isSceneQuery && useCamera,
+            prompt: prompt || 'describe what is in front of me',
+            image: imageToUse || undefined,
+            use_camera: isVisionRequest,
             lang: langCode
           }),
           signal: ctrl.signal
@@ -197,7 +202,7 @@ export class VisionAiService {
     }
 
     // 2. Direct Google Gemini Multimodal API query (using GEMINI_API_KEY from .env)
-    const geminiDirect = await this.queryGeminiDirect(prompt, imageToUse, langCode, isSceneQuery);
+    const geminiDirect = await this.queryGeminiDirect(prompt, imageToUse, langCode, isVisionRequest);
     if (geminiDirect) {
       return {
         reply: geminiDirect,
@@ -207,7 +212,7 @@ export class VisionAiService {
     }
 
     // 3. Multimodal scene requests without Gemini answer
-    if (isSceneQuery) {
+    if (isVisionRequest) {
       if (!imageToUse) {
         return {
           reply:

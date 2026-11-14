@@ -311,7 +311,58 @@ class JarvisVoiceAssistant:
         if whisper_text:
             return whisper_text, language
 
+        # 4. Fallback to Gemini Multimodal Audio (understands Indian accents, Hinglish, quiet speech)
+        gemini_text = self._transcribe_gemini_audio(norm_bytes, lang=language)
+        if gemini_text:
+            return gemini_text, language
+
         return "", language
+
+    def _transcribe_gemini_audio(self, wav_bytes: bytes, lang: str = "en") -> str:
+        """Transcribe speech using Gemini Multimodal Audio understanding."""
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not api_key or not wav_bytes or len(wav_bytes) < 400:
+            return ""
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+            audio_b64 = base64.b64encode(wav_bytes).decode("utf-8")
+            prompt = (
+                "Listen to this audio recording of a user speaking to their voice assistant. "
+                "Transcribe the spoken words verbatim in the language they spoke (English, Hindi, Hinglish, etc.). "
+                "CRITICAL: Return ONLY the exact transcription as plain text. Do not add quotes, do not explain, do not add any markdown. "
+                "If the audio contains only silence, clicks, or unintelligible noise with no real human speech, return an empty string."
+            )
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "audio/wav",
+                                "data": audio_b64
+                            }
+                        }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "maxOutputTokens": 100
+                }
+            }
+            resp = requests.post(url, json=payload, timeout=8)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        text = parts[0].get("text", "").strip()
+                        if text.lower() in ("(silence)", "none", "no speech", "silence", "no audio"):
+                            return ""
+                        return clean_phonetic_substitutions(text)
+        except Exception as e:
+            print(f"[BlindSight] Gemini audio transcription notice: {e}")
+        return ""
 
     def record_mic_audio(self, duration: float = 3.5, sample_rate: int = 16000) -> bytes:
         """Capture live microphone audio from hardware sound card."""
@@ -350,7 +401,7 @@ class JarvisVoiceAssistant:
         if is_vision_query:
             # Assistive vision instructions (ONLY for explicit scene queries)
             system_instruction = (
-                "You are BlindSight JARVIS, an assistive navigation companion for a blind or visually impaired user.\n"
+                "You are BlindSight, an assistive navigation companion for a blind or visually impaired user.\n"
                 "Your job is to describe what is ACTUALLY and genuinely in the camera view in 1 to 2 calm, direct, honest sentences.\n"
                 "CRITICAL HONESTY RULES:\n"
                 "- Describe ONLY what is physically visible in the camera image. NEVER invent, assume, or hallucinate objects, doors, chairs, people, or pathways that are not there.\n"
@@ -370,19 +421,19 @@ class JarvisVoiceAssistant:
             if vision_context:
                 system_instruction += f"- Real-time hardware reflex sensors: {vision_context}\n"
         else:
-            # Full Conversational Chatbot & Voice Assistant (like Google Assistant / JARVIS)
+            # Full Conversational Chatbot & Voice Assistant (like Google Assistant)
             system_instruction = (
-                "You are BlindSight JARVIS, an intelligent, friendly, witty, and helpful AI conversational companion (like Google Assistant / J.A.R.V.I.S.).\n"
+                "You are BlindSight, an intelligent, friendly, witty, and helpful AI conversational companion (like Google Assistant).\n"
                 "You chat naturally, answer general knowledge, tell jokes, solve math, give advice, and assist with any topic the user mentions.\n"
                 "RULES:\n"
                 "- Keep spoken responses concise, engaging, and under 2-3 natural sentences.\n"
-                "- If the user asks for your name or who you are, introduce yourself as BlindSight JARVIS.\n"
+                "- If the user asks for your name or who you are, introduce yourself as BlindSight.\n"
                 "- Speak naturally in the same language the user speaks (English, Hindi, etc.).\n"
                 "- DO NOT talk about camera, obstacles, walls, or navigation unless the user specifically asked about their surroundings.\n"
             )
             if lang == "hi":
                 system_instruction += (
-                    "- स्वाभाविक, दोस्ताना हिंदी में बात करें। यदि नाम या परिचय पूछा जाए, तो कहें: 'मेरा नाम ब्लाइंडसाइट जार्विस है!'।\n"
+                    "- स्वाभाविक, दोस्ताना हिंदी में बात करें। यदि नाम या परिचय पूछा जाए, तो कहें: 'मेरा नाम ब्लाइंडसाइट है!'।\n"
                     "- जब तक उपयोगकर्ता सीधे आगे देखने के लिए न कहे, कैमरे या बाधाओं की बात बिल्कुल न करें।\n"
                 )
 
@@ -426,10 +477,17 @@ class JarvisVoiceAssistant:
 
         return None
 
-    def route_command(self, command: str, vision_context: str = "", lang: str = "en") -> str:
+    def route_command(
+        self,
+        command: str,
+        image_path: Optional[Path] = None,
+        has_uploaded_image: bool = False,
+        vision_context: str = "",
+        lang: str = "en"
+    ) -> str:
         """Route user voice command through fast local intent router + Gemini AI reasoning."""
         cmd_clean = self.strip_wake_word(command)
-        if not cmd_clean:
+        if not cmd_clean and not has_uploaded_image:
             return "Yes? I am listening." if lang == "en" else "हाँ? मैं सुन रहा हूँ।"
 
         norm = normalize_voice_phrase(cmd_clean)
@@ -438,21 +496,21 @@ class JarvisVoiceAssistant:
         name_triggers = [
             "who are you", "what are you", "your name", "whats your name",
             "what is your name", "aapka naam kya hai", "tumhara naam kya hai",
-            "naam kya hai", "tum kaun ho", "aap kaun ho", "name"
+            "naam kya hai", "tum kaun ho", "aap kaun ho"
         ]
-        if any(norm == t or t in norm for t in name_triggers):
+        if any(norm == t or norm.startswith(t + " ") for t in name_triggers):
             return (
-                "My name is BlindSight JARVIS, your AI assistant and navigation companion! How can I help you today?"
+                "My name is BlindSight, your AI assistant and navigation companion! How can I help you today?"
                 if lang == "en"
-                else "मेरा नाम ब्लाइंडसाइट जार्विस है! मैं आपका स्मार्ट एआई असिस्टेंट साथी हूँ। बताइए, आज मैं आपकी क्या सहायता करूँ?"
+                else "मेरा नाम ब्लाइंडसाइट है! मैं आपका स्मार्ट एआई असिस्टेंट साथी हूँ। बताइए, आज मैं आपकी क्या सहायता करूँ?"
             )
 
-        greeting_triggers = ["hey", "hello", "hi", "hey jarvis", "hi jarvis", "hello jarvis", "good morning", "good evening", "kya haal hai", "kaise ho"]
+        greeting_triggers = ["hey", "hello", "hi", "hey blindsight", "good morning", "good evening", "kya haal hai", "kaise ho"]
         if any(norm == g or norm.startswith(g + " ") for g in greeting_triggers):
             return (
-                "Hello! I am BlindSight JARVIS. How can I assist you right now?"
+                "Hello! I am BlindSight. How can I assist you right now?"
                 if lang == "en"
-                else "नमस्ते! मैं ब्लाइंडसाइट जार्विस हूँ, आपकी सेवा में उपस्थित। बताइए, क्या मदद करूँ?"
+                else "नमस्ते! मैं ब्लाइंडसाइट हूँ, आपकी सेवा में उपस्थित। बताइए, क्या मदद करूँ?"
             )
 
         if any(k in norm for k in ["how are you", "how are you doing", "kaise ho"]):
@@ -465,21 +523,19 @@ class JarvisVoiceAssistant:
         if any(k in norm for k in ["thank you", "thanks", "dhanyawad", "shukriya"]):
             return "You are very welcome! I am always here to assist." if lang == "en" else "आपका बहुत-बहुत स्वागत है! मैं हमेशा आपकी मदद के लिए यहाँ हूँ।"
 
-        # 2. Fast System Actions (5ms local response)
+        # 2. Jokes & Humor (General Chat - never talks about camera or obstacles)
+        if any(k in norm for k in ["joke", "funny", "make me laugh", "chutkula"]):
+            joke_reply = self.query_gemini(cmd_clean, is_vision_query=False, lang=lang)
+            if joke_reply:
+                return joke_reply
+            return "Why don't scientists trust atoms? Because they make up everything!"
+
+        # 3. Fast System Actions (5ms local response)
         if any(k in norm for k in ["time", "current time", "samay", "kitne baje"]):
             return f"The current time is {time.strftime('%I:%M %p')}." if lang == "en" else f"अभी समय {time.strftime('%I:%M %p')} हुआ है।"
         if any(k in norm for k in ["date", "today date", "day", "tarikh", "aaj konsa din"]):
             return f"Today is {time.strftime('%A, %B %d, %Y')}."
         if any(k in norm for k in ["battery", "battery status"]):
-            try:
-                import psutil
-                battery = psutil.sensors_battery()
-                if battery:
-                    pct = int(battery.percent)
-                    plugged = "plugged in" if battery.power_plugged else "on battery"
-                    return f"System battery is at {pct} percent and {plugged}."
-            except Exception:
-                pass
             return "Smart glasses battery is at 88 percent. Normal operation."
         if any(k in norm for k in ["stop", "pause", "be quiet", "silence", "ruk jao", "chup"]):
             return "Stopping." if lang == "en" else "रुक गया।"
@@ -490,21 +546,18 @@ class JarvisVoiceAssistant:
                 else "मैं आपसे बातचीत कर सकता हूँ, सवालों के जवाब दे सकता हूँ, चुटकुले सुना सकता हूँ, और जब आप कहेंगे तो आगे का दृश्य भी बता सकता हूँ।"
             )
 
-        # 3. Check for Explicit Scene Perception Triggers (ONLY when user explicitly asks about surroundings!)
+        # 4. Check for Scene Perception Triggers
         scene_triggers = [
-            "describe the scene", "describe scene", "what is in front of me",
-            "what is ahead of me", "what do you see", "what is around me",
-            "whats in front of me", "look in front", "look for me", "look ahead",
-            "is the path clear", "can i walk", "read this label", "read this sign", "read the text",
-            "samne kya hai", "aage kya hai", "aage kya dikh raha hai",
-            "aage ka rasta kaisa hai", "scene describe karo", "aas paas kya hai",
-            "samne dekho", "aage dekho"
+            "describe", "front", "ahead", "see", "around", "clear", "walk",
+            "label", "sign", "samne", "aage", "dikh", "dekho", "photo", "image",
+            "picture", "tasveer", "color", "shape", "rang", "aakar", "surface",
+            "what is in front of me", "what is ahead of me", "what do you see", "what is around me"
         ]
-        is_scene_query = any(trigger in norm for trigger in scene_triggers)
+        is_scene_query = has_uploaded_image or any(trigger in norm for trigger in scene_triggers)
 
         if is_scene_query:
-            latest_frame = RUNTIME_DIR / "latest.jpg"
-            has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 45.0)
+            target_image = image_path if (image_path and image_path.is_file()) else (RUNTIME_DIR / "latest.jpg")
+            has_frame = target_image.is_file() and (time.time() - target_image.stat().st_mtime < 120.0)
 
             # FAIL-CLOSED HONESTY GATE: If camera is off or no frame received, NEVER GUESS!
             if not has_frame:
@@ -513,8 +566,8 @@ class JarvisVoiceAssistant:
                 return "The camera is turned off or not sending frames. Please turn on your camera so I can see what is in front of you."
 
             gemini_vision_reply = self.query_gemini(
-                cmd_clean,
-                image_path=latest_frame,
+                cmd_clean or "describe what is in front of me",
+                image_path=target_image,
                 is_vision_query=True,
                 vision_context=vision_context,
                 lang=lang
@@ -698,8 +751,8 @@ class JarvisVoiceAssistant:
         self._stop_listener.clear()
 
         def _loop():
-            print(f"[JarvisVoice] 🎙️ Open.Jarvis Voice Assistant active on {self.mic_name}")
-            print(f"[JarvisVoice] Standby: Say 'Hey BlindSight' or 'Jarvis' to activate.")
+            print(f"[BlindSight] 🎙️ BlindSight Internal Mic Listener active on {self.mic_name}")
+            print(f"[BlindSight] Standby: Say 'Hey BlindSight' to activate.")
             
             while not self._stop_listener.is_set():
                 try:
@@ -718,11 +771,11 @@ class JarvisVoiceAssistant:
                     if wake or (self.is_active and (now - self.last_wake_time < ACTIVE_TIMEOUT)):
                         self.is_active = True
                         self.last_wake_time = now
-                        print(f"\n[JarvisVoice] Heard: {transcript}")
+                        print(f"\n[BlindSight] Heard: {transcript}")
                         
                         vis_ctx = vision_provider() if vision_provider else ""
                         reply = self.route_command(transcript, vision_context=vis_ctx)
-                        print(f"[JarvisVoice] Jarvis: {reply}")
+                        print(f"[BlindSight] Assistant: {reply}")
                         
                         audio_resp = self.text_to_speech(reply)
                         self.play_audio_locally(audio_resp)

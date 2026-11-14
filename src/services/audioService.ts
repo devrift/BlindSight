@@ -455,13 +455,11 @@ export class AudioService {
       const source = ctx.createMediaStreamSource(stream);
       const processor = ctx.createScriptProcessor(2048, 1, 1);
 
-      const pcmChunks: Float32Array[] = [];
-      const preRollChunks: Float32Array[] = [];
+      const allChunks: Float32Array[] = [];
       let speechDetected = false;
       let lastSpeechTime = 0;
       const startTime = Date.now();
-      let ambientNoise = 0.015;
-      let isCalibrated = false;
+      let ambientNoise = 0.004;
 
       let resolvePromise: (res: { blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null) => void;
       const donePromise = new Promise<{ blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null>(r => {
@@ -481,9 +479,8 @@ export class AudioService {
         this.wavStream = null;
         this.scriptProcessor = null;
 
-        const chunksToMerge = speechDetected ? [...preRollChunks, ...pcmChunks] : pcmChunks;
         let totalLen = 0;
-        for (const c of chunksToMerge) totalLen += c.length;
+        for (const c of allChunks) totalLen += c.length;
         if (totalLen === 0) {
           resolvePromise(null);
           return;
@@ -491,7 +488,7 @@ export class AudioService {
 
         const merged = new Float32Array(totalLen);
         let offset = 0;
-        for (const c of chunksToMerge) {
+        for (const c of allChunks) {
           merged.set(c, offset);
           offset += c.length;
         }
@@ -502,25 +499,30 @@ export class AudioService {
         const mean = sum / merged.length;
         for (let i = 0; i < merged.length; i++) merged[i] -= mean;
 
-        // 2. Peak Normalization
+        // 2. Peak Normalization (amplifies even soft whispering to clear speech)
         let maxAmp = 0;
         for (let i = 0; i < merged.length; i++) {
           const abs = Math.abs(merged[i]);
           if (abs > maxAmp) maxAmp = abs;
         }
 
-        if (maxAmp > 0.005) {
-          const boost = Math.min(0.88 / maxAmp, 18.0);
-          for (let i = 0; i < merged.length; i++) {
-            merged[i] = Math.max(-1.0, Math.min(1.0, merged[i] * boost));
-          }
+        // If dead silence (noise floor under 0.0025), treat as no audio
+        if (maxAmp < 0.0025) {
+          resolvePromise(null);
+          return;
+        }
+
+        // Adaptive gain boost
+        const boost = Math.min(0.88 / maxAmp, 25.0);
+        for (let i = 0; i < merged.length; i++) {
+          merged[i] = Math.max(-1.0, Math.min(1.0, merged[i] * boost));
         }
 
         const blob = this.encodeWAV(merged, 16000);
         resolvePromise({
           blob,
           durationMs: Date.now() - startTime,
-          speechDetected,
+          speechDetected: speechDetected || maxAmp > 0.008,
           peakAmp: maxAmp
         });
       };
@@ -533,26 +535,24 @@ export class AudioService {
         const chunk = new Float32Array(input);
         const now = Date.now();
 
+        allChunks.push(chunk);
+
         // Calculate chunk RMS
         let sumSq = 0;
         for (let i = 0; i < chunk.length; i++) sumSq += chunk[i] * chunk[i];
         const rms = Math.sqrt(sumSq / chunk.length);
 
-        // First 200ms: calibrate ambient noise
-        if (now - startTime < 200) {
-          ambientNoise = Math.max(ambientNoise, rms);
-        } else {
-          isCalibrated = true;
+        // Track ambient floor dynamically without letting speech corrupt it
+        if (rms < 0.02) {
+          ambientNoise = ambientNoise * 0.9 + rms * 0.1;
         }
 
-        const speechThreshold = isCalibrated
-          ? Math.max(0.018, ambientNoise * 2.2 + 0.012)
-          : 0.025;
-
+        // Highly sensitive adaptive speech threshold (catches natural soft voice)
+        const speechThreshold = Math.max(0.005, ambientNoise * 1.5 + 0.003);
         const isHot = rms > speechThreshold;
 
         // Visual feedback level (0.0 to 1.0)
-        const uiLevel = Math.min(1.0, rms / Math.max(speechThreshold * 2.5, 0.06));
+        const uiLevel = Math.min(1.0, rms / Math.max(speechThreshold * 2.5, 0.04));
         if (options.onLevel) {
           options.onLevel(uiLevel, rms, isHot);
         }
@@ -565,12 +565,8 @@ export class AudioService {
           lastSpeechTime = now;
         }
 
-        if (!speechDetected) {
-          preRollChunks.push(chunk);
-          if (preRollChunks.length > 3) preRollChunks.shift(); // keep ~300ms pre-roll
-        } else {
-          pcmChunks.push(chunk);
-          // Check silence duration after speech (auto-stop on pause)
+        // Auto-stop after user finishes speaking and pauses
+        if (speechDetected) {
           const silenceMs = now - lastSpeechTime;
           if (silenceMs >= silenceTimeoutMs) {
             finish();
@@ -578,7 +574,7 @@ export class AudioService {
           }
         }
 
-        // Check if user never spoke after noSpeechTimeoutMs
+        // User never spoke within timeout
         if (!speechDetected && now - startTime >= noSpeechTimeoutMs) {
           finish();
           return;
