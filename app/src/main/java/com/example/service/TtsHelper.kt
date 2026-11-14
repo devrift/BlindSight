@@ -17,6 +17,7 @@ class TtsHelper(
     private var isInitialized = false
     private var currentLanguage: SupportedLanguage = SupportedLanguage.ENGLISH
     private var toneGenerator: ToneGenerator? = null
+    private var currentOnDone: (() -> Unit)? = null
 
     init {
         try {
@@ -33,9 +34,15 @@ class TtsHelper(
             setLanguage(currentLanguage)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
-                override fun onDone(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    currentOnDone?.invoke()
+                    currentOnDone = null
+                }
                 @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) {}
+                override fun onError(utteranceId: String?) {
+                    currentOnDone?.invoke()
+                    currentOnDone = null
+                }
             })
             onInitComplete(true)
         } else {
@@ -56,12 +63,19 @@ class TtsHelper(
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        if (!isInitialized) return
+        if (!isInitialized) {
+            onDone?.invoke()
+            return
+        }
         stop()
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "blindsight_${System.currentTimeMillis()}")
+        currentOnDone = onDone
+        val uId = "blindsight_${System.currentTimeMillis()}"
+        val params = android.os.Bundle()
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, uId)
     }
 
     fun stop() {
+        currentOnDone = null
         if (isInitialized) {
             tts?.stop()
         }

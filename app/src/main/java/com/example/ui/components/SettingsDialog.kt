@@ -18,14 +18,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -46,7 +43,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.data.model.ListenMode
 import com.example.data.model.SupportedLanguage
 import com.example.ui.theme.BlindSightAmber
 import com.example.ui.theme.BlindSightCard
@@ -58,19 +54,13 @@ import com.example.ui.theme.BlindSightTextPrimary
 fun SettingsDialog(
     currentLanguage: SupportedLanguage,
     onLanguageChange: (SupportedLanguage) -> Unit,
-    currentMode: ListenMode,
-    onModeChange: (ListenMode) -> Unit,
     currentTextSize: Float,
     onTextSizeChange: (Float) -> Unit,
     highContrastYellow: Boolean,
     onToggleHighContrast: () -> Unit,
     onReadHelp: () -> Unit,
-    onDismiss: () -> Unit,
-    geminiApiKey: String = "",
-    onGeminiApiKeyChange: (String) -> Unit = {}
+    onDismiss: () -> Unit
 ) {
-    var keyInput by remember { mutableStateOf(geminiApiKey) }
-
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -119,49 +109,6 @@ fun SettingsDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Google Gemini API Key Input
-            Text(
-                text = "Gemini API Key (Vision & Deep QA)",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
-            )
-            Text(
-                text = "Used for camera scene descriptions. Falls back to offline local mode if empty.",
-                fontSize = 12.sp,
-                color = BlindSightTextMuted
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            OutlinedTextField(
-                value = keyInput,
-                onValueChange = { keyInput = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Paste Gemini API Key", color = BlindSightTextMuted, fontSize = 12.sp) },
-                singleLine = true,
-                leadingIcon = {
-                    Icon(imageVector = Icons.Default.Key, contentDescription = null, tint = BlindSightAmber)
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BlindSightAmber,
-                    unfocusedBorderColor = BlindSightCardEdge,
-                    focusedTextColor = BlindSightTextPrimary,
-                    unfocusedTextColor = BlindSightTextPrimary,
-                    cursorColor = BlindSightAmber
-                ),
-                shape = RoundedCornerShape(10.dp)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Button(
-                onClick = { onGeminiApiKeyChange(keyInput) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = BlindSightAmber),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text(text = "Save Key", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             // Language Selection
             Text(
                 text = "Spoken Language",
@@ -189,48 +136,6 @@ fun SettingsDialog(
                         color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
-                    if (isSelected) {
-                        Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Listening Mode
-            Text(
-                text = "Listening Mode",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            ListenMode.entries.forEach { mode ->
-                val isSelected = currentMode == mode
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color.Transparent)
-                        .clickable { onModeChange(mode) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = mode.displayName,
-                            fontSize = 14.sp,
-                            color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                        )
-                        Text(
-                            text = mode.hint,
-                            fontSize = 11.sp,
-                            color = BlindSightTextMuted
-                        )
-                    }
                     if (isSelected) {
                         Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
                     }

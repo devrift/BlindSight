@@ -94,17 +94,17 @@ export class VisionAiService {
       }
 
       const candidateModels = [
-        'gemini-3.5-flash',
-        'gemini-flash-latest',
-        'gemini-3.8-flash',
         'gemini-3.1-flash-lite',
-        'gemini-flash-lite-latest'
+        'gemini-3.1-flash-lite-preview',
+        'gemini-3-flash-preview',
+        'gemini-3.5-flash',
+        'gemini-flash-latest'
       ];
 
       for (const model of candidateModels) {
         try {
           const ctrl = new AbortController();
-          const timeout = setTimeout(() => ctrl.abort(), 8000);
+          const timeout = setTimeout(() => ctrl.abort(), 3500);
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

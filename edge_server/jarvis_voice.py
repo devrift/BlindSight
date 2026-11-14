@@ -75,7 +75,7 @@ VOICE_MAP = {
 SVARA_URL = os.getenv("SVARA_URL", "http://localhost:8000/v1/audio/speech")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 
 def normalize_voice_phrase(text: str) -> str:
@@ -457,11 +457,11 @@ class JarvisVoiceAssistant:
                 print(f"[JarvisVoice] Image attach notice: {e}")
 
         candidate_models = [
+            "gemini-3.1-flash-lite",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-3-flash-preview",
             GEMINI_MODEL,
-            "gemini-3.5-flash",
-            "gemini-flash-latest",
-            "gemini-3.8-flash",
-            "gemini-3.1-flash-lite"
+            "gemini-3.5-flash"
         ]
         # Deduplicate while preserving order
         seen = set()

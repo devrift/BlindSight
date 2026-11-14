@@ -18,6 +18,9 @@ class SpeechRecognizerHelper(
     private val tag = "SpeechRecognizerHelper"
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
+    private var isPaused = false
+    private var currentLanguageCode = "en-US"
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     init {
         initRecognizer()
@@ -62,24 +65,50 @@ class SpeechRecognizerHelper(
                 isListening = false
                 onListeningStateChanged?.invoke(false)
 
+                // Silent auto-resume on normal silence/timeout in background wake word mode
+                if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    if (!isPaused) {
+                        mainHandler.postDelayed({
+                            if (!isPaused && !isListening) {
+                                startListening(currentLanguageCode)
+                            }
+                        }, 250)
+                    }
+                    return
+                }
+
+                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                    initRecognizer()
+                    if (!isPaused) {
+                        mainHandler.postDelayed({
+                            if (!isPaused && !isListening) {
+                                startListening(currentLanguageCode)
+                            }
+                        }, 400)
+                    }
+                    return
+                }
+
                 val errorMessage = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "Audio recording error."
                     SpeechRecognizer.ERROR_CLIENT -> "Speech recognition client error."
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required."
                     SpeechRecognizer.ERROR_NETWORK -> "Network issue with speech service."
                     SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech service network timeout."
-                    SpeechRecognizer.ERROR_NO_MATCH -> "No speech recognized. Please speak again."
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
-                        // Reset recognizer when busy
-                        initRecognizer()
-                        "Recognizer is busy. Please try again."
-                    }
                     SpeechRecognizer.ERROR_SERVER -> "Speech server error."
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected."
                     else -> "Speech recognition error ($error)."
                 }
                 Log.w(tag, "SpeechRecognizer error: $errorMessage")
                 onError(errorMessage)
+
+                // Attempt recovery after network or client glitches
+                if (!isPaused) {
+                    mainHandler.postDelayed({
+                        if (!isPaused && !isListening) {
+                            startListening(currentLanguageCode)
+                        }
+                    }, 1000)
+                }
             }
 
             override fun onResults(results: Bundle?) {
@@ -90,8 +119,12 @@ class SpeechRecognizerHelper(
                 val recognizedText = matches?.firstOrNull()?.trim() ?: ""
                 if (recognizedText.isNotBlank()) {
                     onResult(recognizedText)
-                } else {
-                    onError("No speech recognized.")
+                } else if (!isPaused) {
+                    mainHandler.postDelayed({
+                        if (!isPaused && !isListening) {
+                            startListening(currentLanguageCode)
+                        }
+                    }, 250)
                 }
             }
 
@@ -102,6 +135,9 @@ class SpeechRecognizerHelper(
     }
 
     fun startListening(languageCode: String = "en-US") {
+        currentLanguageCode = languageCode
+        isPaused = false
+
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             onError("Speech recognition service not available.")
             return
@@ -123,8 +159,21 @@ class SpeechRecognizerHelper(
             speechRecognizer?.startListening(intent)
         } catch (e: Exception) {
             Log.e(tag, "Error starting speech recognition: ${e.message}", e)
-            onError("Could not start speech recognition.")
         }
+    }
+
+    fun pauseListening() {
+        isPaused = true
+        stopListening()
+    }
+
+    fun resumeListening(languageCode: String = currentLanguageCode) {
+        isPaused = false
+        mainHandler.postDelayed({
+            if (!isListening) {
+                startListening(languageCode)
+            }
+        }, 150)
     }
 
     fun stopListening() {
@@ -140,6 +189,8 @@ class SpeechRecognizerHelper(
     }
 
     fun destroy() {
+        isPaused = true
+        mainHandler.removeCallbacksAndMessages(null)
         try {
             speechRecognizer?.destroy()
         } catch (e: Exception) {

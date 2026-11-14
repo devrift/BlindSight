@@ -244,14 +244,10 @@ fun BlindSightScreen(
         SettingsDialog(
             currentLanguage = uiState.language,
             onLanguageChange = { viewModel.setLanguage(it) },
-            currentMode = uiState.listenMode,
-            onModeChange = { viewModel.setListenMode(it) },
             currentTextSize = uiState.textSizeMultiplier,
             onTextSizeChange = { viewModel.setTextSize(it) },
             highContrastYellow = uiState.highContrastYellow,
             onToggleHighContrast = { viewModel.toggleHighContrastYellow() },
-            geminiApiKey = viewModel.getGeminiApiKey(),
-            onGeminiApiKeyChange = { viewModel.setGeminiApiKey(it) },
             onReadHelp = {
                 viewModel.onSpeechResult("help")
                 showSettingsDialog = false

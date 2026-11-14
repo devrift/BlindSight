@@ -31,9 +31,8 @@ enum class AppTab(val title: String) {
 data class UiState(
     val appState: AppState = AppState.IDLE,
     val selectedTab: AppTab = AppTab.COMPANION,
-    val listenMode: ListenMode = ListenMode.WAKE_WORD,
     val language: SupportedLanguage = SupportedLanguage.ENGLISH,
-    val statusText: String = "BlindSight ready. Say \"Hey BlindSight\" or tap the giant button.",
+    val statusText: String = "BlindSight active. Say \"Hey BlindSight\" or tap the center button.",
     val heardText: String = "",
     val speechInput: String = "",
     val isAutoSweeping: Boolean = false,
@@ -61,7 +60,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     init {
         ttsHelper = TtsHelper(application) { ready ->
             if (ready) {
-                speak("BlindSight companion active. Double-tap the giant center button to speak, or monitor physical obstacles on the Obstacles tab.")
+                speak("BlindSight assistant active. Say \"Hey BlindSight\" or tap the center button to speak.") {
+                    speechRecognizerHelper?.startListening(_uiState.value.language.code)
+                }
             }
         }
 
@@ -112,22 +113,14 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val currentState = _uiState.value.appState
         if (currentState == AppState.SPEAKING) {
             stopSpeaking()
-            return
-        }
-        if (currentState == AppState.COMMAND_LISTENING) {
-            speechRecognizerHelper?.stopListening()
-            _uiState.value = _uiState.value.copy(
-                appState = AppState.IDLE,
-                statusText = "Listening paused."
-            )
-            ttsHelper?.playEarcon(TtsHelper.EarconType.TICK)
+            speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
             return
         }
 
         ttsHelper?.playEarcon(TtsHelper.EarconType.LISTEN)
         _uiState.value = _uiState.value.copy(
             appState = AppState.COMMAND_LISTENING,
-            statusText = "Listening… Go ahead, say a question or command."
+            statusText = "Listening… Go ahead, say your question or command."
         )
 
         val langTag = _uiState.value.language.code
@@ -137,17 +130,58 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     fun onSpeechResult(spokenText: String) {
         val trimmed = spokenText.trim()
         if (trimmed.isEmpty()) return
+        val low = trimmed.lowercase()
+
+        // Wake triggers for hands-free invocation
+        val wakeTriggers = listOf(
+            "hey blindsight", "blindsight", "ok blindsight", "okay blindsight",
+            "blind sight", "hey blind sight", "ok blind sight", "okay blind sight"
+        )
+        var cleanPrompt = trimmed
+        var isWakeTriggered = false
+
+        for (trigger in wakeTriggers) {
+            if (low.startsWith(trigger)) {
+                isWakeTriggered = true
+                cleanPrompt = trimmed.substring(trigger.length).trim().removePrefix(",").trim()
+                break
+            } else if (low == trigger) {
+                isWakeTriggered = true
+                cleanPrompt = ""
+                break
+            }
+        }
+
+        // 1. Wake word alone: "Hey BlindSight"
+        if (isWakeTriggered && cleanPrompt.isEmpty()) {
+            hapticHelper.vibrateConfirm()
+            ttsHelper?.playEarcon(TtsHelper.EarconType.WAKE)
+            _uiState.value = _uiState.value.copy(
+                appState = AppState.COMMAND_LISTENING,
+                statusText = "I'm listening… Go ahead, say your question."
+            )
+            return
+        }
+
+        val promptToProcess = if (isWakeTriggered) cleanPrompt else trimmed
+
+        // In continuous all-in-one mode, if in standby and no wake word was spoken,
+        // and user didn't tap button to command:
+        if (!isWakeTriggered && _uiState.value.appState == AppState.IDLE) {
+            // Room noise/ambient speech - ignore quietly and continue standby listening
+            return
+        }
 
         hapticHelper.vibrateConfirm()
         _uiState.value = _uiState.value.copy(
-            heardText = trimmed,
+            heardText = promptToProcess,
             appState = AppState.THINKING,
-            statusText = "Processing: \"$trimmed\""
+            statusText = "Processing: \"$promptToProcess\""
         )
         ttsHelper?.playEarcon(TtsHelper.EarconType.OK)
 
         viewModelScope.launch {
-            processPrompt(trimmed)
+            processPrompt(promptToProcess)
         }
     }
 
@@ -265,12 +299,6 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         speak(lang.confirmation)
     }
 
-    fun setListenMode(mode: ListenMode) {
-        _uiState.value = _uiState.value.copy(listenMode = mode)
-        hapticHelper.vibrateTap()
-        val msg = "Listening mode set to ${mode.displayName}."
-        speak(msg)
-    }
 
     fun setTextSize(multiplier: Float) {
         _uiState.value = _uiState.value.copy(textSizeMultiplier = multiplier)
@@ -370,27 +398,30 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         speak(help)
     }
 
-    fun speak(text: String) {
+    fun speak(text: String, onDone: (() -> Unit)? = null) {
         _uiState.value = _uiState.value.copy(
             appState = AppState.SPEAKING,
             statusText = text
         )
+        speechRecognizerHelper?.pauseListening()
         ttsHelper?.speak(text) {
             _uiState.value = _uiState.value.copy(
                 appState = AppState.IDLE,
-                statusText = "Ready"
+                statusText = "Listening for \"Hey BlindSight\" or tap the center button."
             )
+            onDone?.invoke()
+            speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
         }
     }
 
     fun stopSpeaking() {
         ttsHelper?.stop()
-        speechRecognizerHelper?.stopListening()
         hapticHelper.vibrateTap()
         _uiState.value = _uiState.value.copy(
             appState = AppState.IDLE,
-            statusText = "Stopped."
+            statusText = "Stopped. Listening for \"Hey BlindSight\"."
         )
+        speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
     }
 
     override fun onCleared() {

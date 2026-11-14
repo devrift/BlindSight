@@ -469,11 +469,11 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val candidateModels = listOf(
-            "gemini-3.5-flash",
-            "gemini-flash-latest",
-            "gemini-3.8-flash",
             "gemini-3.1-flash-lite",
-            "gemini-flash-lite-latest"
+            "gemini-3.1-flash-lite-preview",
+            "gemini-3-flash-preview",
+            "gemini-3.5-flash",
+            "gemini-flash-latest"
         )
 
         val sysInstruction = if (!imageBase64.isNullOrBlank()) {
@@ -516,8 +516,8 @@ class CompanionRepository(private val context: Context) {
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.connectTimeout = 7000
-                conn.readTimeout = 7000
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3500
                 conn.doOutput = true
 
                 conn.outputStream.use { os ->
