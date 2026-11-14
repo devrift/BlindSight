@@ -69,8 +69,8 @@ export class VisionAiService {
     try {
       const parts: any[] = [];
       const sysInstruction = langCode === 'hi'
-        ? "आप ब्लाइंडसाइट हैं, दृष्टिबाधित व्यक्तियों के लिए एक वॉयस और विज़न असिस्टेंट। उत्तर अधिकतम 2 वाक्यों में सीधा और सुरक्षित नेविगेशन के लिए उपयोगी रखें।"
-        : "You are BlindSight, an empathetic voice and vision assistant for visually impaired users. Keep responses under 2 concise sentences. Be direct, clear, and focus on obstacle hazards and safe navigation.";
+        ? "आप ब्लाइंडसाइट जार्विस हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक सटीक नेविगेशन असिस्टेंट। दृश्य का संक्षिप्त और स्पष्ट विवरण 2-3 वाक्यों में दें: 1. आगे का रास्ता (12 बजे) खुला है या बंद और दूरी बताएं। 2. घड़ी की दिशा (10 बजे या 2 बजे) में मुख्य वस्तुएं बताएं। 3. जमीन पर खतरे (सीढ़ियाँ, तार, फिसलन) बताएं। 4. दिखे हुए बोर्ड या लेबल के शब्द बताएं।"
+        : "You are BlindSight JARVIS, an ultra-precise assistive vision assistant for blind or visually impaired users. Provide a clean, calm, authoritative spatial description in 2-3 concise sentences: 1. WALKING CORRIDOR (12 o'clock): State whether it is OPEN or BLOCKED, with distance to nearest obstacle. 2. CLOCK-FACE OBSTACLES: Identify key items/furniture/people using clock positions (e.g. at 10 o'clock desk 4 feet away; at 2 o'clock doorway). 3. GROUND HAZARDS: Warn about steps, curbs, cables, drop-offs, or spills. 4. TEXT & SIGNS: Read visible signage or labels in quotes.";
 
       parts.push({ text: `${sysInstruction}\n\nUser Question: ${prompt}` });
 

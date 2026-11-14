@@ -444,8 +444,8 @@ export const App: React.FC = () => {
     }
   }, [updateStatus, announce, listenMode, startRecognition]);
 
-  // Big Mic Button click handler
-  const handleMicClick = () => {
+  // Big Mic Button click handler (Adaptive Voice Activity Detection)
+  const handleMicClick = async () => {
     AudioService.unlockAudio();
 
     if (appState === 'think') {
@@ -459,10 +459,9 @@ export const App: React.FC = () => {
     }
 
     if (appState === 'listen') {
+      AudioService.stopAdaptiveRecording();
       if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
+        try { recognitionRef.current.stop(); } catch {}
       }
       setAppState('idle');
       updateStatus('Listening stopped.', 'idle');
@@ -470,55 +469,79 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Reset network retries counter on user intentional tap
+    // Reset network retries counter
     networkRetriesRef.current = 0;
+    setIsCue(true);
+    setTimeout(() => setIsCue(false), 450);
 
-    // If speech recognition had network error or not supported, use Open.Jarvis direct voice
-    if (hasErrorRef.current || !AudioService.isSpeechRecognitionSupported()) {
-      setIsCue(true);
-      setTimeout(() => setIsCue(false), 450);
-      (async () => {
-        setAppState('listen');
-        updateStatus('Listening with Open.Jarvis… speak now.', 'listen');
-        AudioService.playEarcon('listen');
-        const wavBlob = await AudioService.recordWav(3800, lvl => setMicLevel(lvl));
-        if (!wavBlob) {
-          setAppState('idle');
-          updateStatus('Could not capture audio from microphone.', 'idle');
-          return;
-        }
-        setAppState('think');
-        updateStatus('Open.Jarvis thinking…', 'think');
-        AudioService.playEarcon('think');
-        const turn = await AudioService.sendVoiceToJarvis(
-          wavBlob,
-          language,
-          () => {
-            setAppState('speak');
-            updateStatus('Speaking…', 'speak');
-          },
-          () => {
-            setAppState('idle');
-            updateStatus('Ready', 'idle');
-          }
-        );
-        if (turn.transcript) {
-          setHeardText(turn.transcript);
-          const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
-          const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
-          setMessages(prev => [...prev, userMsg, assistantMsg]);
-        } else {
-          setAppState('idle');
-          updateStatus('Ready (Tap to speak)', 'idle');
-        }
-      })();
+    setAppState('listen');
+    updateStatus('Listening… speak naturally.', 'listen');
+    AudioService.playEarcon('listen');
+
+    // Run Adaptive VAD recording
+    const recResult = await AudioService.recordVoiceAdaptive({
+      maxDurationMs: 8000,
+      silenceTimeoutMs: 850,
+      noSpeechTimeoutMs: 3500,
+      onLevel: (lvl, _rms, isHotLevel) => {
+        setMicMeterPct(Math.min(100, Math.round(lvl * 100)));
+        setIsHot(isHotLevel);
+      },
+      onSpeechStart: () => {
+        updateStatus('Hearing your voice…', 'listen');
+      }
+    });
+
+    setMicMeterPct(0);
+    setIsHot(false);
+
+    if (!recResult || !recResult.blob || recResult.blob.size < 250) {
+      setAppState('idle');
+      updateStatus('I did not catch that. Tap the button and speak.', 'idle');
       return;
     }
 
-    // Start single command session on button click. Visual cue only
-    setIsCue(true);
-    setTimeout(() => setIsCue(false), 450);
-    startRecognition('command');
+    setAppState('think');
+    updateStatus('Analyzing with Gemini AI…', 'think');
+    AudioService.playEarcon('think');
+
+    const turn = await AudioService.sendVoiceToJarvis(
+      recResult.blob,
+      language,
+      () => {
+        setAppState('speak');
+        updateStatus('Speaking…', 'speak');
+      },
+      () => {
+        setAppState('idle');
+        updateStatus('Ready', 'idle');
+      }
+    );
+
+    if (turn.success && turn.transcript) {
+      setHeardText(turn.transcript);
+      const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+      const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
+      setMessages(prev => [...prev, userMsg, assistantMsg]);
+      announce(turn.reply);
+    } else {
+      // Local fallback
+      const fallbackPrompt = turn.transcript || 'what is around me';
+      const fallbackResult = await VisionAiService.askCompanion(fallbackPrompt, {
+        useCamera: includeCamera,
+        langCode: language,
+        apiToken: token
+      });
+      if (turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        setMessages(prev => [...prev, userMsg]);
+      }
+      const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
+      setMessages(prev => [...prev, assistantMsg]);
+      announce(fallbackResult.reply);
+      speakReply(fallbackResult.reply);
+    }
   };
 
   // Init: load voices, start mic analytics if noise gate on, set text size

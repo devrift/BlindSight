@@ -414,32 +414,180 @@ export class AudioService {
     }
   }
 
-  // --- Direct PCM WAV Recorder (Zero Browser Cloud Dependencies) ---
+  // --- Direct Adaptive PCM WAV Recorder with VAD (Zero Browser Cloud Dependencies) ---
   private static wavStream: MediaStream | null = null;
   private static scriptProcessor: ScriptProcessorNode | null = null;
-  private static pcmSamples: Float32Array[] = [];
+  private static stopRecordingSignal: (() => void) | null = null;
 
-  static async recordWav(durationMs = 3800, onLevel?: (lvl: number) => void): Promise<Blob | null> {
+  static stopAdaptiveRecording(): void {
+    if (this.stopRecordingSignal) {
+      this.stopRecordingSignal();
+      this.stopRecordingSignal = null;
+    }
+  }
+
+  static async recordVoiceAdaptive(options: {
+    maxDurationMs?: number;
+    silenceTimeoutMs?: number;
+    noSpeechTimeoutMs?: number;
+    onLevel?: (level: number, rms: number, isHot: boolean) => void;
+    onSpeechStart?: () => void;
+  } = {}): Promise<{ blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null> {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices) return null;
+    const maxDurationMs = options.maxDurationMs || 8500;
+    const silenceTimeoutMs = options.silenceTimeoutMs || 900;
+    const noSpeechTimeoutMs = options.noSpeechTimeoutMs || 3800;
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       this.wavStream = stream;
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioContextClass({ sampleRate: 16000 });
+      if (ctx.state === 'suspended') await ctx.resume();
+
       const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
-      
-      this.pcmSamples = [];
+      const processor = ctx.createScriptProcessor(2048, 1, 1);
+
+      const pcmChunks: Float32Array[] = [];
+      const preRollChunks: Float32Array[] = [];
+      let speechDetected = false;
+      let lastSpeechTime = 0;
+      const startTime = Date.now();
+      let ambientNoise = 0.015;
+      let isCalibrated = false;
+
+      let resolvePromise: (res: { blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null) => void;
+      const donePromise = new Promise<{ blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null>(r => {
+        resolvePromise = r;
+      });
+
+      let isFinished = false;
+      const finish = () => {
+        if (isFinished) return;
+        isFinished = true;
+        this.stopRecordingSignal = null;
+
+        try { processor.disconnect(); } catch {}
+        try { source.disconnect(); } catch {}
+        try { stream.getTracks().forEach(t => t.stop()); } catch {}
+        try { ctx.close(); } catch {}
+        this.wavStream = null;
+        this.scriptProcessor = null;
+
+        const chunksToMerge = speechDetected ? [...preRollChunks, ...pcmChunks] : pcmChunks;
+        let totalLen = 0;
+        for (const c of chunksToMerge) totalLen += c.length;
+        if (totalLen === 0) {
+          resolvePromise(null);
+          return;
+        }
+
+        const merged = new Float32Array(totalLen);
+        let offset = 0;
+        for (const c of chunksToMerge) {
+          merged.set(c, offset);
+          offset += c.length;
+        }
+
+        // 1. DC Offset Removal
+        let sum = 0;
+        for (let i = 0; i < merged.length; i++) sum += merged[i];
+        const mean = sum / merged.length;
+        for (let i = 0; i < merged.length; i++) merged[i] -= mean;
+
+        // 2. Peak Normalization
+        let maxAmp = 0;
+        for (let i = 0; i < merged.length; i++) {
+          const abs = Math.abs(merged[i]);
+          if (abs > maxAmp) maxAmp = abs;
+        }
+
+        if (maxAmp > 0.005) {
+          const boost = Math.min(0.88 / maxAmp, 18.0);
+          for (let i = 0; i < merged.length; i++) {
+            merged[i] = Math.max(-1.0, Math.min(1.0, merged[i] * boost));
+          }
+        }
+
+        const blob = this.encodeWAV(merged, 16000);
+        resolvePromise({
+          blob,
+          durationMs: Date.now() - startTime,
+          speechDetected,
+          peakAmp: maxAmp
+        });
+      };
+
+      this.stopRecordingSignal = finish;
+
       processor.onaudioprocess = (e) => {
+        if (isFinished) return;
         const input = e.inputBuffer.getChannelData(0);
-        this.pcmSamples.push(new Float32Array(input));
-        if (onLevel) {
-          let sum = 0;
-          for (let i = 0; i < input.length; i++) sum += Math.abs(input[i]);
-          onLevel(Math.min(1.0, (sum / input.length) * 5));
+        const chunk = new Float32Array(input);
+        const now = Date.now();
+
+        // Calculate chunk RMS
+        let sumSq = 0;
+        for (let i = 0; i < chunk.length; i++) sumSq += chunk[i] * chunk[i];
+        const rms = Math.sqrt(sumSq / chunk.length);
+
+        // First 200ms: calibrate ambient noise
+        if (now - startTime < 200) {
+          ambientNoise = Math.max(ambientNoise, rms);
+        } else {
+          isCalibrated = true;
+        }
+
+        const speechThreshold = isCalibrated
+          ? Math.max(0.018, ambientNoise * 2.2 + 0.012)
+          : 0.025;
+
+        const isHot = rms > speechThreshold;
+
+        // Visual feedback level (0.0 to 1.0)
+        const uiLevel = Math.min(1.0, rms / Math.max(speechThreshold * 2.5, 0.06));
+        if (options.onLevel) {
+          options.onLevel(uiLevel, rms, isHot);
+        }
+
+        if (isHot) {
+          if (!speechDetected) {
+            speechDetected = true;
+            if (options.onSpeechStart) options.onSpeechStart();
+          }
+          lastSpeechTime = now;
+        }
+
+        if (!speechDetected) {
+          preRollChunks.push(chunk);
+          if (preRollChunks.length > 3) preRollChunks.shift(); // keep ~300ms pre-roll
+        } else {
+          pcmChunks.push(chunk);
+          // Check silence duration after speech (auto-stop on pause)
+          const silenceMs = now - lastSpeechTime;
+          if (silenceMs >= silenceTimeoutMs) {
+            finish();
+            return;
+          }
+        }
+
+        // Check if user never spoke after noSpeechTimeoutMs
+        if (!speechDetected && now - startTime >= noSpeechTimeoutMs) {
+          finish();
+          return;
+        }
+
+        // Safety cap
+        if (now - startTime >= maxDurationMs) {
+          finish();
+          return;
         }
       };
 
@@ -447,29 +595,22 @@ export class AudioService {
       processor.connect(ctx.destination);
       this.scriptProcessor = processor;
 
-      await new Promise(r => setTimeout(r, durationMs));
-
-      processor.disconnect();
-      source.disconnect();
-      stream.getTracks().forEach(t => t.stop());
-      ctx.close().catch(() => {});
-      this.wavStream = null;
-      this.scriptProcessor = null;
-
-      let totalLen = 0;
-      for (const chunk of this.pcmSamples) totalLen += chunk.length;
-      const merged = new Float32Array(totalLen);
-      let offset = 0;
-      for (const chunk of this.pcmSamples) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      return this.encodeWAV(merged, 16000);
+      return await donePromise;
     } catch (e) {
-      console.warn('WAV recording error:', e);
+      console.warn('Adaptive recording error:', e);
       return null;
     }
+  }
+
+  static async recordWav(durationMs = 3800, onLevel?: (lvl: number) => void): Promise<Blob | null> {
+    const res = await this.recordVoiceAdaptive({
+      maxDurationMs: durationMs,
+      silenceTimeoutMs: 900,
+      onLevel: lvl => {
+        if (onLevel) onLevel(lvl);
+      }
+    });
+    return res ? res.blob : null;
   }
 
   private static encodeWAV(samples: Float32Array, sampleRate: number): Blob {

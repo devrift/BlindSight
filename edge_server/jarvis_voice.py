@@ -4,8 +4,9 @@ https://github.com/dmrr35/Open.Jarvis | https://github.com/FatihMakes/Mark-LVI
 
 Features:
 - Dual Wake Words: "Hey BlindSight" & "Jarvis" (customizable)
-- Speech Recognition: Google STT + Offline speech processing
-- Multimodal AI Brain: Google Gemini 2.5 Flash Lite (live vision + voice reasoning)
+- Adaptive Speech Recognition: Google STT (multi-accent) + Local Offline Faster-Whisper Fallback
+- Audio Pre-processing: Peak Normalization, DC Bias Removal & Dynamic Energy Thresholding
+- Multimodal AI Brain: Google Gemini 2.5 Flash Lite (spatially trained for blind navigation)
 - Voice Synthesis: Microsoft Edge Neural TTS (Iron Man RyanNeural / SwaraNeural / Svara-TTS v1)
 - State Machine: STANDBY -> WAKE_WORD_DETECTED -> LISTENING -> PROCESSING -> SPEAKING
 - Native Microphone capture via sounddevice (hardware Realtek mic)
@@ -21,6 +22,7 @@ import io
 import os
 import re
 import sys
+import tempfile
 import threading
 import time
 import wave
@@ -50,7 +52,11 @@ if str(JARVIS_DIR) not in sys.path and JARVIS_DIR.is_dir():
     sys.path.insert(0, str(JARVIS_DIR))
 
 # Voice Configuration
-DEFAULT_WAKE_WORDS = ["blindsight", "hey blindsight", "jarvis", "hey jarvis"]
+DEFAULT_WAKE_WORDS = [
+    "blindsight", "hey blindsight", "ok blindsight", "okay blindsight",
+    "jarvis", "hey jarvis", "ok jarvis", "okay jarvis",
+    "blind sight", "hey blind sight"
+]
 ACTIVE_TIMEOUT = 30.0  # seconds to stay awake after wake word
 
 VOICE_MAP = {
@@ -78,6 +84,22 @@ def normalize_voice_phrase(text: str) -> str:
     return " ".join(normalized.split())
 
 
+def clean_phonetic_substitutions(text: str) -> str:
+    """Fix common STT acoustic mishearings for BlindSight and Jarvis."""
+    if not text:
+        return ""
+    cleaned = text
+    # BlindSight homophones
+    cleaned = re.sub(r"\bblind\s*site\b", "blindsight", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bblind\s*side\b", "blindsight", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bline\s*sight\b", "blindsight", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bblind\s*light\b", "blindsight", cleaned, flags=re.IGNORECASE)
+    # Jarvis homophones
+    cleaned = re.sub(r"\bjar\s*vis\b", "jarvis", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bharvest\b", "jarvis", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
 class VoiceState:
     STANDBY = "STANDBY"
     WAKE_WORD_DETECTED = "WAKE_WORD_DETECTED"
@@ -93,8 +115,9 @@ class JarvisVoiceAssistant:
         self.state = VoiceState.STANDBY
         self.state_detail = "Ready"
         self.recognizer = sr.Recognizer()
-        self.recognizer.energy_threshold = int(os.getenv("JARVIS_ENERGY_THRESHOLD", "300"))
+        self.recognizer.energy_threshold = int(os.getenv("JARVIS_ENERGY_THRESHOLD", "250"))
         self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.pause_threshold = 0.8
         
         self.last_wake_time = 0.0
         self.is_active = False
@@ -105,7 +128,25 @@ class JarvisVoiceAssistant:
         self._stop_listener = threading.Event()
         self.state_listeners: list[Callable[[str, str], None]] = []
 
+        # Local Offline Whisper Model (lazy-loaded)
+        self._whisper_model: Any = None
+        self._whisper_lock = threading.Lock()
+
         self._check_microphone()
+
+    def _get_whisper_model(self) -> Any:
+        """Lazy loader for faster-whisper on CPU with int8 quantization."""
+        if self._whisper_model is None:
+            with self._whisper_lock:
+                if self._whisper_model is None:
+                    try:
+                        from faster_whisper import WhisperModel
+                        print("[JarvisVoice] 🧠 Loading offline Faster-Whisper (tiny, int8)...")
+                        self._whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+                        print("[JarvisVoice] ✅ Faster-Whisper ready for offline STT fallback.")
+                    except Exception as e:
+                        print(f"[JarvisVoice] Faster-Whisper init notice: {e}")
+        return self._whisper_model
 
     def _check_microphone(self):
         """Probe available hardware audio inputs."""
@@ -136,7 +177,7 @@ class JarvisVoiceAssistant:
 
     def check_wake_word(self, text: str) -> bool:
         """Check if any configured wake phrase is in the spoken text."""
-        norm = normalize_voice_phrase(text)
+        norm = normalize_voice_phrase(clean_phonetic_substitutions(text))
         tokens = norm.split()
         for w in self.wake_words:
             w_tokens = w.split()
@@ -150,45 +191,129 @@ class JarvisVoiceAssistant:
 
     def strip_wake_word(self, text: str) -> str:
         """Remove the wake word prefix/mention from the text command."""
-        low = text.lower()
+        low = clean_phonetic_substitutions(text).lower()
         for w in sorted(self.wake_words, key=len, reverse=True):
-            pattern = re.compile(re.escape(w), re.IGNORECASE)
+            pattern = re.compile(rf"\b{re.escape(w)}\b", re.IGNORECASE)
             low = pattern.sub("", low).strip()
         return low.strip()
 
-    def transcribe_audio_bytes(self, audio_bytes: bytes, language: str = "en-US") -> Tuple[str, str]:
-        """Convert WAV audio bytes to text using speech_recognition."""
-        if not audio_bytes or len(audio_bytes) < 100:
-            return "", language
-
+    def _normalize_wav_audio(self, audio_bytes: bytes) -> bytes:
+        """Normalize raw WAV audio: DC bias removal + peak volume normalization."""
         try:
-            buf = io.BytesIO(audio_bytes)
-            with sr.AudioFile(buf) as source:
-                audio = self.recognizer.record(source)
+            buf_in = io.BytesIO(audio_bytes)
+            with wave.open(buf_in, "rb") as wf:
+                n_channels = wf.getnchannels()
+                samp_width = wf.getsampwidth()
+                frame_rate = wf.getframerate()
+                n_frames = wf.getnframes()
+                raw_frames = wf.readframes(n_frames)
 
-            # Try primary language (e.g. en-US or hi-IN)
-            try:
-                text = self.recognizer.recognize_google(audio, language=language)
-                return text.strip(), language
-            except sr.UnknownValueError:
-                pass
-            except Exception as e:
-                print(f"[JarvisVoice] Primary STT error: {e}")
+            if samp_width != 2:
+                # If not 16-bit PCM, return untouched
+                return audio_bytes
 
-            # Fallback to general English
-            if language != "en-US":
+            samples = np.frombuffer(raw_frames, dtype=np.int16).astype(np.float32)
+            if len(samples) == 0:
+                return audio_bytes
+
+            # 1. DC Offset Removal
+            samples = samples - np.mean(samples)
+
+            # 2. Peak Normalization (target ~85% full scale = 27,800)
+            peak = np.max(np.abs(samples))
+            if peak > 120.0:  # Ignore absolute dead silence / noise floor
+                scale = min(27800.0 / peak, 35.0)  # Adaptive gain boost for soft microphones
+                samples = samples * scale
+                samples = np.clip(samples, -32767.0, 32767.0)
+
+            normalized_int16 = samples.astype(np.int16)
+            buf_out = io.BytesIO()
+            with wave.open(buf_out, "wb") as wf:
+                wf.setnchannels(n_channels)
+                wf.setsampwidth(samp_width)
+                wf.setframerate(frame_rate)
+                wf.writeframes(normalized_int16.tobytes())
+
+            return buf_out.getvalue()
+        except Exception as e:
+            print(f"[JarvisVoice] Audio normalization notice: {e}")
+            return audio_bytes
+
+    def _transcribe_whisper_offline(self, wav_bytes: bytes, lang: str = "en") -> str:
+        """Transcribe speech using local offline faster-whisper on CPU."""
+        model = self._get_whisper_model()
+        if model is None:
+            return ""
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(wav_bytes)
+                tmp_path = f.name
+
+            # Map language code
+            whisper_lang = "hi" if lang.startswith("hi") else ("mr" if lang.startswith("mr") else "en")
+            segments, info = model.transcribe(
+                tmp_path,
+                language=whisper_lang,
+                beam_size=1,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=400)
+            )
+            text = " ".join(s.text.strip() for s in segments if s.text).strip()
+            return clean_phonetic_substitutions(text)
+        except Exception as e:
+            print(f"[JarvisVoice] Whisper offline transcription notice: {e}")
+            return ""
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
                 try:
-                    text = self.recognizer.recognize_google(audio, language="en-US")
-                    return text.strip(), "en-US"
+                    os.unlink(tmp_path)
                 except Exception:
                     pass
 
+    def transcribe_audio_bytes(self, audio_bytes: bytes, language: str = "en-US") -> Tuple[str, str]:
+        """Convert WAV audio bytes to text with normalization and multi-engine fallback."""
+        if not audio_bytes or len(audio_bytes) < 100:
+            return "", language
+
+        # 1. Normalize audio waveform so quiet speech is loud and clear
+        norm_bytes = self._normalize_wav_audio(audio_bytes)
+
+        # 2. Try Google STT with multi-accent retry (e.g. en-IN for Indian English)
+        try:
+            buf = io.BytesIO(norm_bytes)
+            with sr.AudioFile(buf) as source:
+                audio = self.recognizer.record(source)
+
+            # Determine language fallback candidate list
+            lang_candidates = [language]
+            if language == "en-US":
+                lang_candidates.append("en-IN")
+            elif language == "en-IN":
+                lang_candidates.append("en-US")
+            elif language.startswith("hi"):
+                lang_candidates.extend(["hi-IN", "en-IN"])
+
+            for candidate in lang_candidates:
+                try:
+                    text = self.recognizer.recognize_google(audio, language=candidate)
+                    if text and text.strip():
+                        return clean_phonetic_substitutions(text.strip()), candidate
+                except (sr.UnknownValueError, sr.RequestError):
+                    continue
+
         except Exception as exc:
-            print(f"[JarvisVoice] STT decode error: {exc}")
+            print(f"[JarvisVoice] Google STT error: {exc}")
+
+        # 3. Fallback to Local Offline Faster-Whisper (zero network dependency)
+        whisper_text = self._transcribe_whisper_offline(norm_bytes, lang=language)
+        if whisper_text:
+            return whisper_text, language
 
         return "", language
 
-    def record_mic_audio(self, duration: float = 4.0, sample_rate: int = 16000) -> bytes:
+    def record_mic_audio(self, duration: float = 3.5, sample_rate: int = 16000) -> bytes:
         """Capture live microphone audio from hardware sound card."""
         try:
             import sounddevice as sd
@@ -202,7 +327,7 @@ class JarvisVoiceAssistant:
                 wf.setsampwidth(2)
                 wf.setframerate(sample_rate)
                 wf.writeframes(raw.tobytes())
-            return buf.getvalue()
+            return self._normalize_wav_audio(buf.getvalue())
         except Exception as e:
             print(f"[JarvisVoice] Mic record failed: {e}")
             return b""
@@ -214,25 +339,33 @@ class JarvisVoiceAssistant:
         vision_context: str = "",
         lang: str = "en"
     ) -> Optional[str]:
-        """Query Google Gemini Multimodal Vision API."""
+        """Query Google Gemini Multimodal Vision API with blind navigation spatial protocol."""
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
             return None
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
         
+        # Spatial blind navigation system training instructions
         system_instruction = (
-            "You are BlindSight JARVIS, an empathetic real-time AI vision and navigation assistant for a visually impaired user. "
-            "Rules:\n"
-            "- Keep responses under 2 direct, helpful sentences.\n"
-            "- For navigation and obstacles: clearly state if the path is clear, or identify obstacles with direction (left, right, ahead).\n"
-            "- For text reading: read signs, labels, or currency directly.\n"
+            "You are BlindSight JARVIS, an ultra-precise assistive vision assistant for a blind or visually impaired user.\n"
+            "Your job is to describe surroundings cleanly, accurately, and spatially in 2 to 3 concise, calm sentences.\n"
+            "Format your answer using these navigation guidelines:\n"
+            "1. FORWARD WALKING PATH (12 O'CLOCK): Clearly state whether the walking corridor ahead is OPEN or BLOCKED, and give estimated distance (feet or meters) to the closest object.\n"
+            "2. CLOCK-FACE OBSTACLES: Identify important objects, people, furniture, or doors using clock directions (e.g. 'At 10 o'clock: a chair 4 feet away. At 2 o'clock: an open doorway 8 feet away.').\n"
+            "3. GROUND HAZARDS & ELEVATION: Explicitly warn about steps, curbs, cords, uneven flooring, liquid spills, or drop-offs.\n"
+            "4. TEXT & LABELS: If visible room numbers, signs, or package text exist, read them verbatim in quotes.\n"
+            "RULES:\n"
+            "- Never guess or invent details. Speak authoritatively and directly.\n"
+            "- No conversational fluff like 'In this photo I can see'. Give actionable navigation guidance.\n"
         )
         if lang == "hi":
-            system_instruction += "- Respond in natural conversational Hindi.\n"
+            system_instruction += (
+                "- हिंदी में उत्तर दें: आगे का रास्ता (12 बजे), 10 बजे या 2 बजे की दिशा में वस्तुएं, और जमीन पर बाधाएं (सीढ़ियाँ, तार) स्पष्ट बताएं।\n"
+            )
 
         if vision_context:
-            system_instruction += f"- Real-time sensor reflex data: {vision_context}\n"
+            system_instruction += f"- Real-time hardware reflex sensors: {vision_context}\n"
 
         parts: list[dict[str, Any]] = [
             {"text": f"{system_instruction}\n\nUser Question: {prompt}"}
@@ -278,11 +411,25 @@ class JarvisVoiceAssistant:
         """Route user voice command through fast local intent router + Gemini AI reasoning."""
         cmd_clean = self.strip_wake_word(command)
         if not cmd_clean:
-            return "Yes? I'm listening." if lang == "en" else "हाँ? मैं सुन रहा हूँ।"
+            return "Yes? I am listening." if lang == "en" else "हाँ? मैं सुन रहा हूँ।"
 
         norm = normalize_voice_phrase(cmd_clean)
 
-        # 1. Immediate Fast System Actions (5ms local response)
+        # 1. Conversational Greetings & Identity (Instant, natural responses)
+        if any(norm == g or norm.startswith(g + " ") for g in ["hey", "hello", "hi", "hey jarvis", "hi jarvis", "hello jarvis", "good morning", "good evening"]):
+            return (
+                "Hello! I am BlindSight JARVIS, your assistive navigation companion. How can I help you right now?"
+                if lang == "en"
+                else "नमस्ते! मैं ब्लाइंडसाइट जार्विस हूँ, आपका सहायक नेविगेशन साथी। मैं आपकी क्या मदद कर सकता हूँ?"
+            )
+        if any(k in norm for k in ["who are you", "what are you", "your name"]):
+            return "I am BlindSight JARVIS, powered by Google Gemini and Edge AI to guide and assist you."
+        if any(k in norm for k in ["how are you", "how are you doing"]):
+            return "I am operating at full capacity and ready to assist your navigation. What would you like to check?"
+        if any(k in norm for k in ["thank you", "thanks"]):
+            return "You are very welcome! I am always here to assist."
+
+        # 2. Fast System Actions (5ms local response)
         if any(k in norm for k in ["time", "current time"]):
             return f"The current time is {time.strftime('%I:%M %p')}."
         if any(k in norm for k in ["date", "today date", "day"]):
@@ -297,18 +444,21 @@ class JarvisVoiceAssistant:
                     return f"System battery is at {pct} percent and {plugged}."
             except Exception:
                 pass
-            return "Glasses battery is at 88 percent. Normal operation."
+            return "Smart glasses battery is at 88 percent. Normal operation."
         if any(k in norm for k in ["stop", "pause", "be quiet", "silence"]):
             return "Stopping."
         if any(k in norm for k in ["help", "what can you do", "commands"]):
-            return "You can ask: what is ahead of me, is the path clear, read this sign, what time is it, or ask any general question."
+            return "You can ask: what is ahead of me, describe the scene, is the path clear, read this sign, what time is it, or check battery."
 
-        # 2. Check for latest camera frame
+        # 3. Check for latest camera frame
         latest_frame = RUNTIME_DIR / "latest.jpg"
         has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 120.0)
 
-        # 3. Primary AI Brain: Google Gemini 2.5 Flash Lite
-        is_scene_query = any(k in norm for k in ["what is in front", "what do you see", "ahead", "surroundings", "describe", "look", "clear", "obstacle", "can i walk", "read"])
+        # 4. Multimodal Vision Query via Google Gemini 2.5 Flash Lite
+        is_scene_query = any(k in norm for k in [
+            "what is in front", "what do you see", "ahead", "surroundings",
+            "describe", "look", "clear", "obstacle", "can i walk", "read"
+        ])
         image_to_use = latest_frame if (has_frame and is_scene_query) else None
 
         gemini_reply = self.query_gemini(
@@ -320,13 +470,13 @@ class JarvisVoiceAssistant:
         if gemini_reply:
             return gemini_reply
 
-        # 4. Fallback 1: Vision Reflex Context
+        # 5. Fallback 1: Vision Reflex Context
         if is_scene_query:
             if vision_context:
                 return vision_context
-            return "Path ahead appears clear. Proceed with caution." if lang == "en" else "आगे का रास्ता साफ प्रतीत होता है।"
+            return "Path ahead appears clear. Proceed with caution." if lang == "en" else "आगे का रास्ता साफ प्रतीत होता है। सावधानी से आगे बढ़ें।"
 
-        # 5. Fallback 2: Local Ollama LLM if running
+        # 6. Fallback 2: Local Ollama LLM if running
         try:
             resp = requests.post(
                 OLLAMA_URL,
@@ -336,9 +486,8 @@ class JarvisVoiceAssistant:
                         {
                             "role": "system",
                             "content": (
-                                "You are BlindSight JARVIS, a voice assistant for blind users. "
-                                "Keep responses under 2 sentences. Be direct and helpful. "
-                                f"Vision context: {vision_context}"
+                                "You are BlindSight JARVIS, an assistive navigation companion for blind users. "
+                                "Keep responses under 2 sentences. Be direct, clear, and reassuring."
                             )
                         },
                         {"role": "user", "content": cmd_clean}
@@ -355,17 +504,8 @@ class JarvisVoiceAssistant:
         except Exception:
             pass
 
-        # 6. Fallback 3: Built-in Conversational Responses
-        if any(k in norm for k in ["hello", "hey", "hi", "good morning", "good evening"]):
-            return "Hello! I am BlindSight JARVIS, your assistive navigation companion. How can I help you right now?"
-
-        if any(k in norm for k in ["who are you", "what are you"]):
-            return "I am BlindSight JARVIS, powered by Google Gemini and Edge AI to guide and assist you."
-
-        if any(k in norm for k in ["thank you", "thanks"]):
-            return "You are very welcome! I am always here to assist."
-
-        return f"I heard: {cmd_clean}. Obstacle sensors are active and monitoring your path."
+        # 7. Fallback 3: Calm Conversational Acknowledgment
+        return f"I heard: {cmd_clean}. Obstacle sensors are active and monitoring your walking path."
 
     async def _synthesize_edge_tts(self, text: str, voice: str) -> bytes:
         """Synthesize audio bytes using Microsoft Edge Neural TTS."""
@@ -419,6 +559,7 @@ class JarvisVoiceAssistant:
         if not audio_bytes:
             return
         try:
+            import subprocess
             tmp = SERVER_DIR / "runtime" / f"voice_out_{int(time.time()*1000)}.mp3"
             with open(tmp, "wb") as f:
                 f.write(audio_bytes)
@@ -440,7 +581,7 @@ class JarvisVoiceAssistant:
         lang: str = "en",
         play_local: bool = False
     ) -> Dict[str, Any]:
-        """Full pipeline: Audio In -> STT -> Gemini/Intent Routing -> TTS -> Audio Out."""
+        """Full pipeline: Audio In -> Normalized STT -> Gemini/Intent Routing -> TTS -> Audio Out."""
         self.set_state(VoiceState.PROCESSING, "Transcribing speech")
         
         # 1. Speech to Text
