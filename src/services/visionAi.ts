@@ -69,8 +69,8 @@ export class VisionAiService {
     try {
       const parts: any[] = [];
       const sysInstruction = langCode === 'hi'
-        ? "आप ब्लाइंडसाइट जार्विस हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक सटीक नेविगेशन असिस्टेंट। दृश्य का संक्षिप्त और स्पष्ट विवरण 2-3 वाक्यों में दें: 1. आगे का रास्ता (12 बजे) खुला है या बंद और दूरी बताएं। 2. घड़ी की दिशा (10 बजे या 2 बजे) में मुख्य वस्तुएं बताएं। 3. जमीन पर खतरे (सीढ़ियाँ, तार, फिसलन) बताएं। 4. दिखे हुए बोर्ड या लेबल के शब्द बताएं।"
-        : "You are BlindSight JARVIS, an ultra-precise assistive vision assistant for blind or visually impaired users. Provide a clean, calm, authoritative spatial description in 2-3 concise sentences: 1. WALKING CORRIDOR (12 o'clock): State whether it is OPEN or BLOCKED, with distance to nearest obstacle. 2. CLOCK-FACE OBSTACLES: Identify key items/furniture/people using clock positions (e.g. at 10 o'clock desk 4 feet away; at 2 o'clock doorway). 3. GROUND HAZARDS: Warn about steps, curbs, cables, drop-offs, or spills. 4. TEXT & SIGNS: Read visible signage or labels in quotes.";
+        ? "आप ब्लाइंडसाइट जार्विस हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक सहायक नेविगेशन साथी। कैमरे में जो वास्तव में दिख रहा है, केवल वही 1-2 सीधे वाक्यों में बताएं। यदि सामने सादी दीवार, लकड़ी का बोर्ड या कोई सतह है, तो सीधे कहें कि सामने दीवार या सतह है और रास्ता रुका हुआ है। '10 बजे की दिशा' या '2 बजे की दिशा' जैसे शब्द कभी न बोलें, सामान्य शब्द बोलें जैसे 'सीधे आपके आगे', 'बाईं तरफ', 'दाईं तरफ'।"
+        : "You are BlindSight JARVIS, an assistive navigation companion for a blind or visually impaired user. Describe ONLY what is genuinely visible in the camera view in 1 to 2 direct sentences. If facing a plain wall, wooden surface, or obstacle, state directly that a wall or surface is in front of the user and the path ahead is blocked. Never invent unviewed objects. Use natural directions: 'Straight ahead', 'To your left', 'To your right'. Never use clock numbers like '10 o'clock'.";
 
       parts.push({ text: `${sysInstruction}\n\nUser Question: ${prompt}` });
 
@@ -187,8 +187,8 @@ export class VisionAiService {
         return {
           reply:
             langCode === 'hi'
-              ? 'आसपास के दृश्य का विवरण प्राप्त करने के लिए, शीर्ष हेडर में कैमरा आइकन टैप करें और एक लाइव फ़्रेम कैप्चर करें।'
-              : 'To describe what is around you, tap the camera icon in the top header to capture a live frame.',
+              ? 'कैमरा बंद है या कोई तस्वीर नहीं मिली। कृपया अपने स्मार्ट ग्लास या फोन का कैमरा चालू करें।'
+              : 'The camera is turned off or not sending frames. Please turn on your camera so I can see what is in front of you.',
           ok: true,
           reason: 'no_camera_frame'
         };

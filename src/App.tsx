@@ -505,6 +505,7 @@ export const App: React.FC = () => {
     updateStatus('Analyzing with Gemini AI…', 'think');
     AudioService.playEarcon('think');
 
+    const frameToAttach = includeCamera ? (latestFrameUrl || VisionAiService.getLatestFrame()) : null;
     const turn = await AudioService.sendVoiceToJarvis(
       recResult.blob,
       language,
@@ -515,7 +516,8 @@ export const App: React.FC = () => {
       () => {
         setAppState('idle');
         updateStatus('Ready', 'idle');
-      }
+      },
+      frameToAttach
     );
 
     if (turn.success && turn.transcript) {

@@ -649,14 +649,19 @@ export class AudioService {
     audioBlob: Blob,
     lang = 'en',
     onStart?: () => void,
-    onEnd?: () => void
+    onEnd?: () => void,
+    cameraDataUrl?: string | null
   ): Promise<{ transcript: string; reply: string; wakeDetected: boolean; success: boolean }> {
     try {
       const ctrl = new AbortController();
       const timer = window.setTimeout(() => ctrl.abort(), 20000);
+      const headers: Record<string, string> = { 'Content-Type': 'audio/wav' };
+      if (cameraDataUrl) {
+        headers['X-Camera-Frame'] = cameraDataUrl;
+      }
       const resp = await fetch(`/api/voice?lang=${encodeURIComponent(lang)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'audio/wav' },
+        headers,
         body: audioBlob,
         signal: ctrl.signal
       });

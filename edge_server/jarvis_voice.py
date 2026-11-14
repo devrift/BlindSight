@@ -346,22 +346,24 @@ class JarvisVoiceAssistant:
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
         
-        # Spatial blind navigation system training instructions
+        # Natural, safe, honest assistive vision training
         system_instruction = (
-            "You are BlindSight JARVIS, an ultra-precise assistive vision assistant for a blind or visually impaired user.\n"
-            "Your job is to describe surroundings cleanly, accurately, and spatially in 2 to 3 concise, calm sentences.\n"
-            "Format your answer using these navigation guidelines:\n"
-            "1. FORWARD WALKING PATH (12 O'CLOCK): Clearly state whether the walking corridor ahead is OPEN or BLOCKED, and give estimated distance (feet or meters) to the closest object.\n"
-            "2. CLOCK-FACE OBSTACLES: Identify important objects, people, furniture, or doors using clock directions (e.g. 'At 10 o'clock: a chair 4 feet away. At 2 o'clock: an open doorway 8 feet away.').\n"
-            "3. GROUND HAZARDS & ELEVATION: Explicitly warn about steps, curbs, cords, uneven flooring, liquid spills, or drop-offs.\n"
-            "4. TEXT & LABELS: If visible room numbers, signs, or package text exist, read them verbatim in quotes.\n"
-            "RULES:\n"
-            "- Never guess or invent details. Speak authoritatively and directly.\n"
-            "- No conversational fluff like 'In this photo I can see'. Give actionable navigation guidance.\n"
+            "You are BlindSight JARVIS, an assistive navigation companion for a blind or visually impaired user.\n"
+            "Your job is to describe what is ACTUALLY and genuinely in the camera view in 1 to 2 calm, direct, honest sentences.\n"
+            "CRITICAL HONESTY RULES:\n"
+            "- Describe ONLY what is physically visible in the camera image. NEVER invent, assume, or hallucinate objects, doors, chairs, people, or pathways that are not there.\n"
+            "- If the camera is facing a plain wall, wooden board/background, closed surface, or close object: state directly that a wall or surface is directly in front and the path ahead is blocked.\n"
+            "- If the image is dark, blurry, or blocked: say 'The camera view is blocked or too dark to see clearly.'\n"
+            "DIRECTION RULES:\n"
+            "- Use natural everyday directions: 'Straight ahead', 'To your left', 'To your right'.\n"
+            "- NEVER use confusing military/aviation clock numbers like '10 o'clock' or '2 o'clock'.\n"
+            "- Estimate distance in feet or steps (e.g. 'about 2 feet away').\n"
         )
         if lang == "hi":
             system_instruction += (
-                "- हिंदी में उत्तर दें: आगे का रास्ता (12 बजे), 10 बजे या 2 बजे की दिशा में वस्तुएं, और जमीन पर बाधाएं (सीढ़ियाँ, तार) स्पष्ट बताएं।\n"
+                "- सरल और स्वाभाविक हिंदी में उत्तर दें। 'सीधे आपके आगे', 'बाईं तरफ', 'दाईं तरफ' जैसे सामान्य शब्दों का प्रयोग करें।\n"
+                "- '10 बजे की दिशा' या '2 बजे की दिशा' जैसे शब्दों का कभी प्रयोग न करें।\n"
+                "- यदि केवल लकड़ी की दीवार, बोर्ड या खाली सतह दिख रही है, तो साफ कहें: 'सीधे आपके सामने लकड़ी की एक सतह या दीवार है और आगे का रास्ता रुका हुआ है।'\n"
             )
 
         if vision_context:
@@ -450,31 +452,35 @@ class JarvisVoiceAssistant:
         if any(k in norm for k in ["help", "what can you do", "commands"]):
             return "You can ask: what is ahead of me, describe the scene, is the path clear, read this sign, what time is it, or check battery."
 
-        # 3. Check for latest camera frame
+        # 3. Check for latest camera frame (must be recent < 45s)
         latest_frame = RUNTIME_DIR / "latest.jpg"
-        has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 120.0)
+        has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 45.0)
 
         # 4. Multimodal Vision Query via Google Gemini 2.5 Flash Lite
         is_scene_query = any(k in norm for k in [
             "what is in front", "what do you see", "ahead", "surroundings",
-            "describe", "look", "clear", "obstacle", "can i walk", "read"
+            "describe", "look", "clear", "obstacle", "can i walk", "read",
+            "kya hai", "aage", "dekh", "dekho", "samne"
         ])
-        image_to_use = latest_frame if (has_frame and is_scene_query) else None
 
-        gemini_reply = self.query_gemini(
-            cmd_clean,
-            image_path=image_to_use,
-            vision_context=vision_context,
-            lang=lang
-        )
-        if gemini_reply:
-            return gemini_reply
-
-        # 5. Fallback 1: Vision Reflex Context
         if is_scene_query:
-            if vision_context:
-                return vision_context
-            return "Path ahead appears clear. Proceed with caution." if lang == "en" else "आगे का रास्ता साफ प्रतीत होता है। सावधानी से आगे बढ़ें।"
+            # FAIL-CLOSED HONESTY GATE: If camera is off or no frame received, NEVER GUESS!
+            if not has_frame:
+                if lang == "hi":
+                    return "कैमरा बंद है या कोई तस्वीर नहीं मिली। कृपया अपने स्मार्ट ग्लास या फोन का कैमरा चालू करें ताकि मैं आगे देख सकूँ।"
+                return "The camera is turned off or not sending frames. Please turn on your camera so I can see what is in front of you."
+
+            # Genuine image frame is available: query Gemini with the real image!
+            gemini_reply = self.query_gemini(
+                cmd_clean,
+                image_path=latest_frame,
+                vision_context=vision_context,
+                lang=lang
+            )
+            if gemini_reply:
+                return gemini_reply
+
+            return "The camera view is unclear or obstructed. Please proceed with caution." if lang == "en" else "कैमरा दृश्य स्पष्ट नहीं है। कृपया सावधानी से आगे बढ़ें।"
 
         # 6. Fallback 2: Local Ollama LLM if running
         try:

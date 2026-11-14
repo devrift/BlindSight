@@ -93,7 +93,21 @@ def api_voice():
     if not audio_data or len(audio_data) < 100:
         return Response(b"", status=400, mimetype="text/plain")
 
-    global last_vision_description
+    # If companion app attached a camera frame from phone/laptop camera
+    global last_frame_timestamp, last_vision_description
+    cam_header = request.headers.get("X-Camera-Frame", "")
+    if cam_header:
+        try:
+            if "," in cam_header:
+                cam_header = cam_header.split(",", 1)[1]
+            img_bytes = base64.b64decode(cam_header)
+            if len(img_bytes) > 200:
+                with open(RUNTIME_DIR / "latest.jpg", "wb") as f:
+                    f.write(img_bytes)
+                last_frame_timestamp = time.time()
+        except Exception as e:
+            print(f"Notice: companion camera frame decode: {e}")
+
     vision_ctx = last_vision_description if (time.time() - last_frame_timestamp < 45.0) else ""
     lang = request.args.get("lang", "en")
 
@@ -116,6 +130,35 @@ def api_voice():
         return resp
 
     return Response(b"", status=500, mimetype="text/plain")
+
+
+@app.route("/api/upload-frame", methods=["POST"])
+def api_upload_frame():
+    """Receives live camera frame from companion PWA or phone camera."""
+    global last_frame_timestamp
+    image_bytes = b""
+    content_type = request.headers.get("Content-Type", "")
+
+    if "application/json" in content_type:
+        data = request.get_json(silent=True) or {}
+        image_b64 = str(data.get("image", "")).strip()
+        if "," in image_b64:
+            image_b64 = image_b64.split(",", 1)[1]
+        try:
+            image_bytes = base64.b64decode(image_b64)
+        except Exception as e:
+            print(f"upload-frame b64decode notice: {e}")
+    else:
+        image_bytes = request.get_data()
+
+    if image_bytes and len(image_bytes) > 100:
+        latest_file = RUNTIME_DIR / "latest.jpg"
+        with open(latest_file, "wb") as f:
+            f.write(image_bytes)
+        last_frame_timestamp = time.time()
+        return jsonify(ok=True, message="Frame stored successfully")
+
+    return jsonify(ok=False, error="Invalid image data"), 400
 
 
 @app.route("/api/chat", methods=["POST"])

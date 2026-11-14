@@ -19,11 +19,11 @@ export const ConversationLog: React.FC<ConversationLogProps> = ({ messages }) =>
     const badges: Array<{ label: string; type: 'ok' | 'warn' | 'alert' | 'info'; icon: any }> = [];
     const low = content.toLowerCase();
 
-    if (low.includes("12 o'clock") || low.includes("corridor") || low.includes("path ahead") || low.includes("आगे का रास्ता")) {
-      const isOpen = low.includes("open") || low.includes("clear") || low.includes("साफ");
+    if (low.includes("path") || low.includes("corridor") || low.includes("ahead") || low.includes("आगे") || low.includes("रास्ता") || low.includes("दीवार") || low.includes("wall") || low.includes("surface")) {
+      const isBlocked = low.includes("blocked") || low.includes("बंद") || low.includes("रुका") || low.includes("obstacle") || low.includes("दीवार") || low.includes("wall");
       badges.push({
-        label: isOpen ? "12 O'Clock: Open" : "12 O'Clock: Obstacle Ahead",
-        type: isOpen ? "ok" : "warn",
+        label: isBlocked ? "Path: Blocked Ahead" : "Path: Open",
+        type: isBlocked ? "warn" : "ok",
         icon: Navigation
       });
     }
