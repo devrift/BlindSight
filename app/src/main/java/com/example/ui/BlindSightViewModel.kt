@@ -231,8 +231,13 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // 2. Scene description check
-        if (low in listOf("describe", "describe the scene", "what is around me", "what's around me", "what is in front of me", "look for me", "what do you see", "read this label", "look ahead")) {
+        // 2. Scene description check (Robust regex so variations like "please describe the scene" work)
+        val isSceneQuery = Regex(
+            "\\b(describe|look ahead|look around|what('?s| is) in front|what do you see|what is around|सामने क्या है|आगे क्या है|दृश्य बताओ|देखो)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(low)
+
+        if (isSceneQuery) {
             describeScene()
             return
         }
@@ -258,36 +263,79 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val low = prompt.lowercase().trim()
         val memPrefix = if (facts.isNotEmpty()) "According to your saved memory: ${facts.first().text}. " else ""
 
-        // Contextual pattern fallbacks if Gemini is unreachable
-        if (low.contains("name") || low.contains("who")) {
-            return "${memPrefix}I am BlindSight, your assistive navigation companion and AI voice assistant."
+        // Contextual pattern fallbacks if Gemini is unreachable or rate-limited
+        if (low.contains("name") || low.contains("who are you") || low.contains("who made you") || low.contains("kaun ho")) {
+            return if (_uiState.value.language == SupportedLanguage.HINDI) {
+                "${memPrefix}मेरा नाम ब्लाइंडसाइट है। मैं दृष्टिबाधित उपयोगकर्ताओं के लिए बनाया गया आपका व्यक्तिगत विज़न गाइड और वॉयस साथी हूँ।"
+            } else {
+                "${memPrefix}I am BlindSight, your dedicated assistive navigation companion and AI voice assistant."
+            }
         }
-        if (low.contains("joke") || low.contains("funny") || low.contains("chutkula")) {
-            return "Why do programmers prefer dark mode? Because light attracts bugs!"
+        if (low.contains("creator") || low.contains("who created") || low.contains("who made")) {
+            return "BlindSight was created by Lavyansh and Agastaya Verma to empower independent mobility for visually impaired individuals."
+        }
+        if (low.contains("joke") || low.contains("funny") || low.contains("chutkula") || low.contains("laugh")) {
+            val jokesEn = listOf(
+                "Why don't scientists trust atoms? Because they make up everything!",
+                "Why did the computer go to the eye doctor? Because it needed to improve its web-sight!",
+                "Why do programmers prefer dark mode? Because light attracts bugs!",
+                "What is an astronaut's favorite key on a computer? The space bar!"
+            )
+            val jokesHi = listOf(
+                "संजू डॉक्टर के पास गया: डॉक्टर साहब, चाय पीते वक्त दाईं आँख में दर्द होता है। डॉक्टर: चाय पीते समय कप से चम्मच निकाल लिया करो!",
+                "टीचर: संजू, न्यूटन का चौथा नियम बताओ? संजू: जब परीक्षा कठिन हो, तो नींद बहुत गहरी आती है!"
+            )
+            return if (_uiState.value.language == SupportedLanguage.HINDI) jokesHi.random() else jokesEn.random()
         }
         if (low.contains("hello") || low.contains("hi") || low.contains("hey") || low.contains("namaste")) {
-            return "${memPrefix}Hello! BlindSight is active and ready to assist with guidance, questions, or checking obstacles."
+            return if (_uiState.value.language == SupportedLanguage.HINDI) {
+                "${memPrefix}नमस्ते! ब्लाइंडसाइट सक्रिय और सतर्क है। मैं आपकी क्या मदद करूँ?"
+            } else {
+                "${memPrefix}Hello! BlindSight is active and ready to assist with guidance, questions, or checking obstacles."
+            }
         }
-        if (low.contains("thank")) {
+        if (low.contains("how are you") || low.contains("kaise ho")) {
+            return if (_uiState.value.language == SupportedLanguage.HINDI) {
+                "मैं बहुत अच्छा हूँ और सभी सेंसर सक्रिय हैं! आप कैसे हैं?"
+            } else {
+                "I'm feeling great and all navigation sensors are alert! How are you doing today?"
+            }
+        }
+        if (low.contains("thank") || low.contains("dhanyawad") || low.contains("shukriya")) {
             return "You're very welcome! Let me know if you need any directions or help."
         }
-        if (low.contains("time") || low.contains("clock")) {
+        if (low.contains("time") || low.contains("clock") || low.contains("samay")) {
             val t = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
             return "The current time is $t."
         }
         if (low.contains("battery") || low.contains("charge")) {
             return repository.getBatteryStatus()
         }
+        if (low.contains("capital of india") || low.contains("bharat ki rajdhani")) {
+            return "The capital of India is New Delhi."
+        }
+        if (low.contains("capital of france")) {
+            return "The capital of France is Paris."
+        }
+        if (low.contains("capital of usa") || low.contains("capital of america") || low.contains("capital of the united states")) {
+            return "The capital of the United States is Washington, D.C."
+        }
+        if (low.contains("speed of light")) {
+            return "The speed of light in a vacuum is approximately 299,792 kilometers per second."
+        }
+        if (low.contains("largest planet")) {
+            return "Jupiter is the largest planet in our solar system."
+        }
 
         return when (_uiState.value.language) {
             SupportedLanguage.HINDI ->
-                "${memPrefix}मैं समझ गया: \"$prompt\"। आपके सभी नेविगेशन और बाधा सेंसर सक्रिय हैं। आप मुझसे समय, बैटरी, या आगे देखने के लिए कह सकते हैं।"
+                "${memPrefix}यह बहुत अच्छा विचार है! मैं हर कदम पर आपकी मदद और सुरक्षा के लिए तैयार हूँ। आप मुझसे समय, बैटरी, गणित, या आगे देखने के लिए कह सकते हैं।"
             SupportedLanguage.SPANISH ->
-                "${memPrefix}Entendido: \"$prompt\". Tus sensores de navegación están activos. ¿En qué más te puedo ayudar?"
+                "${memPrefix}¡Buena pregunta! Estoy aquí contigo para ayudarte a navegar, calcular números o responder tus dudas."
             SupportedLanguage.FRENCH ->
-                "${memPrefix}Bien reçu : \"$prompt\". Vos capteurs de navigation sont actifs. Comment puis-je vous aider ?"
+                "${memPrefix}Excellente question ! Je suis là pour vous aider à vous orienter, calculer ou répondre à vos questions."
             else ->
-                "${memPrefix}I understand you asked about \"$prompt\". All navigation sensors are active. Feel free to ask me for the time, battery, jokes, or say describe to inspect the path."
+                "${memPrefix}That is a thoughtful question! I am right here walking with you. You can ask me to calculate, check your battery or time, tell a joke, or say 'describe the scene' anytime."
         }
     }
 

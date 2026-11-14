@@ -141,12 +141,12 @@ export class AssistantBrain {
       return 'To describe the scene, tap the camera icon in the top header to capture a live frame with your camera, then ask me to describe it!';
     }
 
-    // 13. Intelligent Conversational Fallback (acts like Google Assistant instead of failing)
+    // 13. Intelligent Conversational Fallback (warm, natural, never robotic)
     if (langCode === 'hi') {
-      return `मैंने सुना: "${raw}"। मैं इस पर आपका मार्गदर्शन कर सकती हूँ। आप मुझसे कोई भी प्रश्न पूछ सकते हैं, नेविगेशन सहायता ले सकते हैं, या तथ्य याद रखने को कह सकते हैं।`;
+      return `यह बहुत अच्छा प्रश्न है! मैं आपकी मदद और सुरक्षा के लिए तैयार हूँ। आप मुझसे समय, बैटरी, गणित या आगे का दृश्य देखने को कह सकते हैं।`;
     }
 
-    return `I heard you ask: "${raw}". I am here to help you navigate, remember important details, check obstacles, or assist with daily tasks. Say help if you would like to explore all voice commands!`;
+    return `That's a thoughtful question! I am right here walking with you. You can ask me to calculate, check your battery or time, tell a joke, or say 'describe the scene' whenever you need help seeing ahead.`;
   }
 
   // --- Helper: Math expressions ---

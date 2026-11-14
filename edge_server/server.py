@@ -194,21 +194,30 @@ def api_chat():
         except Exception as e:
             print(f"[api_chat] Image base64 decode notice: {e}")
 
-    # Check if this query is asking about visual surroundings / scene
-    scene_triggers = [
-        "describe", "front", "ahead", "see", "around", "clear", "walk",
-        "label", "sign", "samne", "aage", "dikh", "dekho", "photo", "image",
-        "picture", "tasveer", "color", "shape", "rang", "aakar", "surface"
+    # Check if this query is explicitly asking about visual surroundings / camera
+    import re
+    scene_patterns = [
+        r"\bdescribe\b",
+        r"\bwhat do you see\b",
+        r"\bwhat('?s| is) in front\b",
+        r"\bwhat('?s| is) (around|ahead)\b",
+        r"\blook (ahead|around|at this|for me)\b",
+        r"\bread (this|the label|the sign|text)\b",
+        r"\bsamne kya hai\b",
+        r"\baage kya hai\b",
+        r"\bdryshya batao\b",
+        r"\bphoto dekho\b",
+        r"\btasveer dekho\b"
     ]
     prompt_low = prompt.lower()
-    is_scene_query = any(trigger in prompt_low for trigger in scene_triggers)
+    is_scene_query = any(re.search(pat, prompt_low) for pat in scene_patterns)
 
     global last_vision_description
     is_fresh_frame = (time.time() - last_frame_timestamp < 60.0)
     vision_ctx = last_vision_description if is_fresh_frame else ""
 
-    # Attach frame ONLY when user uploaded one or query asks about surroundings!
-    if has_uploaded_image or is_scene_query:
+    # Attach frame ONLY when query asks to see or user uploaded an image without text
+    if is_scene_query or (has_uploaded_image and not prompt):
         frame_to_use = latest_file if (has_uploaded_image or is_fresh_frame) else None
     else:
         frame_to_use = None

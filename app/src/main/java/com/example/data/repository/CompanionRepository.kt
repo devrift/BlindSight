@@ -469,10 +469,10 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val candidateModels = listOf(
-            "gemini-3.1-flash-lite",
-            "gemini-3.1-flash-lite-preview",
-            "gemini-3-flash-preview",
-            "gemini-3.5-flash",
+            "gemini-3.8-flash",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
             "gemini-flash-latest"
         )
 
@@ -535,6 +535,9 @@ class CompanionRepository(private val context: Context) {
                     if (!text.isNullOrBlank()) {
                         return@withContext text
                     }
+                } else if (conn.responseCode == 429) {
+                    Log.w("CompanionRepository", "Gemini API quota exceeded (HTTP 429), switching to instant on-device assistant.")
+                    break
                 } else {
                     Log.w("CompanionRepository", "Model $model returned HTTP ${conn.responseCode}, trying next fallback...")
                 }

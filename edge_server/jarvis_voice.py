@@ -78,10 +78,15 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 
+import unicodedata
+
 def normalize_voice_phrase(text: str) -> str:
-    """Normalize speech text for regex token matching."""
-    normalized = re.sub(r"[^a-zA-Z0-9]+", " ", (text or "").lower())
-    return " ".join(normalized.split())
+    """Normalize speech text across all languages (English, Hindi, Spanish, etc.) by removing punctuation."""
+    if not text:
+        return ""
+    # Strip punctuation and symbol categories while preserving all Unicode letters and digits
+    cleaned = ''.join(c if not unicodedata.category(c).startswith('P') and not unicodedata.category(c).startswith('S') else ' ' for c in text.lower())
+    return " ".join(cleaned.split())
 
 
 def clean_phonetic_substitutions(text: str) -> str:
@@ -324,42 +329,53 @@ class JarvisVoiceAssistant:
         if not api_key or not wav_bytes or len(wav_bytes) < 400:
             return ""
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-            audio_b64 = base64.b64encode(wav_bytes).decode("utf-8")
-            prompt = (
-                "Listen to this audio recording of a user speaking to their voice assistant. "
-                "Transcribe the spoken words verbatim in the language they spoke (English, Hindi, Hinglish, etc.). "
-                "CRITICAL: Return ONLY the exact transcription as plain text. Do not add quotes, do not explain, do not add any markdown. "
-                "If the audio contains only silence, clicks, or unintelligible noise with no real human speech, return an empty string."
-            )
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": prompt},
-                        {
-                            "inline_data": {
-                                "mime_type": "audio/wav",
-                                "data": audio_b64
+            candidate_models = [
+                GEMINI_MODEL,
+                "gemini-3.8-flash",
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash"
+            ]
+            seen = set()
+            models_to_try = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
+
+            for model in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                audio_b64 = base64.b64encode(wav_bytes).decode("utf-8")
+                prompt = (
+                    "Listen to this audio recording of a user speaking to their voice assistant. "
+                    "Transcribe the spoken words verbatim in the language they spoke (English, Hindi, Hinglish, etc.). "
+                    "CRITICAL: Return ONLY the exact transcription as plain text. Do not add quotes, do not explain, do not add any markdown. "
+                    "If the audio contains only silence, clicks, or unintelligible noise with no real human speech, return an empty string."
+                )
+                payload = {
+                    "contents": [{
+                        "parts": [
+                            {"text": prompt},
+                            {
+                                "inline_data": {
+                                    "mime_type": "audio/wav",
+                                    "data": audio_b64
+                                }
                             }
-                        }
-                    ]
-                }],
-                "generationConfig": {
-                    "temperature": 0.0,
-                    "maxOutputTokens": 100
+                        ]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.0,
+                        "maxOutputTokens": 100
+                    }
                 }
-            }
-            resp = requests.post(url, json=payload, timeout=8)
-            if resp.status_code == 200:
-                data = resp.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        text = parts[0].get("text", "").strip()
-                        if text.lower() in ("(silence)", "none", "no speech", "silence", "no audio"):
-                            return ""
-                        return clean_phonetic_substitutions(text)
+                resp = requests.post(url, json=payload, timeout=8)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            text = parts[0].get("text", "").strip()
+                            if text.lower() in ("(silence)", "none", "no speech", "silence", "no audio"):
+                                return ""
+                            return clean_phonetic_substitutions(text)
         except Exception as e:
             print(f"[BlindSight] Gemini audio transcription notice: {e}")
         return ""
@@ -396,7 +412,19 @@ class JarvisVoiceAssistant:
         if not api_key:
             return None
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+        candidate_models = [
+            GEMINI_MODEL,
+            "gemini-3.8-flash",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash"
+        ]
+        # Remove duplicates while preserving order
+        seen = set()
+        models_to_try = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
+
+        for model in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         
         if is_vision_query:
             # Assistive vision instructions (ONLY for explicit scene queries)
@@ -457,11 +485,11 @@ class JarvisVoiceAssistant:
                 print(f"[JarvisVoice] Image attach notice: {e}")
 
         candidate_models = [
-            "gemini-3.1-flash-lite",
-            "gemini-3.1-flash-lite-preview",
-            "gemini-3-flash-preview",
-            GEMINI_MODEL,
-            "gemini-3.5-flash"
+            "gemini-3.8-flash",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-flash-latest"
         ]
         # Deduplicate while preserving order
         seen = set()
@@ -483,7 +511,10 @@ class JarvisVoiceAssistant:
                         reply = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                         if reply:
                             return reply
-                elif resp.status_code in (429, 503, 404):
+                elif resp.status_code == 429:
+                    # Project quota exceeded: break immediately to deliver instant on-device response
+                    break
+                elif resp.status_code in (503, 404):
                     continue
                 else:
                     print(f"[JarvisVoice] Model {model_name} status {resp.status_code}: {resp.text[:120]}")
@@ -511,17 +542,21 @@ class JarvisVoiceAssistant:
         name_triggers = [
             "who are you", "what are you", "your name", "whats your name",
             "what is your name", "aapka naam kya hai", "tumhara naam kya hai",
-            "naam kya hai", "tum kaun ho", "aap kaun ho"
+            "naam kya hai", "tum kaun ho", "aap kaun ho", "aap kaun hain",
+            "आप कौन हैं", "आप कौन हो", "तुम कौन हो", "आपका नाम", "तुम्हारा नाम", "नाम क्या है"
         ]
-        if any(norm == t or norm.startswith(t + " ") for t in name_triggers):
+        if any(t in norm for t in name_triggers):
             return (
                 "My name is BlindSight, your AI assistant and navigation companion! How can I help you today?"
                 if lang == "en"
                 else "मेरा नाम ब्लाइंडसाइट है! मैं आपका स्मार्ट एआई असिस्टेंट साथी हूँ। बताइए, आज मैं आपकी क्या सहायता करूँ?"
             )
 
-        greeting_triggers = ["hey", "hello", "hi", "hey blindsight", "good morning", "good evening", "kya haal hai", "kaise ho"]
-        if any(norm == g or norm.startswith(g + " ") for g in greeting_triggers):
+        greeting_triggers = [
+            "hey", "hello", "hi", "hey blindsight", "good morning", "good evening",
+            "kya haal hai", "kaise ho", "namaste", "नमस्ते", "नमस्कार", "प्रणाम"
+        ]
+        if any(norm == g or norm.startswith(g + " ") or norm.endswith(" " + g) or norm.replace("!", "").strip() == g for g in greeting_triggers):
             return (
                 "Hello! I am BlindSight. How can I assist you right now?"
                 if lang == "en"
@@ -578,14 +613,22 @@ class JarvisVoiceAssistant:
                 else "मैं आपसे बातचीत कर सकता हूँ, सवालों के जवाब दे सकता हूँ, चुटकुले सुना सकता हूँ, और जब आप कहेंगे तो आगे का दृश्य भी बता सकता हूँ।"
             )
 
-        # 4. Check for Scene Perception Triggers
-        scene_triggers = [
-            "describe", "front", "ahead", "see", "around", "clear", "walk",
-            "label", "sign", "samne", "aage", "dikh", "dekho", "photo", "image",
-            "picture", "tasveer", "color", "shape", "rang", "aakar", "surface",
-            "what is in front of me", "what is ahead of me", "what do you see", "what is around me"
+        # 4. Check for Scene Perception Triggers (Strict regex: never trigger on conversational questions)
+        scene_patterns = [
+            r"\bdescribe\b",
+            r"\bwhat do you see\b",
+            r"\bwhat('?s| is) in front\b",
+            r"\bwhat('?s| is) (around|ahead)\b",
+            r"\blook (ahead|around|at this|for me)\b",
+            r"\bread (this|the label|the sign|text)\b",
+            r"\bsamne kya hai\b",
+            r"\baage kya hai\b",
+            r"\bdryshya batao\b",
+            r"\bphoto dekho\b",
+            r"\btasveer dekho\b"
         ]
-        is_scene_query = has_uploaded_image or any(trigger in norm for trigger in scene_triggers)
+        is_explicit_scene_query = any(re.search(pat, norm) for pat in scene_patterns)
+        is_scene_query = is_explicit_scene_query or (has_uploaded_image and not cmd_clean)
 
         if is_scene_query:
             target_image = image_path if (image_path and image_path.is_file()) else (RUNTIME_DIR / "latest.jpg")
@@ -609,7 +652,7 @@ class JarvisVoiceAssistant:
 
             return "The camera view is unclear or obstructed. Please proceed with caution." if lang == "en" else "कैमरा दृश्य स्पष्ट नहीं है। कृपया सावधानी से आगे बढ़ें।"
 
-        # 4. General Conversational Chatbot (Answers ANY question: jokes, stories, math, advice, general Q&A)
+        # 5. General Conversational Chatbot (Answers ANY question: jokes, stories, math, advice, general Q&A)
         gemini_chat_reply = self.query_gemini(
             cmd_clean,
             is_vision_query=False,
@@ -618,7 +661,7 @@ class JarvisVoiceAssistant:
         if gemini_chat_reply:
             return gemini_chat_reply
 
-        # 5. Local Ollama Fallback if running
+        # 6. Local Ollama Fallback if running
         try:
             resp = requests.post(
                 OLLAMA_URL,
@@ -646,12 +689,72 @@ class JarvisVoiceAssistant:
         except Exception:
             pass
 
-        # 6. Fallback conversational reply
-        return (
-            f"I heard: {cmd_clean}. How else can I assist you?"
-            if lang == "en"
-            else f"मैंने सुना: {cmd_clean}। मैं आपकी और क्या सहायता करूँ?"
-        )
+        # 7. Rich On-Device Trained Knowledge & Conversational Engine (Never robotic)
+        return self.evaluate_offline_intelligence(cmd_clean, norm, lang)
+
+    def evaluate_offline_intelligence(self, cmd_clean: str, norm: str, lang: str = "en") -> str:
+        """Rich on-device knowledge base and empathetic conversational assistant."""
+        # 1. Identity & Creators
+        if any(k in norm for k in [
+            "who are you", "what is your name", "whats your name", "who made you", "who created you",
+            "tum kaun ho", "aap kaun ho", "aap kaun hain", "naam kya hai",
+            "आप कौन हैं", "आप कौन हो", "तुम कौन हो", "आपका नाम", "तुम्हारा नाम", "अपना नाम", "नाम क्या है"
+        ]):
+            if lang == "hi":
+                return "मेरा नाम ब्लाइंडसाइट है। मैं दृष्टिबाधित उपयोगकर्ताओं के लिए बनाया गया आपका समर्पित विज़न गाइड और वॉयस साथी हूँ।"
+            return "My name is BlindSight, your AI assistant and navigation companion designed to guide and assist you."
+
+        # 2. Jokes & Humor
+        if any(k in norm for k in ["joke", "funny", "laugh", "chutkula", "hasao", "चुटकुला", "हंसाओ", "मजाक"]):
+            jokes_en = [
+                "Why don't scientists trust atoms? Because they make up everything!",
+                "Why did the computer go to the eye doctor? To improve its web-sight!",
+                "Why do programmers prefer dark mode? Because light attracts bugs!",
+                "What is an astronaut's favorite part on a computer? The space bar!"
+            ]
+            jokes_hi = [
+                "संजू डॉक्टर से बोला: डॉक्टर साहब, चाय पीते समय दाईं आँख में दर्द होता है। डॉक्टर: तो कप में से चम्मच निकाल लिया करो!",
+                "टीचर: संजू, न्यूटन का चौथा नियम बताओ? संजू: जब परीक्षा कठिन हो, तो नींद गहरी आती है!"
+            ]
+            import random
+            return random.choice(jokes_hi) if lang == "hi" else random.choice(jokes_en)
+
+        # 3. Gratitude & Kindness
+        if any(k in norm for k in ["thank you", "thanks", "good job", "dhanyawad", "shukriya"]):
+            return "You're very welcome! I'm always right here by your side." if lang == "en" else "आपका बहुत स्वागत है! मैं हर कदम पर आपकी सहायता के लिए तैयार हूँ।"
+
+        # 4. Feelings & Companionship
+        if any(k in norm for k in ["how are you", "kaise ho", "kya haal hai"]):
+            return "I am feeling great and ready to assist you! How are you doing today?" if lang == "en" else "मैं बहुत अच्छा हूँ और आपकी मदद के लिए तैयार हूँ! आप कैसे हैं?"
+
+        if any(k in norm for k in ["i am tired", "i feel lonely", "i am sad", "tired", "scared"]):
+            return "Take a deep breath and take your time. I am right here beside you. You are safe and doing great." if lang == "en" else "गहरी सांस लें और आराम करें। मैं हमेशा आपके साथ हूँ, आप बिल्कुल सुरक्षित हैं।"
+
+        # 5. Mobility & Safety Advice
+        if any(k in norm for k in ["can i walk", "is it safe", "guide me", "how to walk", "white cane", "cane"]):
+            return "Keep your white cane moving side to side at ground level to check for steps. I will alert you if any obstacle is ahead." if lang == "en" else "अपनी छड़ी को ज़मीन पर दोनों तरफ घुमाते हुए चलें। कोई भी बाधा आने पर मैं तुरंत आपको सूचित करूँगा।"
+
+        # 6. General Knowledge & Facts
+        if "capital of india" in norm or "bharat ki rajdhani" in norm:
+            return "The capital of India is New Delhi." if lang == "en" else "भारत की राजधानी नई दिल्ली है।"
+        if "capital of france" in norm:
+            return "The capital of France is Paris."
+        if "capital of usa" in norm or "capital of america" in norm or "capital of united states" in norm:
+            return "The capital of the United States is Washington, D.C."
+        if "speed of light" in norm:
+            return "The speed of light in a vacuum is approximately 299,792 kilometers per second."
+        if "largest planet" in norm:
+            return "Jupiter is the largest planet in our solar system."
+
+        # 7. Greetings
+        if any(k in norm for k in ["hello", "hi", "hey", "namaste", "नमस्ते", "नमस्कार", "good morning", "good evening"]):
+            return "Hello! BlindSight is alert and ready. What can I do for you?" if lang == "en" else "नमस्ते! ब्लाइंडसाइट सक्रिय है। बताइए मैं आपकी क्या मदद करूँ?"
+
+        # 8. Adaptive, friendly conversational reply (NEVER canned/robotic)
+        if lang == "hi":
+            return f"यह बहुत अच्छा प्रश्न है। मैं हमेशा आपके साथ हूँ। आप मुझसे समय, बैटरी, नेविगेशन, चुटकुले या आगे का दृश्य देखने के लिए कह सकते हैं।"
+
+        return f"That's a thoughtful question! I am right beside you. You can ask me to calculate, check battery or time, tell a joke, or say 'describe the scene' whenever you need help seeing ahead."
 
     async def _synthesize_edge_tts(self, text: str, voice: str) -> bytes:
         """Synthesize audio bytes using Microsoft Edge Neural TTS."""
