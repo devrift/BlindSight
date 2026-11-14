@@ -20,6 +20,7 @@ import { ConversationLog } from './components/ConversationLog';
 import { TextInputForm } from './components/TextInputForm';
 import { ReflexTelemetryModal } from './components/ReflexTelemetryModal';
 import { CameraCaptureModal } from './components/CameraCaptureModal';
+import { ApkQrModal } from './components/ApkQrModal';
 
 export const App: React.FC = () => {
   // App state
@@ -60,6 +61,7 @@ export const App: React.FC = () => {
   // Modals
   const [isReflexModalOpen, setIsReflexModalOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   // Recognition refs
   const recognitionRef = useRef<any>(null);
@@ -833,6 +835,7 @@ export const App: React.FC = () => {
         telemetry={telemetry}
         onOpenReflexModal={() => setIsReflexModalOpen(true)}
         onOpenCameraModal={() => setIsCameraModalOpen(true)}
+        onOpenQrModal={() => setIsQrModalOpen(true)}
       />
 
       <main style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -897,6 +900,11 @@ export const App: React.FC = () => {
           handleCommand('describe the scene', dataUrl);
           setIsCameraModalOpen(false);
         }}
+      />
+
+      <ApkQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
       />
     </>
   );

@@ -65,8 +65,8 @@ export class AssistantBrain {
       'tera naam kya hai', 'naam kya hai', 'introduce yourself'
     ])) {
       return langCode === 'hi'
-        ? 'मेरा नाम ब्लाइंडसाइट है! मैं आपका वॉयस असिस्टेंट और नेविगेशन साथी हूँ।'
-        : "My name is BlindSight! I'm your AI assistant and navigation companion.";
+        ? 'मेरा नाम ब्लाइंडसाइट है! मैं आपका समर्पित विज़न गाइड और वॉयस साथी हूँ।'
+        : "My name is BlindSight! I'm your dedicated visual guide, mobility protector, and voice companion.";
     }
 
     // 8. BlindSight Smart Glasses & Features

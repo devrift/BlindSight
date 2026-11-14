@@ -57,7 +57,6 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     private var autoSweepJob: Job? = null
 
-    var launchVoiceIntent: (() -> Unit)? = null
     private var isUserCommandActive = false
 
     init {
@@ -137,32 +136,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         ttsHelper?.playEarcon(TtsHelper.EarconType.LISTEN)
         _uiState.value = _uiState.value.copy(
             appState = AppState.COMMAND_LISTENING,
-            statusText = "Listening… Speak your question now."
+            statusText = "Listening… Speak your question to BlindSight."
         )
 
-        // Launch the official system Google Voice Search / Speech Dialog
-        // Shows real-time animated microphone waves and captures speech with 100% reliability
-        if (launchVoiceIntent != null) {
-            speechRecognizerHelper?.pauseListening()
-            launchVoiceIntent?.invoke()
-        } else {
-            fallbackStartListening()
-        }
-    }
-
-    fun fallbackStartListening() {
-        isUserCommandActive = true
+        // 100% In-App listening: animated visual radar and amber glow, zero external popups
         val langTag = _uiState.value.language.code
         speechRecognizerHelper?.startListening(langTag, forceRestart = true)
-    }
-
-    fun onVoiceIntentCancelled() {
-        isUserCommandActive = false
-        _uiState.value = _uiState.value.copy(
-            appState = AppState.IDLE,
-            statusText = "Listening for \"Hey BlindSight\" or tap center button."
-        )
-        speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
     }
 
     fun onSpeechResult(spokenText: String) {

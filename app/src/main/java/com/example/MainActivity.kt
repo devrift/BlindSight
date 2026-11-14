@@ -1,11 +1,8 @@
 package com.example
 
 import android.Manifest
-import android.app.Activity
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -28,22 +25,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             BlindSightTheme {
-                val voiceIntentLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.StartActivityForResult()
-                ) { result ->
-                    if (result.resultCode == Activity.RESULT_OK) {
-                        val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                        val text = matches?.firstOrNull()?.trim()
-                        if (!text.isNullOrEmpty()) {
-                            viewModel.onSpeechResult(text)
-                        } else {
-                            viewModel.onVoiceIntentCancelled()
-                        }
-                    } else {
-                        viewModel.onVoiceIntentCancelled()
-                    }
-                }
-
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) { permissions ->
@@ -55,21 +36,6 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(Unit) {
-                    viewModel.launchVoiceIntent = {
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, viewModel.uiState.value.language.code)
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to BlindSight…")
-                            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-                        }
-                        try {
-                            voiceIntentLauncher.launch(intent)
-                        } catch (e: Exception) {
-                            viewModel.fallbackStartListening()
-                        }
-                    }
-
                     val hasAudio = ContextCompat.checkSelfPermission(
                         this@MainActivity,
                         Manifest.permission.RECORD_AUDIO

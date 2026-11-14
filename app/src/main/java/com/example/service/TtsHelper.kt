@@ -1,18 +1,22 @@
 package com.example.service
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.Log
 import com.example.data.model.SupportedLanguage
+import java.util.Locale
 
 class TtsHelper(
     private val context: Context,
     private val onInitComplete: (Boolean) -> Unit
 ) : TextToSpeech.OnInitListener {
 
+    private val tag = "TtsHelper"
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var currentLanguage: SupportedLanguage = SupportedLanguage.ENGLISH
@@ -23,7 +27,7 @@ class TtsHelper(
         try {
             toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
         } catch (e: Exception) {
-            Log.w("TtsHelper", "Could not initialize ToneGenerator: ${e.message}")
+            Log.w(tag, "Could not initialize ToneGenerator: ${e.message}")
         }
         tts = TextToSpeech(context.applicationContext, this)
     }
@@ -31,7 +35,24 @@ class TtsHelper(
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             isInitialized = true
+            
+            // Set accessibility speech audio attributes for crystal-clear natural audio
+            try {
+                val audioAttributes = AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                    .build()
+                tts?.setAudioAttributes(audioAttributes)
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to set audio attributes: ${e.message}")
+            }
+
+            // Tune natural human cadence (not slow robotic drone)
+            tts?.setSpeechRate(1.03f)
+            tts?.setPitch(1.02f)
+
             setLanguage(currentLanguage)
+
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
@@ -56,9 +77,41 @@ class TtsHelper(
         if (isInitialized) {
             val result = tts?.setLanguage(language.locale)
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                // Fallback to default
                 tts?.setLanguage(SupportedLanguage.ENGLISH.locale)
             }
+            selectBestNaturalVoice(language.locale)
+        }
+    }
+
+    /**
+     * Finds and selects the highest-quality, most human-sounding natural voice installed on the device.
+     */
+    private fun selectBestNaturalVoice(locale: Locale) {
+        try {
+            val voices = tts?.voices ?: return
+            val langCode = locale.language
+
+            val matchingVoices = voices.filter { voice ->
+                voice.locale.language.equals(langCode, ignoreCase = true)
+            }
+
+            // Priority 1: High-quality natural/neural voice models
+            val bestVoice = matchingVoices.firstOrNull { voice ->
+                val name = voice.name.lowercase()
+                (name.contains("natural") || name.contains("neural") || name.contains("-x-")) &&
+                !voice.isNetworkConnectionRequired &&
+                voice.quality >= Voice.QUALITY_HIGH
+            } ?: matchingVoices.firstOrNull { voice ->
+                // Priority 2: Highest quality local voice
+                !voice.isNetworkConnectionRequired && voice.quality >= Voice.QUALITY_NORMAL
+            } ?: matchingVoices.firstOrNull()
+
+            if (bestVoice != null) {
+                tts?.voice = bestVoice
+                Log.d(tag, "Selected natural voice: ${bestVoice.name} (quality=${bestVoice.quality})")
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Voice selection failed: ${e.message}")
         }
     }
 
@@ -104,7 +157,7 @@ class TtsHelper(
                 }
             }
         } catch (e: Exception) {
-            Log.w("TtsHelper", "Error playing earcon: ${e.message}")
+            Log.w(tag, "Error playing earcon: ${e.message}")
         }
     }
 

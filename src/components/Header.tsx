@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, ShieldAlert, Radio, Download } from 'lucide-react';
+import { Eye, ShieldAlert, Radio, Download, QrCode } from 'lucide-react';
 import { LanguageOption, ReflexTelemetry } from '../types';
 
 interface HeaderProps {
@@ -7,13 +7,15 @@ interface HeaderProps {
   telemetry: ReflexTelemetry;
   onOpenReflexModal: () => void;
   onOpenCameraModal: () => void;
+  onOpenQrModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentLang,
   telemetry,
   onOpenReflexModal,
-  onOpenCameraModal
+  onOpenCameraModal,
+  onOpenQrModal
 }) => {
   const reflexBadgeClass =
     telemetry.alert === 'stop'
@@ -68,6 +70,20 @@ export const Header: React.FC<HeaderProps> = ({
           <Eye size={16} style={{ marginRight: 6 }} aria-hidden="true" />
           <span>Vision</span>
         </button>
+
+        {onOpenQrModal && (
+          <button
+            type="button"
+            className="badge clickable"
+            onClick={onOpenQrModal}
+            style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}
+            title="Scan QR to install on Android phone"
+            aria-label="Scan QR Code to install BlindSight on Android"
+          >
+            <QrCode size={16} style={{ marginRight: 6 }} aria-hidden="true" />
+            <span>App QR</span>
+          </button>
+        )}
 
         <a
           href="/BlindSight-testing.apk"
