@@ -75,7 +75,7 @@ VOICE_MAP = {
 SVARA_URL = os.getenv("SVARA_URL", "http://localhost:8000/v1/audio/speech")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 
 def normalize_voice_phrase(text: str) -> str:
@@ -456,24 +456,39 @@ class JarvisVoiceAssistant:
             except Exception as e:
                 print(f"[JarvisVoice] Image attach notice: {e}")
 
-        try:
-            resp = requests.post(
-                url,
-                json={"contents": [{"parts": parts}]},
-                headers={"Content-Type": "application/json"},
-                timeout=9.0
-            )
-            if resp.ok:
-                data = resp.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    reply = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                    if reply:
-                        return reply
-            else:
-                print(f"[JarvisVoice] Gemini status {resp.status_code}: {resp.text[:120]}")
-        except Exception as e:
-            print(f"[JarvisVoice] Gemini request notice: {e}")
+        candidate_models = [
+            GEMINI_MODEL,
+            "gemini-3.5-flash",
+            "gemini-flash-latest",
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite"
+        ]
+        # Deduplicate while preserving order
+        seen = set()
+        models_to_try = [m for m in candidate_models if not (m in seen or seen.add(m))]
+
+        for model_name in models_to_try:
+            try:
+                model_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                resp = requests.post(
+                    model_url,
+                    json={"contents": [{"parts": parts}]},
+                    headers={"Content-Type": "application/json"},
+                    timeout=4.0
+                )
+                if resp.ok:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        reply = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                        if reply:
+                            return reply
+                elif resp.status_code in (429, 503, 404):
+                    continue
+                else:
+                    print(f"[JarvisVoice] Model {model_name} status {resp.status_code}: {resp.text[:120]}")
+            except Exception as e:
+                pass
 
         return None
 
@@ -530,7 +545,24 @@ class JarvisVoiceAssistant:
                 return joke_reply
             return "Why don't scientists trust atoms? Because they make up everything!"
 
-        # 3. Fast System Actions (5ms local response)
+        # 3. Fast Math (Offline 1ms response)
+        math_match = re.search(r"(?:what is|calculate|solve|what'?s)?\s*(\d+)\s*([+\-*/x]|plus|minus|times|multiplied by|divided by)\s*(\d+)", norm)
+        if math_match:
+            try:
+                n1 = int(math_match.group(1))
+                op = math_match.group(2).lower()
+                n2 = int(math_match.group(3))
+                res = None
+                if op in ("+", "plus"): res = n1 + n2
+                elif op in ("-", "minus"): res = n1 - n2
+                elif op in ("*", "x", "times", "multiplied by"): res = n1 * n2
+                elif op in ("/", "divided by") and n2 != 0: res = n1 / n2
+                if res is not None:
+                    return f"{n1} {op} {n2} equals {res}." if lang == "en" else f"{n1} {op} {n2} का उत्तर {res} है।"
+            except Exception:
+                pass
+
+        # 4. Fast System Actions (5ms local response)
         if any(k in norm for k in ["time", "current time", "samay", "kitne baje"]):
             return f"The current time is {time.strftime('%I:%M %p')}." if lang == "en" else f"अभी समय {time.strftime('%I:%M %p')} हुआ है।"
         if any(k in norm for k in ["date", "today date", "day", "tarikh", "aaj konsa din"]):

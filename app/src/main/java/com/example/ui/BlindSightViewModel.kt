@@ -202,16 +202,39 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun buildConversationalAnswer(prompt: String): String {
         val facts = repository.facts.value
-        val memPrefix = if (facts.isNotEmpty()) "Relying on your saved memory that ${facts.first().text}. " else ""
+        val low = prompt.lowercase().trim()
+        val memPrefix = if (facts.isNotEmpty()) "According to your saved memory: ${facts.first().text}. " else ""
+
+        // Contextual pattern fallbacks if Gemini is unreachable
+        if (low.contains("name") || low.contains("who")) {
+            return "${memPrefix}I am BlindSight, your assistive navigation companion and AI voice assistant."
+        }
+        if (low.contains("joke") || low.contains("funny") || low.contains("chutkula")) {
+            return "Why do programmers prefer dark mode? Because light attracts bugs!"
+        }
+        if (low.contains("hello") || low.contains("hi") || low.contains("hey") || low.contains("namaste")) {
+            return "${memPrefix}Hello! BlindSight is active and ready to assist with guidance, questions, or checking obstacles."
+        }
+        if (low.contains("thank")) {
+            return "You're very welcome! Let me know if you need any directions or help."
+        }
+        if (low.contains("time") || low.contains("clock")) {
+            val t = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
+            return "The current time is $t."
+        }
+        if (low.contains("battery") || low.contains("charge")) {
+            return repository.getBatteryStatus()
+        }
+
         return when (_uiState.value.language) {
             SupportedLanguage.HINDI ->
-                "मैंने सुना: \"$prompt\"। ${if (facts.isNotEmpty()) "मुझे याद है कि " + facts.first().text + "। " else ""}मैं आपकी सुरक्षित यात्रा के लिए हमेशा तैयार हूँ।"
+                "${memPrefix}मैं समझ गया: \"$prompt\"। आपके सभी नेविगेशन और बाधा सेंसर सक्रिय हैं। आप मुझसे समय, बैटरी, या आगे देखने के लिए कह सकते हैं।"
             SupportedLanguage.SPANISH ->
-                "Entendido: \"$prompt\". ${if (facts.isNotEmpty()) "Recordando que " + facts.first().text + ". " else ""}Estoy aquí para guiarte en todo momento."
+                "${memPrefix}Entendido: \"$prompt\". Tus sensores de navegación están activos. ¿En qué más te puedo ayudar?"
             SupportedLanguage.FRENCH ->
-                "Bien reçu : \"$prompt\". ${if (facts.isNotEmpty()) "En gardant en mémoire que " + facts.first().text + ". " else ""}Je suis là pour vous accompagner."
+                "${memPrefix}Bien reçu : \"$prompt\". Vos capteurs de navigation sont actifs. Comment puis-je vous aider ?"
             else ->
-                "${memPrefix}I hear you ask: \"$prompt\". Path forward is monitored and I am ready to guide or describe anything you need."
+                "${memPrefix}I understand you asked about \"$prompt\". All navigation sensors are active. Feel free to ask me for the time, battery, jokes, or say describe to inspect the path."
         }
     }
 

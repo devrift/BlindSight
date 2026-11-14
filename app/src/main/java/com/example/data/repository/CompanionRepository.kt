@@ -349,9 +349,111 @@ class CompanionRepository(private val context: Context) {
         }
 
         // 10. Help & Commands
-        if (clean in listOf("help", "commands", "what can i say", "instructions", "what can you do")) {
-            val help = "I am your voice assistant. You can ask: what time is it, battery level, turn on flashlight, is the path safe, remember my keys are on the table, where are my keys, or say describe to look ahead."
+        if (clean in listOf("help", "commands", "what can i say", "instructions", "what can you do", "features", "kya kar sakte ho", "help me")) {
+            val help = if (currentLang == SupportedLanguage.HINDI) {
+                "मैं ब्लाइंडसाइट हूँ! आप मुझसे समय, बैटरी, टॉर्च चालू करने, सामने का दृश्य देखने, या कोई भी सामान्य बातचीत और चुटकुले पूछ सकते हैं।"
+            } else {
+                "I am BlindSight, your voice assistant. You can ask: what time is it, battery level, turn on flashlight, tell me a joke, is the path safe, remember my keys, or say describe to look ahead."
+            }
             return LocalCommandResult(help)
+        }
+
+        // 11. Identity ("what is your name", "who are you")
+        if (clean in listOf(
+                "what is your name", "whats your name", "who are you", "what are you",
+                "who made you", "tum kaun ho", "aap kaun ho", "apna naam batao",
+                "tell me your name", "what should i call you", "introduce yourself"
+            )) {
+            val reply = if (currentLang == SupportedLanguage.HINDI) {
+                "मेरा नाम ब्लाइंडसाइट है। मैं आपका बुद्धिमान और सुरक्षित नेविगेशन वॉयस असिस्टेंट साथी हूँ।"
+            } else {
+                "My name is BlindSight. I am your voice assistant and assistive navigation companion, ready to guide your path and answer any question."
+            }
+            return LocalCommandResult(reply)
+        }
+
+        // 12. Greetings ("hello", "hi", "hey", "namaste")
+        if (clean in listOf(
+                "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+                "namaste", "vanakkam", "kem cho", "namashkar", "hola", "bonjour"
+            )) {
+            val reply = if (currentLang == SupportedLanguage.HINDI) {
+                "नमस्ते! मैं ब्लाइंडसाइट हूँ। सभी सेंसर और ऑडियो सिस्टम सक्रिय हैं। आज मैं आपकी क्या सहायता करूँ?"
+            } else {
+                "Hello! BlindSight is ready and listening. All reflex sensors and audio systems are active. How can I help you today?"
+            }
+            return LocalCommandResult(reply)
+        }
+
+        // 13. How are you / Well-being
+        if (clean in listOf("how are you", "how are you doing", "kaise ho", "kya haal hai", "how do you do")) {
+            val reply = if (currentLang == SupportedLanguage.HINDI) {
+                "मैं बिल्कुल ठीक हूँ और आपकी सुरक्षित यात्रा के लिए पूरी तरह तैयार हूँ! आप कैसे हैं?"
+            } else {
+                "I am doing great and all systems are running at peak performance! How are you feeling today?"
+            }
+            return LocalCommandResult(reply)
+        }
+
+        // 14. Jokes & Fun
+        if (clean in listOf(
+                "tell me a joke", "tell a joke", "say a joke", "make me laugh",
+                "joke", "chutkula", "chutkula sunao", "tell another joke"
+            )) {
+            val jokesEn = listOf(
+                "Why do programmers prefer dark mode? Because light attracts bugs!",
+                "Why did the computer go to the doctor? Because it had a virus!",
+                "What do you call a fake noodle? An impasta!",
+                "Why don't scientists trust atoms? Because they make up everything!",
+                "Why did the bicycle fall over? Because it was two tired!"
+            )
+            val jokesHi = listOf(
+                "टीचर ने पूछा: एक साल में कितने महीने होते हैं? संजू बोला: 10 महीने! टीचर: 2 महीने कहाँ गए? संजू: वो तो 2 महीने स्कूल की छुट्टी में कट जाते हैं!",
+                "संजू डॉक्टर के पास गया: डॉक्टर साहब, जब मैं चाय पीता हूँ तो मेरी दाहिनी आँख में दर्द होता है। डॉक्टर: चाय पीते वक्त कप में से चम्मच निकाल लिया करो!",
+                "कंप्यूटर डॉक्टर के पास गया और बोला: मुझे बुखार आ गया है! डॉक्टर ने कहा: खिड़की खोलो, विंडोज़ में वायरस है!"
+            )
+            val joke = if (currentLang == SupportedLanguage.HINDI) {
+                jokesHi.random()
+            } else {
+                jokesEn.random()
+            }
+            return LocalCommandResult(joke)
+        }
+
+        // 15. Gratitude & Compliments
+        if (clean in listOf("thank you", "thanks", "good job", "great job", "well done", "dhanyawad", "shukriya", "nice")) {
+            val reply = if (currentLang == SupportedLanguage.HINDI) {
+                "आपका बहुत-बहुत स्वागत है! मैं हर कदम पर आपकी सुरक्षा और सहायता के लिए यहाँ हूँ।"
+            } else {
+                "You're very welcome! I'm glad I could help. Let me know whenever you need anything else."
+            }
+            return LocalCommandResult(reply)
+        }
+
+        // 16. Simple Offline Math
+        val mathRegex = Regex("(?:what is|calculate|solve|what's)?\\s*(\\d+)\\s*([+\\-*/x]|plus|minus|times|multiplied by|divided by)\\s*(\\d+)", RegexOption.IGNORE_CASE)
+        val mathMatch = mathRegex.find(clean)
+        if (mathMatch != null) {
+            val num1 = mathMatch.groupValues[1].toLongOrNull()
+            val op = mathMatch.groupValues[2].lowercase()
+            val num2 = mathMatch.groupValues[3].toLongOrNull()
+            if (num1 != null && num2 != null) {
+                val res: Long? = when {
+                    op in listOf("+", "plus") -> num1 + num2
+                    op in listOf("-", "minus") -> num1 - num2
+                    op in listOf("*", "x", "times", "multiplied by") -> num1 * num2
+                    op in listOf("/", "divided by") && num2 != 0L -> num1 / num2
+                    else -> null
+                }
+                if (res != null) {
+                    val reply = if (currentLang == SupportedLanguage.HINDI) {
+                        "$num1 $op $num2 का उत्तर $res है।"
+                    } else {
+                        "$num1 $op $num2 equals $res."
+                    }
+                    return LocalCommandResult(reply)
+                }
+            }
         }
 
         return null
@@ -366,61 +468,81 @@ class CompanionRepository(private val context: Context) {
         val apiKey = getGeminiApiKey()
         if (apiKey.isBlank()) return@withContext null
 
-        try {
-            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$apiKey")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-            conn.doOutput = true
+        val candidateModels = listOf(
+            "gemini-3.5-flash",
+            "gemini-flash-latest",
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-flash-lite-latest"
+        )
 
-            val partsArr = JSONArray()
-            val sysInstruction = if (lang == SupportedLanguage.HINDI) {
-                "आप ब्लाइंडसाइट हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक वॉयस असिस्टेंट। उत्तर 2 वाक्यों के भीतर और सीधे व उपयोगी रखें।"
+        val sysInstruction = if (!imageBase64.isNullOrBlank()) {
+            if (lang == SupportedLanguage.HINDI) {
+                "आप ब्लाइंडसाइट हैं, दृष्टिबाधित उपयोगकर्ताओं के लिए एक सहायक नेविगेशन साथी। कैमरे में जो वास्तव में दिख रहा है, केवल वही 1-2 सीधे वाक्यों में बताएं। कभी भी '10 बजे की दिशा' जैसे शब्द न बोलें। यदि रास्ता साफ है या बंद है तो सीधे बताएं।"
             } else {
-                "You are BlindSight, a voice assistant for blind users. Keep responses under 2 sentences. Be direct, clear, and focused on safe navigation."
+                "You are BlindSight, an assistive navigation companion for a blind user. Describe ONLY what is genuinely visible in the camera view in 1 to 2 direct sentences. Never use clock-face coordinates. State clearly if path is open or blocked."
             }
-            partsArr.put(JSONObject().apply {
+        } else {
+            if (lang == SupportedLanguage.HINDI) {
+                "आप ब्लाइंडसाइट हैं, एक बुद्धिमान, दोस्ताना और मददगार वॉयस असिस्टेंट साथी (गूगल असिस्टेंट की तरह)। सामान्य बातचीत करें, सवालों के जवाब दें, चुटकुले सुनाएं, गणित हल करें। उत्तर 2-3 वाक्यों में स्वाभाविक रखें। जब तक उपयोगकर्ता खुद न पूछे, कैमरे या बाधाओं का ज़िक्र न करें। यदि नाम पूछा जाए, तो कहें कि आपका नाम 'ब्लाइंडसाइट' है।"
+            } else {
+                "You are BlindSight, an intelligent, friendly, witty, and helpful AI conversational companion (like Google Assistant). Chat naturally, answer questions, tell jokes, solve math, and assist with any topic. Keep answers concise under 2-3 natural sentences. DO NOT talk about camera, obstacles, or navigation unless the user specifically asks about their surroundings. If asked for your name, state clearly that you are BlindSight."
+            }
+        }
+
+        val partsArr = JSONArray().apply {
+            put(JSONObject().apply {
                 put("text", "$sysInstruction\n\nUser Question: $prompt")
             })
-
             if (!imageBase64.isNullOrBlank()) {
-                partsArr.put(JSONObject().apply {
+                put(JSONObject().apply {
                     put("inline_data", JSONObject().apply {
                         put("mime_type", "image/jpeg")
                         put("data", imageBase64)
                     })
                 })
             }
-
-            val body = JSONObject().apply {
-                put("contents", JSONArray().put(JSONObject().apply {
-                    put("parts", partsArr)
-                }))
-            }
-
-            conn.outputStream.use { os ->
-                os.write(body.toString().toByteArray(Charsets.UTF_8))
-            }
-
-            if (conn.responseCode == 200) {
-                val resText = conn.inputStream.bufferedReader().use { it.readText() }
-                val resJson = JSONObject(resText)
-                val candidates = resJson.optJSONArray("candidates")
-                val candidate = candidates?.optJSONObject(0)
-                val content = candidate?.optJSONObject("content")
-                val parts = content?.optJSONArray("parts")
-                val text = parts?.optJSONObject(0)?.optString("text")?.trim()
-                if (!text.isNullOrBlank()) {
-                    return@withContext text
-                }
-            } else {
-                Log.w("CompanionRepository", "Gemini HTTP error ${conn.responseCode}")
-            }
-        } catch (e: Exception) {
-            Log.w("CompanionRepository", "Gemini call notice: ${e.message}")
         }
+
+        val requestBody = JSONObject().apply {
+            put("contents", JSONArray().put(JSONObject().apply {
+                put("parts", partsArr)
+            }))
+        }.toString()
+
+        for (model in candidateModels) {
+            try {
+                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.connectTimeout = 7000
+                conn.readTimeout = 7000
+                conn.doOutput = true
+
+                conn.outputStream.use { os ->
+                    os.write(requestBody.toByteArray(Charsets.UTF_8))
+                }
+
+                if (conn.responseCode == 200) {
+                    val resText = conn.inputStream.bufferedReader().use { it.readText() }
+                    val resJson = JSONObject(resText)
+                    val candidates = resJson.optJSONArray("candidates")
+                    val candidate = candidates?.optJSONObject(0)
+                    val content = candidate?.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    val text = parts?.optJSONObject(0)?.optString("text")?.trim()
+                    if (!text.isNullOrBlank()) {
+                        return@withContext text
+                    }
+                } else {
+                    Log.w("CompanionRepository", "Model $model returned HTTP ${conn.responseCode}, trying next fallback...")
+                }
+            } catch (e: Exception) {
+                Log.w("CompanionRepository", "Model $model exception: ${e.message}")
+            }
+        }
+
         return@withContext null
     }
 
