@@ -24,7 +24,7 @@
 // ##############################################################
 // ###############  EDIT THESE 4 LINES ONLY  ####################
 const char *WIFI_SSID     = "BlindSight";        // your hotspot name
-const char *WIFI_PASSWORD = "CHANGE_ME";         // your hotspot password
+const char *WIFI_PASSWORD = "123456";         // your hotspot password
 const char *PI_URL        = "http://192.168.4.1:5000";  // Pi IP + :5000
 // Paste the CAM MAC printed by the camera sketch, e.g. {0x3C,0x71,0xBF,0x12,0x34,0x56}
 // Packets from any other transmitter are ignored.
