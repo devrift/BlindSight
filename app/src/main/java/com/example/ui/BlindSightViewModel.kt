@@ -84,9 +84,18 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                     ttsHelper?.playEarcon(TtsHelper.EarconType.ERROR)
                 }
             },
-            onListeningStateChanged = { _ ->
-                // Do not prematurely reset COMMAND_LISTENING to IDLE here because onEndOfSpeech() fires
-                // right before onResults() is delivered.
+            onListeningStateChanged = { listening ->
+                if (!listening && _uiState.value.appState == AppState.COMMAND_LISTENING) {
+                    viewModelScope.launch {
+                        delay(600)
+                        if (_uiState.value.appState == AppState.COMMAND_LISTENING) {
+                            _uiState.value = _uiState.value.copy(
+                                appState = AppState.IDLE,
+                                statusText = "Ready. Tap center button to speak."
+                            )
+                        }
+                    }
+                }
             }
         )
     }

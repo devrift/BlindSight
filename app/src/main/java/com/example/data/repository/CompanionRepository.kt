@@ -358,104 +358,6 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(help)
         }
 
-        // 11. Identity ("what is your name", "who are you")
-        if (clean in listOf(
-                "what is your name", "whats your name", "who are you", "what are you",
-                "who made you", "tum kaun ho", "aap kaun ho", "apna naam batao",
-                "tell me your name", "what should i call you", "introduce yourself"
-            )) {
-            val reply = if (currentLang == SupportedLanguage.HINDI) {
-                "मेरा नाम ब्लाइंडसाइट है। मैं आपका बुद्धिमान और सुरक्षित नेविगेशन वॉयस असिस्टेंट साथी हूँ।"
-            } else {
-                "My name is BlindSight. I am your voice assistant and assistive navigation companion, ready to guide your path and answer any question."
-            }
-            return LocalCommandResult(reply)
-        }
-
-        // 12. Greetings ("hello", "hi", "hey", "namaste")
-        if (clean in listOf(
-                "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
-                "namaste", "vanakkam", "kem cho", "namashkar", "hola", "bonjour"
-            )) {
-            val reply = if (currentLang == SupportedLanguage.HINDI) {
-                "नमस्ते! मैं ब्लाइंडसाइट हूँ। सभी सेंसर और ऑडियो सिस्टम सक्रिय हैं। आज मैं आपकी क्या सहायता करूँ?"
-            } else {
-                "Hello! BlindSight is ready and listening. All reflex sensors and audio systems are active. How can I help you today?"
-            }
-            return LocalCommandResult(reply)
-        }
-
-        // 13. How are you / Well-being
-        if (clean in listOf("how are you", "how are you doing", "kaise ho", "kya haal hai", "how do you do")) {
-            val reply = if (currentLang == SupportedLanguage.HINDI) {
-                "मैं बिल्कुल ठीक हूँ और आपकी सुरक्षित यात्रा के लिए पूरी तरह तैयार हूँ! आप कैसे हैं?"
-            } else {
-                "I am doing great and all systems are running at peak performance! How are you feeling today?"
-            }
-            return LocalCommandResult(reply)
-        }
-
-        // 14. Jokes & Fun
-        if (clean in listOf(
-                "tell me a joke", "tell a joke", "say a joke", "make me laugh",
-                "joke", "chutkula", "chutkula sunao", "tell another joke"
-            )) {
-            val jokesEn = listOf(
-                "Why do programmers prefer dark mode? Because light attracts bugs!",
-                "Why did the computer go to the doctor? Because it had a virus!",
-                "What do you call a fake noodle? An impasta!",
-                "Why don't scientists trust atoms? Because they make up everything!",
-                "Why did the bicycle fall over? Because it was two tired!"
-            )
-            val jokesHi = listOf(
-                "टीचर ने पूछा: एक साल में कितने महीने होते हैं? संजू बोला: 10 महीने! टीचर: 2 महीने कहाँ गए? संजू: वो तो 2 महीने स्कूल की छुट्टी में कट जाते हैं!",
-                "संजू डॉक्टर के पास गया: डॉक्टर साहब, जब मैं चाय पीता हूँ तो मेरी दाहिनी आँख में दर्द होता है। डॉक्टर: चाय पीते वक्त कप में से चम्मच निकाल लिया करो!",
-                "कंप्यूटर डॉक्टर के पास गया और बोला: मुझे बुखार आ गया है! डॉक्टर ने कहा: खिड़की खोलो, विंडोज़ में वायरस है!"
-            )
-            val joke = if (currentLang == SupportedLanguage.HINDI) {
-                jokesHi.random()
-            } else {
-                jokesEn.random()
-            }
-            return LocalCommandResult(joke)
-        }
-
-        // 15. Gratitude & Compliments
-        if (clean in listOf("thank you", "thanks", "good job", "great job", "well done", "dhanyawad", "shukriya", "nice")) {
-            val reply = if (currentLang == SupportedLanguage.HINDI) {
-                "आपका बहुत-बहुत स्वागत है! मैं हर कदम पर आपकी सुरक्षा और सहायता के लिए यहाँ हूँ।"
-            } else {
-                "You're very welcome! I'm glad I could help. Let me know whenever you need anything else."
-            }
-            return LocalCommandResult(reply)
-        }
-
-        // 16. Simple Offline Math
-        val mathRegex = Regex("(?:what is|calculate|solve|what's)?\\s*(\\d+)\\s*([+\\-*/x]|plus|minus|times|multiplied by|divided by)\\s*(\\d+)", RegexOption.IGNORE_CASE)
-        val mathMatch = mathRegex.find(clean)
-        if (mathMatch != null) {
-            val num1 = mathMatch.groupValues[1].toLongOrNull()
-            val op = mathMatch.groupValues[2].lowercase()
-            val num2 = mathMatch.groupValues[3].toLongOrNull()
-            if (num1 != null && num2 != null) {
-                val res: Long? = when {
-                    op in listOf("+", "plus") -> num1 + num2
-                    op in listOf("-", "minus") -> num1 - num2
-                    op in listOf("*", "x", "times", "multiplied by") -> num1 * num2
-                    op in listOf("/", "divided by") && num2 != 0L -> num1 / num2
-                    else -> null
-                }
-                if (res != null) {
-                    val reply = if (currentLang == SupportedLanguage.HINDI) {
-                        "$num1 $op $num2 का उत्तर $res है।"
-                    } else {
-                        "$num1 $op $num2 equals $res."
-                    }
-                    return LocalCommandResult(reply)
-                }
-            }
-        }
-
         return null
     }
 
@@ -469,11 +371,11 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val candidateModels = listOf(
-            "gemini-3.8-flash",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-flash-latest"
+            "gemini-3-flash-preview",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash"
         )
 
         val sysInstruction = if (!imageBase64.isNullOrBlank()) {
@@ -508,6 +410,13 @@ class CompanionRepository(private val context: Context) {
             put("contents", JSONArray().put(JSONObject().apply {
                 put("parts", partsArr)
             }))
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0.7)
+                put("maxOutputTokens", 200)
+                put("thinkingConfig", JSONObject().apply {
+                    put("thinkingBudget", 0)
+                })
+            })
         }.toString()
 
         for (model in candidateModels) {
@@ -516,8 +425,8 @@ class CompanionRepository(private val context: Context) {
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3500
+                conn.connectTimeout = 4000
+                conn.readTimeout = 8000
                 conn.doOutput = true
 
                 conn.outputStream.use { os ->
@@ -536,8 +445,8 @@ class CompanionRepository(private val context: Context) {
                         return@withContext text
                     }
                 } else if (conn.responseCode == 429) {
-                    Log.w("CompanionRepository", "Gemini API quota exceeded (HTTP 429), switching to instant on-device assistant.")
-                    break
+                    Log.w("CompanionRepository", "Model $model returned 429, trying next candidate...")
+                    continue
                 } else {
                     Log.w("CompanionRepository", "Model $model returned HTTP ${conn.responseCode}, trying next fallback...")
                 }

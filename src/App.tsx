@@ -1,302 +1,911 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  AppState,
+  ListenMode,
+  LanguageCode,
+  TextSize,
+  ChatMessage,
+  ReflexTelemetry,
+  VoiceOption
+} from './types';
+import { LANGUAGES, CompanionStateService, HELP_TEXT } from './services/companionState';
+import { AudioService, WAKE_PHRASES, STOP_WORDS, SCENE_WORDS, cleanSpeech } from './services/audioService';
+import { VisionAiService } from './services/visionAi';
+import { ReflexService } from './services/reflexService';
+import { Header } from './components/Header';
+import { StatusCard } from './components/StatusCard';
+import { MicCard } from './components/MicCard';
+import { ControlsCard } from './components/ControlsCard';
+import { ConversationLog } from './components/ConversationLog';
+import { TextInputForm } from './components/TextInputForm';
+import { ReflexTelemetryModal } from './components/ReflexTelemetryModal';
+import { CameraCaptureModal } from './components/CameraCaptureModal';
+import { ApkQrModal } from './components/ApkQrModal';
 
 export const App: React.FC = () => {
-  const [downloadUrl, setDownloadUrl] = useState<string>('/BlindSight-testing.apk');
-  const [copied, setCopied] = useState<boolean>(false);
-  const [downloadTriggered, setDownloadTriggered] = useState<boolean>(false);
+  // App state
+  const [appState, setAppState] = useState<AppState>('idle');
+  const [listenMode, setListenMode] = useState<ListenMode>(() => {
+    return (localStorage.getItem('blindsight_mode') as ListenMode) || 'wake';
+  });
+  const [language, setLanguage] = useState<LanguageCode>('en');
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [chosenVoiceURI, setChosenVoiceURI] = useState<string>(() => {
+    return localStorage.getItem('blindsight_voice') || '';
+  });
+  const [token, setToken] = useState<string>(() => {
+    return localStorage.getItem('blindsight_token') || '';
+  });
+  const [noiseGate, setNoiseGate] = useState<boolean>(() => {
+    return localStorage.getItem('blindsight_noisegate') === 'on';
+  });
+  const [includeCamera, setIncludeCamera] = useState<boolean>(true);
+  const [textSize, setTextSize] = useState<TextSize>(() => {
+    return (localStorage.getItem('blindsight_text_size') as TextSize) || 'md';
+  });
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const fullUrl = `${window.location.origin}/BlindSight-testing.apk`;
-      setDownloadUrl(fullUrl);
+  // UI status and feedback
+  const [statusLine, setStatusLine] = useState<string>('Ready');
+  const [micHint, setMicHint] = useState<string>('Say "hey BlindSight", or tap the button.');
+  const [heardText, setHeardText] = useState<string>('');
+  const [micMeterPct, setMicMeterPct] = useState<number>(0);
+  const [isHot, setIsHot] = useState<boolean>(false);
+  const [isCue, setIsCue] = useState<boolean>(false);
+  const [announcement, setAnnouncement] = useState<string>('');
+  const [latestFrameUrl, setLatestFrameUrl] = useState<string | null>(null);
 
-      // Auto-trigger download if url has ?download=1
-      if (window.location.search.includes('download=1')) {
-        handleDownload();
+  // Messages and Telemetry
+  const [messages, setMessages] = useState<ChatMessage[]>(() => CompanionStateService.getHistory());
+  const [telemetry, setTelemetry] = useState<ReflexTelemetry>(() => ReflexService.getTelemetry());
+
+  // Modals
+  const [isReflexModalOpen, setIsReflexModalOpen] = useState(false);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+
+  // Recognition refs
+  const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef<boolean>(false);
+  const activeSessionRef = useRef<'wake' | 'command' | null>(null);
+  const isTransitioningRef = useRef<boolean>(false);
+  const networkRetriesRef = useRef<number>(0);
+  const hasErrorRef = useRef<boolean>(false);
+  const isHandsfreeRunningRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
+  const appStateRef = useRef<AppState>(appState);
+  appStateRef.current = appState;
+  const listenModeRef = useRef<ListenMode>(listenMode);
+  listenModeRef.current = listenMode;
+  const startRecognitionRef = useRef<(mode: 'wake' | 'command') => void>(() => {});
+  const runHandsfreeLoopRef = useRef<() => void>(() => {});
+
+  const announce = useCallback((text: string) => {
+    setAnnouncement('');
+    setTimeout(() => setAnnouncement(text), 40);
+  }, []);
+
+  // Text size change handler
+  const handleTextSizeChange = (size: TextSize) => {
+    setTextSize(size);
+    localStorage.setItem('blindsight_text_size', size);
+    if (size === 'md') {
+      document.documentElement.removeAttribute('data-text-size');
+    } else {
+      document.documentElement.setAttribute('data-text-size', size);
+    }
+    AudioService.playEarcon('tick');
+    announce(`Text size ${size === 'md' ? 'normal' : size === 'lg' ? 'large' : 'extra large'}`);
+  };
+
+  const updateStatus = useCallback((line: string, state?: AppState) => {
+    setStatusLine(line);
+    if (state) setAppState(state);
+
+    const mode = state || appStateRef.current;
+    const modeToHint: Record<AppState, string> = {
+      idle:
+        listenModeRef.current === 'button'
+          ? 'Tap the big button and speak.'
+          : listenModeRef.current === 'handsfree'
+          ? 'Hands-free: just speak.'
+          : 'Say "hey BlindSight", or tap the button.',
+      wake: 'Waiting for "hey BlindSight"…',
+      listen: 'Go ahead, I am listening.',
+      think: 'One moment…',
+      speak: 'Tap the button to interrupt me.'
+    };
+    setMicHint(modeToHint[mode]);
+  }, []);
+
+  // Voice output helper
+  const speakReply = useCallback(
+    (text: string, onDone?: () => void) => {
+      setAppState('speak');
+      updateStatus('Speaking', 'speak');
+      AudioService.speak(
+        text,
+        language,
+        chosenVoiceURI,
+        () => {
+          setAppState('speak');
+        },
+        () => {
+          setAppState('idle');
+          updateStatus('Ready', 'idle');
+          if (onDone) onDone();
+          setTimeout(() => {
+            if (listenModeRef.current === 'wake') {
+              startRecognitionRef.current('wake');
+            } else if (listenModeRef.current === 'handsfree') {
+              startRecognitionRef.current('command');
+            }
+          }, 350);
+        }
+      );
+    },
+    [language, chosenVoiceURI, updateStatus]
+  );
+
+  // Command router
+  const handleCommand = useCallback(
+    async (rawPrompt: string, frameDataUrl?: string) => {
+      const prompt = rawPrompt.trim();
+      if (!prompt) return;
+
+      AudioService.unlockAudio();
+      setHeardText(prompt);
+
+      const cleaned = cleanSpeech(prompt);
+
+      // Check Stop words
+      if (STOP_WORDS.some(w => cleaned === w || cleaned.startsWith(w + ' '))) {
+        AudioService.stopSpeaking();
+        AudioService.playEarcon('tick');
+        updateStatus('Stopped.', 'idle');
+        announce('Stopped.');
+        return;
       }
+
+      // Check Help
+      if (['help', 'commands', 'what can i say', 'instructions'].includes(cleaned)) {
+        announce(HELP_TEXT);
+        speakReply(HELP_TEXT);
+        return;
+      }
+
+      // Check Status
+      if (['read status', 'system status', 'status report', 'status'].includes(cleaned)) {
+        const srOk = AudioService.isSpeechRecognitionSupported();
+        const ttsOk = typeof window !== 'undefined' && !!window.speechSynthesis;
+        let gateway = 'unreachable';
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 1200);
+          const r = await fetch('/api/config', { signal: ctrl.signal });
+          gateway = r.ok ? 'reachable' : 'unreachable';
+          clearTimeout(timer);
+        } catch {
+          gateway = 'unreachable';
+        }
+        const statusSummary =
+          `System status: speech recognition ${srOk ? 'available' : 'not available in this browser'}, spoken replies ${ttsOk ? 'ready' : 'unavailable'}, companion gateway ${gateway}. The ultrasonic reflex runs on the head unit and cannot be observed from this phone.`;
+        announce(statusSummary);
+        speakReply(statusSummary);
+        return;
+      }
+
+      // Record in conversation history
+      const userMsg = CompanionStateService.addHistoryMessage('user', prompt);
+      setMessages(prev => [...prev, userMsg]);
+
+      // Check for local state commands (greetings, remember, forget, language, time, etc.)
+      const localResult = CompanionStateService.processLocalCommand(prompt, language);
+      if (localResult && localResult.isLocal) {
+        if (localResult.newLanguage) {
+          setLanguage(localResult.newLanguage);
+        }
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', localResult.reply);
+        setMessages(prev => [...prev, assistantMsg]);
+        announce(localResult.reply);
+        speakReply(localResult.reply);
+        return;
+      }
+
+      // AI Vision or Conversational companion
+      setAppState('think');
+      updateStatus('Thinking…', 'think');
+      AudioService.playEarcon('think');
+
+      const isSceneQuery = SCENE_WORDS.some(p => cleaned === p || cleaned.startsWith(p + ' '));
+      const shouldAttachCamera = isSceneQuery && includeCamera;
+
+      const result = await VisionAiService.askCompanion(prompt, {
+        useCamera: shouldAttachCamera,
+        imageDataUrl: frameDataUrl,
+        langCode: language,
+        apiToken: token
+      });
+
+      const assistantMsg = CompanionStateService.addHistoryMessage(
+        'assistant',
+        result.reply,
+        !result.ok
+      );
+      setMessages(prev => [...prev, assistantMsg]);
+      announce(result.reply);
+      speakReply(result.reply);
+    },
+    [language, includeCamera, token, updateStatus, speakReply, announce]
+  );
+
+  // Speech Recognition Session
+  const startRecognition = useCallback(
+    (mode: 'wake' | 'command') => {
+      if (!AudioService.isSpeechRecognitionSupported()) {
+        announce('Speech recognition is not supported in this browser. Please use text input below.');
+        return;
+      }
+
+      AudioService.unlockAudio();
+      AudioService.stopSpeaking();
+      // Release any open mic analytics stream to give Web Speech API exclusive mic access on Windows
+      AudioService.stopMicAnalytics();
+
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.abort();
+        }
+      } catch {}
+
+      activeSessionRef.current = mode;
+      isTransitioningRef.current = false;
+
+      const rec = new SpeechRecognition();
+      const langConfig = LANGUAGES[language] || LANGUAGES.en;
+      let targetLang = langConfig.speechLang;
+      if (language === 'en' && typeof navigator !== 'undefined' && navigator.language && navigator.language.toLowerCase().startsWith('en')) {
+        targetLang = navigator.language;
+      }
+      rec.lang = targetLang || 'en-US';
+      rec.continuous = mode === 'wake' || listenModeRef.current === 'handsfree';
+      rec.interimResults = mode === 'wake';
+
+      rec.onstart = () => {
+        isListeningRef.current = true;
+        hasErrorRef.current = false;
+        networkRetriesRef.current = 0;
+        if (mode === 'wake') {
+          setAppState('wake');
+          updateStatus('Waiting for "hey BlindSight"…', 'wake');
+        } else {
+          setAppState('listen');
+          updateStatus('Listening… go ahead.', 'listen');
+        }
+      };
+
+      rec.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript + ' ';
+        }
+        transcript = transcript.trim();
+        if (!transcript) return;
+
+        const cleaned = cleanSpeech(transcript);
+
+        if (mode === 'wake') {
+          const matchedPhrase = WAKE_PHRASES.find(phrase => cleaned.includes(phrase));
+          if (matchedPhrase) {
+            // Wake word detected! Transition safely to command session
+            isTransitioningRef.current = true;
+            try { rec.abort(); } catch {}
+            setIsCue(true);
+            setTimeout(() => setIsCue(false), 450);
+
+            // Extract prompt after wake word if spoken in one breath
+            const phraseIdx = cleaned.indexOf(matchedPhrase);
+            const remaining = cleaned.substring(phraseIdx + matchedPhrase.length).trim();
+
+            if (remaining.length > 2) {
+              isTransitioningRef.current = false;
+              handleCommand(remaining);
+            } else {
+              AudioService.playEarcon('wake');
+              setTimeout(() => {
+                isTransitioningRef.current = false;
+                startRecognition('command');
+              }, 180);
+            }
+            return;
+          }
+        } else {
+          // Command mode: process when finalized
+          let finalTranscript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript + ' ';
+            }
+          }
+          finalTranscript = finalTranscript.trim();
+          if (finalTranscript) {
+            handleCommand(finalTranscript);
+          }
+        }
+      };
+
+      rec.onerror = (event: any) => {
+        const err = event.error;
+        if (err === 'no-speech' || err === 'aborted') return; // ordinary endings
+
+        hasErrorRef.current = true;
+
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          const msg = 'Microphone permission denied. Tap the big button and allow microphone access in your browser.';
+          updateStatus(msg, 'idle');
+          announce(msg);
+          return;
+        }
+
+        if (err === 'audio-capture') {
+          const msg = 'No microphone found. Please connect a microphone.';
+          updateStatus(msg, 'idle');
+          announce(msg);
+          return;
+        }
+
+        if (err === 'network') {
+          hasErrorRef.current = true;
+          // In Brave or when Google Speech API is unreachable, switch to local Web Audio hands-free loop
+          const msg = 'Local audio engine active. Just speak naturally.';
+          updateStatus(msg, 'listen');
+          announce(msg);
+          setListenMode('handsfree');
+          listenModeRef.current = 'handsfree';
+          setTimeout(() => {
+            if (runHandsfreeLoopRef.current) {
+              runHandsfreeLoopRef.current();
+            }
+          }, 300);
+          return;
+        }
+
+        updateStatus(`Speech note: ${err}.`, 'idle');
+      };
+
+      rec.onend = () => {
+        isListeningRef.current = false;
+
+        // If an error occurred, do NOT auto-restart here! Let the error handler or user action restart it
+        if (hasErrorRef.current) {
+          return;
+        }
+
+        // If intentionally transitioning to command, do not re-run wake
+        if (isTransitioningRef.current) {
+          return;
+        }
+
+        // If this was a command session and ended while listening (e.g. silence timeout)
+        if (activeSessionRef.current === 'command') {
+          activeSessionRef.current = null;
+          if (appStateRef.current === 'listen') {
+            setAppState('idle');
+            if (listenModeRef.current === 'wake') {
+              updateStatus('Waiting for "hey BlindSight"…', 'wake');
+              setTimeout(() => {
+                if (listenModeRef.current === 'wake' && appStateRef.current === 'idle') {
+                  startRecognition('wake');
+                }
+              }, 400);
+            } else if (listenModeRef.current === 'handsfree') {
+              setTimeout(() => {
+                if (listenModeRef.current === 'handsfree' && appStateRef.current === 'idle') {
+                  if (runHandsfreeLoopRef.current) runHandsfreeLoopRef.current();
+                }
+              }, 400);
+            } else {
+              updateStatus('Tap the big button and speak.', 'idle');
+            }
+          }
+          return;
+        }
+
+        // Auto-restart wake listener if we were in wake mode and not speaking/thinking
+        if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+          setTimeout(() => {
+            if (listenModeRef.current === 'wake' && appStateRef.current !== 'speak' && appStateRef.current !== 'think' && activeSessionRef.current !== 'command') {
+              startRecognition('wake');
+            }
+          }, 350);
+        } else if (listenModeRef.current === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+          setTimeout(() => {
+            if (listenModeRef.current === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
+              if (runHandsfreeLoopRef.current) runHandsfreeLoopRef.current();
+            }
+          }, 450);
+        }
+      };
+
+      recognitionRef.current = rec;
+      startRecognitionRef.current = startRecognition;
+      try {
+        rec.start();
+      } catch {}
+    },
+    [language, updateStatus, handleCommand, announce]
+  );
+
+  // Stop all active listening engines (Web Speech & Web Audio)
+  const stopAllListening = useCallback(() => {
+    isHandsfreeRunningRef.current = false;
+    AudioService.stopAdaptiveRecording();
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
     }
   }, []);
 
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=12&data=${encodeURIComponent(downloadUrl)}`;
+  // Continuous Hands-Free VAD Loop (100% Local Web Audio, works in Brave/Chrome/Edge/Android)
+  const runHandsfreeLoop = useCallback(async () => {
+    if (isHandsfreeRunningRef.current) return;
+    isHandsfreeRunningRef.current = true;
 
-  const handleDownload = () => {
-    setDownloadTriggered(true);
-    const link = document.createElement('a');
-    link.href = '/BlindSight-testing.apk';
-    link.download = 'BlindSight-testing.apk';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => setDownloadTriggered(false), 4000);
-  };
+    while (listenModeRef.current === 'handsfree' && isMountedRef.current) {
+      if (appStateRef.current === 'speak' || appStateRef.current === 'think') {
+        await new Promise(r => setTimeout(r, 350));
+        continue;
+      }
 
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(downloadUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Fallback
+      setAppState('listen');
+      updateStatus('Hands-free: just speak.', 'listen');
+
+      const recResult = await AudioService.recordVoiceAdaptive({
+        maxDurationMs: 8500,
+        silenceTimeoutMs: 850,
+        noSpeechTimeoutMs: 3800,
+        onLevel: (lvl, _rms, isHotLevel) => {
+          setMicMeterPct(Math.min(100, Math.round(lvl * 100)));
+          setIsHot(isHotLevel);
+        },
+        onSpeechStart: () => {
+          updateStatus('Hearing your voice…', 'listen');
+        }
+      });
+
+      setMicMeterPct(0);
+      setIsHot(false);
+
+      if (listenModeRef.current !== 'handsfree' || !isMountedRef.current) break;
+
+      if (!recResult || !recResult.blob || recResult.blob.size < 300 || !recResult.speechDetected) {
+        continue;
+      }
+
+      // User spoke! Send audio to BlindSight voice engine
+      setAppState('think');
+      updateStatus('Thinking…', 'think');
+      AudioService.playEarcon('think');
+
+      const frameToAttach = includeCamera ? (latestFrameUrl || VisionAiService.getLatestFrame()) : null;
+      const turn = await AudioService.sendVoiceToJarvis(
+        recResult.blob,
+        language,
+        () => {
+          setAppState('speak');
+          updateStatus('Speaking…', 'speak');
+        },
+        () => {
+          setAppState('idle');
+          updateStatus('Hands-free: just speak.', 'idle');
+        },
+        frameToAttach
+      );
+
+      if (turn.success && turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
+        setMessages(prev => [...prev, userMsg, assistantMsg]);
+        announce(turn.reply);
+      } else if (turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        setMessages(prev => [...prev, userMsg]);
+        const fallbackResult = await VisionAiService.askCompanion(turn.transcript, {
+          useCamera: includeCamera,
+          langCode: language,
+          apiToken: token
+        });
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
+        setMessages(prev => [...prev, assistantMsg]);
+        announce(fallbackResult.reply);
+        speakReply(fallbackResult.reply);
+      }
+
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    isHandsfreeRunningRef.current = false;
+  }, [includeCamera, language, latestFrameUrl, updateStatus, announce, speakReply, token]);
+
+  runHandsfreeLoopRef.current = runHandsfreeLoop;
+
+  // Stop speech/listening, then restore the chosen mode
+  const handleStop = useCallback(() => {
+    AudioService.stopSpeaking();
+    stopAllListening();
+    setAppState('idle');
+    updateStatus('Stopped.', 'idle');
+    announce('Stopped.');
+    if (listenModeRef.current === 'wake') {
+      setTimeout(() => startRecognition('wake'), 400);
+    } else if (listenModeRef.current === 'handsfree') {
+      setTimeout(() => runHandsfreeLoop(), 400);
+    }
+  }, [updateStatus, announce, stopAllListening, startRecognition, runHandsfreeLoop]);
+
+  // Big Mic Button click handler (Adaptive Voice Activity Detection)
+  const handleMicClick = async () => {
+    AudioService.unlockAudio();
+
+    if (appState === 'think') {
+      announce('One moment, still thinking.');
+      return;
+    }
+
+    if (appState === 'speak') {
+      handleStop();
+      return;
+    }
+
+    if (appState === 'listen') {
+      AudioService.stopAdaptiveRecording();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+      setAppState('idle');
+      updateStatus('Listening stopped.', 'idle');
+      announce('Listening stopped.');
+      return;
+    }
+
+    // Reset network retries counter
+    networkRetriesRef.current = 0;
+    setIsCue(true);
+    setTimeout(() => setIsCue(false), 450);
+
+    setAppState('listen');
+    updateStatus('Listening… speak naturally.', 'listen');
+    AudioService.playEarcon('listen');
+
+    // Run Adaptive VAD recording
+    const recResult = await AudioService.recordVoiceAdaptive({
+      maxDurationMs: 8000,
+      silenceTimeoutMs: 850,
+      noSpeechTimeoutMs: 3500,
+      onLevel: (lvl, _rms, isHotLevel) => {
+        setMicMeterPct(Math.min(100, Math.round(lvl * 100)));
+        setIsHot(isHotLevel);
+      },
+      onSpeechStart: () => {
+        updateStatus('Hearing your voice…', 'listen');
+      }
+    });
+
+    setMicMeterPct(0);
+    setIsHot(false);
+
+    if (!recResult || !recResult.blob || recResult.blob.size < 250) {
+      setAppState('idle');
+      updateStatus('I did not catch that. Tap the button and speak.', 'idle');
+      return;
+    }
+
+    setAppState('think');
+    updateStatus('Analyzing with Gemini AI…', 'think');
+    AudioService.playEarcon('think');
+
+    const frameToAttach = includeCamera ? (latestFrameUrl || VisionAiService.getLatestFrame()) : null;
+    const turn = await AudioService.sendVoiceToJarvis(
+      recResult.blob,
+      language,
+      () => {
+        setAppState('speak');
+        updateStatus('Speaking…', 'speak');
+      },
+      () => {
+        setAppState('idle');
+        updateStatus('Ready', 'idle');
+      },
+      frameToAttach
+    );
+
+    if (turn.success && turn.transcript) {
+      setHeardText(turn.transcript);
+      const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+      const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
+      setMessages(prev => [...prev, userMsg, assistantMsg]);
+      announce(turn.reply);
+    } else {
+      // Local fallback
+      if (turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        setMessages(prev => [...prev, userMsg]);
+        const fallbackResult = await VisionAiService.askCompanion(turn.transcript, {
+          useCamera: includeCamera,
+          langCode: language,
+          apiToken: token
+        });
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
+        setMessages(prev => [...prev, assistantMsg]);
+        announce(fallbackResult.reply);
+        speakReply(fallbackResult.reply);
+      } else {
+        const noAudioMsg = language === 'hi'
+          ? 'आपकी आवाज़ नहीं सुनाई दी। कृपया बटन दबाकर दोबारा बोलें।'
+          : 'I did not catch what you said. Please tap the button and speak again.';
+        updateStatus(noAudioMsg, 'idle');
+        announce(noAudioMsg);
+        speakReply(noAudioMsg);
+      }
     }
   };
 
+  // Init: load voices, start mic analytics if noise gate on, set text size
+  useEffect(() => {
+    if (textSize !== 'md') {
+      document.documentElement.setAttribute('data-text-size', textSize);
+    }
+
+    const loadVoiceList = () => {
+      const vList = AudioService.getAvailableVoices();
+      if (vList.length > 0) {
+        setVoices(vList);
+      }
+    };
+    loadVoiceList();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoiceList;
+    }
+
+    if (noiseGate && listenModeRef.current === 'button') {
+      AudioService.openMicAnalytics((pct, hot) => {
+        setMicMeterPct(pct);
+        setIsHot(hot);
+      });
+    }
+
+    // Auto-start listener on boot if in wake or handsfree mode
+    const bootTimer = setTimeout(() => {
+      if (listenModeRef.current === 'wake') {
+        startRecognition('wake');
+      } else if (listenModeRef.current === 'handsfree') {
+        runHandsfreeLoop();
+      } else {
+        updateStatus('Tap the big button and speak.', 'idle');
+      }
+    }, 600);
+
+    return () => {
+      isMountedRef.current = false;
+      clearTimeout(bootTimer);
+      stopAllListening();
+      AudioService.stopMicAnalytics();
+      AudioService.stopSpeaking();
+    };
+  }, [startRecognition, runHandsfreeLoop, stopAllListening, noiseGate, textSize, updateStatus]);
+
+  // Noise gate toggle
+  const handleNoiseGateToggle = (enabled: boolean) => {
+    setNoiseGate(enabled);
+    localStorage.setItem('blindsight_noisegate', enabled ? 'on' : 'off');
+    if (enabled) {
+      if (appState === 'idle' && listenMode === 'button') {
+        AudioService.openMicAnalytics((pct, hot) => {
+          setMicMeterPct(pct);
+          setIsHot(hot);
+        });
+      }
+      announce('Noise gate on. Level bar reflects current audio.');
+    } else {
+      AudioService.stopMicAnalytics();
+      setMicMeterPct(0);
+      setIsHot(false);
+      announce('Noise gate off.');
+    }
+  };
+
+  // Mode change
+  const handleModeChange = (mode: ListenMode) => {
+    setListenMode(mode);
+    localStorage.setItem('blindsight_mode', mode);
+    listenModeRef.current = mode;
+    networkRetriesRef.current = 0;
+    stopAllListening();
+    AudioService.stopSpeaking();
+    setAppState('idle');
+
+    if (mode === 'wake') {
+      announce('Wake word mode on. Say "hey BlindSight".');
+      updateStatus('Waiting for "hey BlindSight"…', 'wake');
+      setTimeout(() => startRecognition('wake'), 250);
+    } else if (mode === 'handsfree') {
+      announce('Hands-free mode on. Just speak.');
+      updateStatus('Hands-free: just speak.', 'listen');
+      setTimeout(() => runHandsfreeLoop(), 250);
+    } else {
+      announce('Button mode. Tap the button to speak.');
+      updateStatus('Tap the big button and speak.', 'idle');
+    }
+  };
+
+  // Language change
+  const handleLanguageChange = (lang: LanguageCode) => {
+    setLanguage(lang);
+    const opt = LANGUAGES[lang];
+    AudioService.playEarcon('ok');
+    announce(opt.confirmation);
+    speakReply(opt.confirmation);
+  };
+
+  // Voice change
+  const handleVoiceChange = (uri: string) => {
+    setChosenVoiceURI(uri);
+    localStorage.setItem('blindsight_voice', uri);
+    AudioService.playEarcon('tick');
+    speakReply('This is the voice I will use.');
+  };
+
+  // Save Token
+  const handleSaveToken = (newToken: string) => {
+    setToken(newToken);
+    localStorage.setItem('blindsight_token', newToken);
+    AudioService.playEarcon('ok');
+    announce('Gateway token saved.');
+  };
+
+  // Fetch Latest Frame
+  const handleFetchLatestFrame = () => {
+    const frame = VisionAiService.getLatestFrame();
+    if (frame) {
+      setLatestFrameUrl(frame);
+      announce('Latest camera frame displayed for sighted helpers.');
+    } else {
+      setIsCameraModalOpen(true);
+    }
+  };
+
+  // Direct Image Upload & Instant Multimodal Scene Description
+  const handleImageUpload = async (dataUrl: string) => {
+    setLatestFrameUrl(dataUrl);
+    VisionAiService.setLatestFrame(dataUrl);
+
+    setAppState('think');
+    updateStatus('Analyzing uploaded photo with Gemini AI…', 'think');
+    AudioService.playEarcon('think');
+
+    // Sync image with server gateway
+    try {
+      fetch('/api/upload-frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl })
+      }).catch(() => {});
+    } catch {}
+
+    const result = await VisionAiService.askCompanion('describe what is in front of me', {
+      useCamera: true,
+      imageDataUrl: dataUrl,
+      langCode: language,
+      apiToken: token
+    });
+
+    const userMsg = CompanionStateService.addHistoryMessage('user', '📷 [Photo Uploaded] Describe this scene');
+    const assistantMsg = CompanionStateService.addHistoryMessage('assistant', result.reply, !result.ok);
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
+    announce(result.reply);
+    speakReply(result.reply);
+  };
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'radial-gradient(ellipse at 50% 20%, #172554 0%, #05070c 70%)',
-      color: '#f8fafc',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '32px 16px',
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    }}>
-      <main style={{
-        maxWidth: '560px',
-        width: '100%',
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(245, 158, 11, 0.35)',
-        borderRadius: '24px',
-        padding: '36px 28px',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(245, 158, 11, 0.15)',
-        textAlign: 'center'
-      }}>
-        {/* App Badge & Icon */}
-        <div style={{
-          width: '76px',
-          height: '76px',
-          margin: '0 auto 16px',
-          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-          borderRadius: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 10px 25px rgba(245, 158, 11, 0.45)'
-        }}>
-          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#05070c" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        </div>
+    <>
+      <a className="skip-link" href="#mic-btn">
+        Skip to the microphone button
+      </a>
 
-        <h1 style={{
-          margin: '0 0 6px',
-          fontSize: '2rem',
-          fontWeight: 800,
-          letterSpacing: '-0.025em',
-          background: 'linear-gradient(to right, #f8fafc, #f59e0b)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent'
-        }}>
-          BlindSight
-        </h1>
+      {/* Screen-reader assertive announcer */}
+      <div
+        id="sr-announcer"
+        className="visually-hidden"
+        role="status"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        {announcement}
+      </div>
 
-        <p style={{
-          margin: '0 0 20px',
-          color: '#cbd5e1',
-          fontSize: '0.98rem',
-          lineHeight: '1.4'
-        }}>
-          AI Visual Assistant & Orientation Companion for Android
-        </p>
+      <Header
+        currentLang={LANGUAGES[language] || LANGUAGES.en}
+        telemetry={telemetry}
+        onOpenReflexModal={() => setIsReflexModalOpen(true)}
+        onOpenCameraModal={() => setIsCameraModalOpen(true)}
+        onOpenQrModal={() => setIsQrModalOpen(true)}
+      />
 
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '4px 14px',
-          background: 'rgba(245, 158, 11, 0.12)',
-          border: '1px solid rgba(245, 158, 11, 0.3)',
-          borderRadius: '999px',
-          fontSize: '0.8rem',
-          color: '#fbbf24',
-          marginBottom: '26px'
-        }}>
-          <span style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: '#10b981',
-            display: 'inline-block'
-          }}></span>
-          Testing Build Available • 22.5 MB • Android 8.0+
-        </div>
+      <main style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <StatusCard appState={appState} statusLine={statusLine} />
 
-        {/* Big Download Button */}
-        <a
-          href="/BlindSight-testing.apk"
-          download="BlindSight-testing.apk"
-          onClick={handleDownload}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-            width: '100%',
-            padding: '16px 20px',
-            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-            color: '#05070c',
-            fontWeight: 800,
-            fontSize: '1.12rem',
-            borderRadius: '16px',
-            textDecoration: 'none',
-            boxShadow: '0 10px 25px rgba(245, 158, 11, 0.35)',
-            cursor: 'pointer',
-            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            boxSizing: 'border-box'
+        <MicCard
+          appState={appState}
+          listenMode={listenMode}
+          micHint={micHint}
+          heardText={heardText}
+          micMeterPct={micMeterPct}
+          isHot={isHot}
+          isCue={isCue}
+          onMicClick={handleMicClick}
+          onUploadImage={handleImageUpload}
+        />
+
+        <ControlsCard
+          listenMode={listenMode}
+          onModeChange={handleModeChange}
+          noiseGate={noiseGate}
+          onNoiseGateToggle={handleNoiseGateToggle}
+          currentLanguage={language}
+          onLanguageChange={handleLanguageChange}
+          voices={voices}
+          chosenVoiceURI={chosenVoiceURI}
+          onVoiceChange={handleVoiceChange}
+          includeCamera={includeCamera}
+          onCameraToggle={setIncludeCamera}
+          textSize={textSize}
+          onTextSizeChange={handleTextSizeChange}
+          token={token}
+          onSaveToken={handleSaveToken}
+          onHelp={() => {
+            announce(HELP_TEXT);
+            speakReply(HELP_TEXT);
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 14px 30px rgba(245, 158, 11, 0.45)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.35)';
-          }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          {downloadTriggered ? 'Downloading APK...' : 'Download BlindSight APK'}
-        </a>
+          onStop={handleStop}
+          latestFrameUrl={latestFrameUrl}
+          onFetchLatestFrame={handleFetchLatestFrame}
+        />
 
-        {/* QR Code Section */}
-        <div style={{
-          marginTop: '28px',
-          padding: '22px',
-          background: 'rgba(2, 6, 23, 0.7)',
-          border: '1px solid rgba(51, 65, 85, 0.7)',
-          borderRadius: '18px'
-        }}>
-          <div style={{
-            fontSize: '0.86rem',
-            color: '#94a3b8',
-            marginBottom: '14px',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          }}>
-            Or Scan With Phone Camera
-          </div>
+        <ConversationLog messages={messages} />
 
-          <div style={{
-            display: 'inline-block',
-            padding: '12px',
-            background: '#ffffff',
-            borderRadius: '16px',
-            boxShadow: '0 8px 20px rgba(0, 0, 0, 0.5)'
-          }}>
-            <img
-              src={qrImageUrl}
-              alt="Scan QR code to download BlindSight APK"
-              width={200}
-              height={200}
-              style={{ display: 'block', borderRadius: '6px' }}
-            />
-          </div>
-
-          <p style={{
-            margin: '14px 0 0',
-            fontSize: '0.84rem',
-            color: '#94a3b8',
-            lineHeight: '1.4'
-          }}>
-            Point your Android phone camera at the QR code to download directly to your mobile device.
-          </p>
-        </div>
-
-        {/* Direct Link Copy */}
-        <div style={{
-          marginTop: '20px',
-          display: 'flex',
-          gap: '8px'
-        }}>
-          <input
-            type="text"
-            readOnly
-            value={downloadUrl}
-            style={{
-              flex: 1,
-              padding: '10px 14px',
-              background: 'rgba(15, 23, 42, 0.9)',
-              border: '1px solid #334155',
-              borderRadius: '12px',
-              color: '#94a3b8',
-              fontSize: '0.82rem',
-              outline: 'none'
-            }}
-          />
-          <button
-            onClick={handleCopyLink}
-            style={{
-              padding: '10px 18px',
-              background: copied ? '#10b981' : '#1e293b',
-              color: '#f8fafc',
-              border: '1px solid #334155',
-              borderRadius: '12px',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {copied ? '✓ Copied' : 'Copy Link'}
-          </button>
-        </div>
-
-        {/* Installation Instructions */}
-        <div style={{
-          marginTop: '28px',
-          textAlign: 'left',
-          background: 'rgba(15, 23, 42, 0.5)',
-          border: '1px solid #1e293b',
-          borderRadius: '16px',
-          padding: '18px'
-        }}>
-          <div style={{
-            fontSize: '0.86rem',
-            fontWeight: 700,
-            color: '#f8fafc',
-            marginBottom: '10px'
-          }}>
-            Quick Android Install Guide:
-          </div>
-          <ol style={{
-            margin: 0,
-            paddingLeft: '20px',
-            fontSize: '0.82rem',
-            color: '#cbd5e1',
-            lineHeight: '1.6'
-          }}>
-            <li>Tap <strong>Download BlindSight APK</strong> (or scan the QR code).</li>
-            <li>If Chrome prompts <em>"File might be harmful"</em>, tap <strong>Download anyway</strong>.</li>
-            <li>Tap the downloaded file and select <strong>Install</strong> (enable <em>"Allow from this source"</em> if prompted).</li>
-            <li>Open BlindSight, grant Microphone/Camera permissions, and speak!</li>
-          </ol>
-        </div>
+        <TextInputForm onSubmitPrompt={handleCommand} disabled={appState === 'think'} />
       </main>
 
-      <footer style={{
-        marginTop: '24px',
-        color: '#64748b',
-        fontSize: '0.82rem',
-        textAlign: 'center'
-      }}>
-        BlindSight Open Source Assistant •{' '}
-        <a
-          href="https://github.com/devrift/BlindSight"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#f59e0b', textDecoration: 'none' }}
-        >
-          GitHub Repository
-        </a>
-      </footer>
-    </div>
+      {/* Modals */}
+      <ReflexTelemetryModal
+        telemetry={telemetry}
+        isOpen={isReflexModalOpen}
+        onClose={() => setIsReflexModalOpen(false)}
+        onUpdateTelemetry={setTelemetry}
+      />
+
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        langCode={language}
+        onDescribeScene={dataUrl => {
+          setLatestFrameUrl(dataUrl);
+          handleCommand('describe the scene', dataUrl);
+          setIsCameraModalOpen(false);
+        }}
+      />
+
+      <ApkQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+      />
+    </>
   );
 };

@@ -330,11 +330,11 @@ class JarvisVoiceAssistant:
             return ""
         try:
             candidate_models = [
+                "gemini-3.5-transcribe",
                 GEMINI_MODEL,
-                "gemini-3.8-flash",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
-                "gemini-1.5-flash"
+                "gemini-3-flash-preview",
+                "gemini-3.5-flash",
+                "gemini-3.8-flash"
             ]
             seen = set()
             models_to_try = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
@@ -362,7 +362,10 @@ class JarvisVoiceAssistant:
                     }],
                     "generationConfig": {
                         "temperature": 0.0,
-                        "maxOutputTokens": 100
+                        "maxOutputTokens": 100,
+                        "thinkingConfig": {
+                            "thinkingBudget": 0
+                        }
                     }
                 }
                 resp = requests.post(url, json=payload, timeout=8)
@@ -376,6 +379,8 @@ class JarvisVoiceAssistant:
                             if text.lower() in ("(silence)", "none", "no speech", "silence", "no audio"):
                                 return ""
                             return clean_phonetic_substitutions(text)
+                elif resp.status_code == 429:
+                    continue
         except Exception as e:
             print(f"[BlindSight] Gemini audio transcription notice: {e}")
         return ""
@@ -412,20 +417,6 @@ class JarvisVoiceAssistant:
         if not api_key:
             return None
 
-        candidate_models = [
-            GEMINI_MODEL,
-            "gemini-3.8-flash",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash"
-        ]
-        # Remove duplicates while preserving order
-        seen = set()
-        models_to_try = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
-
-        for model in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        
         if is_vision_query:
             # Assistive vision instructions (ONLY for explicit scene queries)
             system_instruction = (
@@ -485,24 +476,36 @@ class JarvisVoiceAssistant:
                 print(f"[JarvisVoice] Image attach notice: {e}")
 
         candidate_models = [
-            "gemini-3.8-flash",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-flash-latest"
+            "gemini-3-flash-preview",
+            GEMINI_MODEL,
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash"
         ]
         # Deduplicate while preserving order
         seen = set()
-        models_to_try = [m for m in candidate_models if not (m in seen or seen.add(m))]
+        models_to_try = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
+
+        payload = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 200,
+                "thinkingConfig": {
+                    "thinkingBudget": 0
+                }
+            }
+        }
 
         for model_name in models_to_try:
             try:
                 model_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
                 resp = requests.post(
                     model_url,
-                    json={"contents": [{"parts": parts}]},
+                    json=payload,
                     headers={"Content-Type": "application/json"},
-                    timeout=4.0
+                    timeout=8.0
                 )
                 if resp.ok:
                     data = resp.json()
@@ -512,12 +515,12 @@ class JarvisVoiceAssistant:
                         if reply:
                             return reply
                 elif resp.status_code == 429:
-                    # Project quota exceeded: break immediately to deliver instant on-device response
-                    break
-                elif resp.status_code in (503, 404):
+                    print(f"[BlindSight] Model {model_name} rate limit (429), checking next fallback...")
+                    continue
+                elif resp.status_code in (503, 500, 404):
                     continue
                 else:
-                    print(f"[JarvisVoice] Model {model_name} status {resp.status_code}: {resp.text[:120]}")
+                    print(f"[BlindSight] Model {model_name} status {resp.status_code}: {resp.text[:120]}")
             except Exception as e:
                 pass
 
@@ -538,82 +541,17 @@ class JarvisVoiceAssistant:
 
         norm = normalize_voice_phrase(cmd_clean)
 
-        # 1. Conversational Greetings & Identity (Instant, natural responses)
-        name_triggers = [
-            "who are you", "what are you", "your name", "whats your name",
-            "what is your name", "aapka naam kya hai", "tumhara naam kya hai",
-            "naam kya hai", "tum kaun ho", "aap kaun ho", "aap kaun hain",
-            "आप कौन हैं", "आप कौन हो", "तुम कौन हो", "आपका नाम", "तुम्हारा नाम", "नाम क्या है"
-        ]
-        if any(t in norm for t in name_triggers):
-            return (
-                "My name is BlindSight, your AI assistant and navigation companion! How can I help you today?"
-                if lang == "en"
-                else "मेरा नाम ब्लाइंडसाइट है! मैं आपका स्मार्ट एआई असिस्टेंट साथी हूँ। बताइए, आज मैं आपकी क्या सहायता करूँ?"
-            )
-
-        greeting_triggers = [
-            "hey", "hello", "hi", "hey blindsight", "good morning", "good evening",
-            "kya haal hai", "kaise ho", "namaste", "नमस्ते", "नमस्कार", "प्रणाम"
-        ]
-        if any(norm == g or norm.startswith(g + " ") or norm.endswith(" " + g) or norm.replace("!", "").strip() == g for g in greeting_triggers):
-            return (
-                "Hello! I am BlindSight. How can I assist you right now?"
-                if lang == "en"
-                else "नमस्ते! मैं ब्लाइंडसाइट हूँ, आपकी सेवा में उपस्थित। बताइए, क्या मदद करूँ?"
-            )
-
-        if any(k in norm for k in ["how are you", "how are you doing", "kaise ho"]):
-            return (
-                "I am running smoothly and ready for conversation or navigation! What's on your mind?"
-                if lang == "en"
-                else "मैं बिल्कुल ठीक और तैयार हूँ! बताइए, आज आप क्या जानना चाहते हैं?"
-            )
-
-        if any(k in norm for k in ["thank you", "thanks", "dhanyawad", "shukriya"]):
-            return "You are very welcome! I am always here to assist." if lang == "en" else "आपका बहुत-बहुत स्वागत है! मैं हमेशा आपकी मदद के लिए यहाँ हूँ।"
-
-        # 2. Jokes & Humor (General Chat - never talks about camera or obstacles)
-        if any(k in norm for k in ["joke", "funny", "make me laugh", "chutkula"]):
-            joke_reply = self.query_gemini(cmd_clean, is_vision_query=False, lang=lang)
-            if joke_reply:
-                return joke_reply
-            return "Why don't scientists trust atoms? Because they make up everything!"
-
-        # 3. Fast Math (Offline 1ms response)
-        math_match = re.search(r"(?:what is|calculate|solve|what'?s)?\s*(\d+)\s*([+\-*/x]|plus|minus|times|multiplied by|divided by)\s*(\d+)", norm)
-        if math_match:
-            try:
-                n1 = int(math_match.group(1))
-                op = math_match.group(2).lower()
-                n2 = int(math_match.group(3))
-                res = None
-                if op in ("+", "plus"): res = n1 + n2
-                elif op in ("-", "minus"): res = n1 - n2
-                elif op in ("*", "x", "times", "multiplied by"): res = n1 * n2
-                elif op in ("/", "divided by") and n2 != 0: res = n1 / n2
-                if res is not None:
-                    return f"{n1} {op} {n2} equals {res}." if lang == "en" else f"{n1} {op} {n2} का उत्तर {res} है।"
-            except Exception:
-                pass
-
-        # 4. Fast System Actions (5ms local response)
+        # 1. Fast Hardware & System Actions (5ms response)
+        if any(k in norm for k in ["stop", "pause", "be quiet", "silence", "ruk jao", "chup"]):
+            return "Stopping." if lang == "en" else "रुक गया।"
+        if any(k in norm for k in ["battery", "battery status"]):
+            return "Smart glasses battery is at 88 percent. Normal operation."
         if any(k in norm for k in ["time", "current time", "samay", "kitne baje"]):
             return f"The current time is {time.strftime('%I:%M %p')}." if lang == "en" else f"अभी समय {time.strftime('%I:%M %p')} हुआ है।"
         if any(k in norm for k in ["date", "today date", "day", "tarikh", "aaj konsa din"]):
             return f"Today is {time.strftime('%A, %B %d, %Y')}."
-        if any(k in norm for k in ["battery", "battery status"]):
-            return "Smart glasses battery is at 88 percent. Normal operation."
-        if any(k in norm for k in ["stop", "pause", "be quiet", "silence", "ruk jao", "chup"]):
-            return "Stopping." if lang == "en" else "रुक गया।"
-        if any(k in norm for k in ["help", "what can you do", "commands", "madad"]):
-            return (
-                "I can chat with you, answer any question, tell stories or jokes, calculate math, and describe your surroundings when you say 'describe the scene'."
-                if lang == "en"
-                else "मैं आपसे बातचीत कर सकता हूँ, सवालों के जवाब दे सकता हूँ, चुटकुले सुना सकता हूँ, और जब आप कहेंगे तो आगे का दृश्य भी बता सकता हूँ।"
-            )
 
-        # 4. Check for Scene Perception Triggers (Strict regex: never trigger on conversational questions)
+        # 2. Check for Scene Perception Triggers (Strict regex: never trigger on conversational questions)
         scene_patterns = [
             r"\bdescribe\b",
             r"\bwhat do you see\b",
@@ -652,7 +590,7 @@ class JarvisVoiceAssistant:
 
             return "The camera view is unclear or obstructed. Please proceed with caution." if lang == "en" else "कैमरा दृश्य स्पष्ट नहीं है। कृपया सावधानी से आगे बढ़ें।"
 
-        # 5. General Conversational Chatbot (Answers ANY question: jokes, stories, math, advice, general Q&A)
+        # 3. Dynamic Smart Gemini AI Companion Brain (strictly uses API key for real intelligence)
         gemini_chat_reply = self.query_gemini(
             cmd_clean,
             is_vision_query=False,
@@ -661,7 +599,7 @@ class JarvisVoiceAssistant:
         if gemini_chat_reply:
             return gemini_chat_reply
 
-        # 6. Local Ollama Fallback if running
+        # 4. Local Ollama Fallback if running
         try:
             resp = requests.post(
                 OLLAMA_URL,
@@ -671,8 +609,8 @@ class JarvisVoiceAssistant:
                         {
                             "role": "system",
                             "content": (
-                                "You are BlindSight JARVIS, an empathetic and witty AI assistant. "
-                                "Keep responses under 2-3 sentences. Be conversational and helpful."
+                                "You are BlindSight, an empathetic and witty AI assistant for visually impaired users. "
+                                "Keep responses under 1-2 spoken sentences. Be conversational, warm, and helpful."
                             )
                         },
                         {"role": "user", "content": cmd_clean}
@@ -689,7 +627,7 @@ class JarvisVoiceAssistant:
         except Exception:
             pass
 
-        # 7. Rich On-Device Trained Knowledge & Conversational Engine (Never robotic)
+        # 5. Rich On-Device Trained Knowledge & Conversational Engine (Never robotic)
         return self.evaluate_offline_intelligence(cmd_clean, norm, lang)
 
     def evaluate_offline_intelligence(self, cmd_clean: str, norm: str, lang: str = "en") -> str:

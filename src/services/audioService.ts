@@ -416,6 +416,7 @@ export class AudioService {
 
   // --- Direct Adaptive PCM WAV Recorder with VAD (Zero Browser Cloud Dependencies) ---
   private static wavStream: MediaStream | null = null;
+  private static wavAudioCtx: AudioContext | null = null;
   private static scriptProcessor: ScriptProcessorNode | null = null;
   private static stopRecordingSignal: (() => void) | null = null;
 
@@ -423,6 +424,14 @@ export class AudioService {
     if (this.stopRecordingSignal) {
       this.stopRecordingSignal();
       this.stopRecordingSignal = null;
+    }
+    if (this.wavStream) {
+      try { this.wavStream.getTracks().forEach(t => t.stop()); } catch {}
+      this.wavStream = null;
+    }
+    if (this.wavAudioCtx) {
+      try { this.wavAudioCtx.close(); } catch {}
+      this.wavAudioCtx = null;
     }
   }
 
@@ -439,17 +448,24 @@ export class AudioService {
     const noSpeechTimeoutMs = options.noSpeechTimeoutMs || 3800;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      this.wavStream = stream;
+      let stream = this.wavStream;
+      if (!stream || !stream.active || stream.getTracks().every(t => t.readyState === 'ended')) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        this.wavStream = stream;
+      }
 
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioContextClass({ sampleRate: 16000 });
+      let ctx = this.wavAudioCtx;
+      if (!ctx || ctx.state === 'closed') {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        ctx = new AudioContextClass({ sampleRate: 16000 });
+        this.wavAudioCtx = ctx;
+      }
       if (ctx.state === 'suspended') await ctx.resume();
 
       const source = ctx.createMediaStreamSource(stream);
@@ -474,9 +490,6 @@ export class AudioService {
 
         try { processor.disconnect(); } catch {}
         try { source.disconnect(); } catch {}
-        try { stream.getTracks().forEach(t => t.stop()); } catch {}
-        try { ctx.close(); } catch {}
-        this.wavStream = null;
         this.scriptProcessor = null;
 
         let totalLen = 0;

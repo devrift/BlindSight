@@ -23,6 +23,7 @@ class SpeechRecognizerHelper(
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
     private var isPaused = false
+    var isContinuousMode = false
     private var currentLanguageCode = "en-US"
     private val mainHandler = Handler(Looper.getMainLooper())
     private var clientErrorCount = 0
@@ -157,14 +158,16 @@ class SpeechRecognizerHelper(
                 Log.w(tag, "SpeechRecognizer onError: code=$error")
 
                 // 1. Standby timeout (no speech detected)
-                // Use a relaxed 2500ms delay in standby so we DO NOT thrash/check the microphone every 5 seconds
                 if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    if (!isPaused && hasAudioPermission()) {
+                    if (isContinuousMode && !isPaused && hasAudioPermission()) {
                         mainHandler.postDelayed({
-                            if (!isPaused && !isListening) {
+                            if (isContinuousMode && !isPaused && !isListening) {
                                 startListening(currentLanguageCode)
                             }
-                        }, 2500)
+                        }, 1200)
+                    } else {
+                        // On-demand mode: cleanly rest in IDLE. No annoying 2-second mic oscillation!
+                        onError("Tap center button to speak.")
                     }
                     return
                 }
@@ -172,12 +175,14 @@ class SpeechRecognizerHelper(
                 // 2. Recognizer is busy -> reset and resume
                 if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
                     destroyRecognizerInternal()
-                    if (!isPaused && hasAudioPermission()) {
+                    if (isContinuousMode && !isPaused && hasAudioPermission()) {
                         mainHandler.postDelayed({
                             if (!isPaused) {
                                 startListening(currentLanguageCode, forceRestart = true)
                             }
                         }, 500)
+                    } else {
+                        onError("Tap center button to speak.")
                     }
                     return
                 }
@@ -195,12 +200,14 @@ class SpeechRecognizerHelper(
                 }
 
                 // Other errors
-                if (!isPaused && hasAudioPermission()) {
+                if (isContinuousMode && !isPaused && hasAudioPermission()) {
                     mainHandler.postDelayed({
-                        if (!isPaused && !isListening) {
+                        if (isContinuousMode && !isPaused && !isListening) {
                             startListening(currentLanguageCode)
                         }
                     }, 2000)
+                } else {
+                    onError("Tap center button to speak.")
                 }
             }
 
@@ -215,12 +222,14 @@ class SpeechRecognizerHelper(
 
                 if (bestText.isNotBlank()) {
                     onResult(bestText)
-                } else if (!isPaused && hasAudioPermission()) {
+                } else if (isContinuousMode && !isPaused && hasAudioPermission()) {
                     mainHandler.postDelayed({
-                        if (!isPaused && !isListening) {
+                        if (isContinuousMode && !isPaused && !isListening) {
                             startListening(currentLanguageCode)
                         }
-                    }, 1500)
+                    }, 1200)
+                } else {
+                    onError("Tap center button to speak.")
                 }
             }
 
@@ -296,9 +305,9 @@ class SpeechRecognizerHelper(
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 4000L)
             }
 
             try {
