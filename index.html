@@ -4,14 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BlindSight — Voice-First Navigation Companion</title>
-  <meta name="description" content="BlindSight: Accessible, voice-first navigation companion for blind and low-vision users featuring ESP32 ultrasonic reflex, edge intelligence, and native Android companion.">
+  <meta name="description" content="Technical showcase and documentation for BlindSight: an accessible, voice-first navigation companion for blind and low-vision users featuring ESP32 ultrasonic reflex, edge intelligence, and native Android companion.">
   <link rel="icon" type="image/svg+xml" href="/assets/img/icon.svg">
   <link rel="alternate icon" type="image/png" href="/assets/img/favicon.png">
   <link rel="stylesheet" href="/assets/css/style.css">
 </head>
 <body>
 
-  <!-- Top Sticky Navigation -->
+  <!-- Ambient Floating Mesh Glow Orbs -->
+  <div class="ambient-glow-wrap" aria-hidden="true">
+    <div class="glow-orb glow-orb-1"></div>
+    <div class="glow-orb glow-orb-2"></div>
+    <div class="glow-orb glow-orb-3"></div>
+  </div>
+
+  <!-- Scroll Progress Indicator Bar -->
+  <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+
+  <!-- Floating Glassmorphic Top Navbar -->
   <div class="nav-wrap">
     <header class="nav">
       <a class="brand" href="/">
@@ -21,341 +31,533 @@
       </a>
 
       <nav class="nav-links">
-        <a href="#overview">Overview</a>
+        <a href="#overview" class="active">Overview</a>
+        <a href="#quickstart">Quickstart</a>
         <a href="#architecture">Architecture</a>
-        <a href="#hardware">Hardware Pinout</a>
-        <a href="#sideload">Install APK</a>
-        <a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="#hardware-wiring">Hardware &amp; Wiring</a>
+        <a href="#voice-commands">Commands</a>
+        <a href="#android-app">Android APK</a>
       </nav>
 
-      <div class="nav-actions">
-        <a class="btn-nav-download" href="/BlindSight-testing.apk" download="BlindSight-testing.apk">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          <span>APK (22.4 MB)</span>
-        </a>
-
-        <button class="btn-icon" data-theme-toggle aria-label="Toggle theme">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path></svg>
+      <div class="nav-cta">
+        <button class="search-trigger" data-search-trigger aria-label="Search documentation">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span>Search docs...</span>
+          <kbd>⌘K</kbd>
         </button>
 
-        <button class="btn-icon btn-burger" data-nav-burger aria-label="Open mobile menu">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        <button class="icon-btn" data-theme-toggle aria-label="Toggle theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path></svg>
+        </button>
+
+        <a class="icon-btn" href="https://github.com/devrift/blindsight" target="_blank" rel="noopener noreferrer" aria-label="GitHub Repository">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.54-3.87-1.54-.53-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.02 1.75 2.68 1.24 3.34.95.1-.74.4-1.25.72-1.53-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12v3.14c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
+        </a>
+
+        <button class="icon-btn nav-burger" data-nav-burger aria-label="Open mobile menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
       </div>
     </header>
   </div>
 
-  <main>
-    <!-- =================================================================== Hero Section -->
+  <!-- Main Container -->
+  <main class="wrap">
+
+    <!-- =================================================================== Hero Header -->
     <section class="hero" id="overview">
-      <div class="wrap">
-        <div class="hero-grid">
-          <div>
-            <div class="status-pill">
-              <span class="pulse-dot"></span>
-              <span>Android Companion v1.5 • Open Source MIT</span>
-            </div>
-
-            <h1>
-              Voice-First Navigation Companion for <br>
-              <span class="text-gradient">Blind &amp; Low-Vision Independence.</span>
-            </h1>
-
-            <p class="hero-lead">
-              BlindSight combines zero-latency ultrasonic obstacle reflexes on an ESP32, edge intelligence, and an accessible native Android companion with multimodal camera scene descriptions, persistent memory, and 7 spoken languages.
-            </p>
-
-            <div class="hero-cta-group">
-              <a class="btn-hero-primary" href="/BlindSight-testing.apk" download="BlindSight-testing.apk">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                <span>Download Android APK (v1.5)</span>
-              </a>
-
-              <a class="btn-hero-secondary" href="#hardware">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-                <span>ESP32 Hardware Pinout</span>
-              </a>
-
-              <a class="btn-hero-secondary" href="https://github.com/devrift/blindsight" target="_blank" rel="noopener noreferrer">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.54-3.87-1.54-.53-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.02 1.75 2.68 1.24 3.34.95.1-.74.4-1.25.72-1.53-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12v3.14c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
-                <span>GitHub Repo</span>
-              </a>
-            </div>
-
-            <div class="hero-stats">
-              <div class="stat-box">
-                <div class="stat-box-val">&lt; 25 cm</div>
-                <div class="stat-box-label">Critical Ultrasonic Reflex Stop</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-box-val">112 px</div>
-                <div class="stat-box-label">Accessible Giant Push-to-Talk Mic</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-box-val">7 Voices</div>
-                <div class="stat-box-label">EN, HI, BN, TA, TE, ES, FR</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-box-val">Offline</div>
-                <div class="stat-box-label">Local Memory Bank &amp; Sonar Audio</div>
-              </div>
-            </div>
+      <div class="hero-grid">
+        <div>
+          <div class="kicker">
+            <span class="pulse-dot"></span>
+            <span>Three-Tier Mobility Aid &bull; v1.5 Verified</span>
           </div>
 
-          <!-- Hero Right: Direct Download & Phone QR Code -->
-          <div>
-            <div class="hero-download-card">
-              <div class="qr-box">
-                <img class="qr-img" src="/assets/img/apk-qr.png" alt="Scan QR code with phone camera to download APK">
-              </div>
+          <h1>
+            Voice-First Navigation Companion for <br>
+            <span class="grad-text">Blind &amp; Low-Vision Users.</span>
+          </h1>
 
-              <div class="apk-badge-row">
-                <span class="apk-badge">Version 1.5</span>
-                <span class="apk-badge">22.4 MB</span>
-                <span class="apk-badge">Android 7.0–15</span>
-              </div>
+          <p class="lead">
+            BlindSight combines zero-latency ultrasonic reflex audio on an ESP32 (&lt;25 cm stop protection), edge intelligence, and an accessible native Android companion with multimodal scene descriptions, memory, and 7 neural languages. Built strictly on one inviolable rule: <strong>a mobility aid must fail loudly, never optimistically.</strong>
+          </p>
 
-              <p class="download-meta">
-                Scan with your Android camera or tap below to download the latest testing release directly.
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/BlindSight-testing.apk" download="BlindSight-testing.apk" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-weight: 800; box-shadow: 0 4px 18px rgba(245,158,11,0.35);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Download Android APK (v1.5)</span>
+            </a>
+            <a class="btn btn-primary" href="#quickstart">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72c0 .8.87 1.3 1.56.9l11-6.86a1.05 1.05 0 0 0 0-1.8l-11-6.86A1.05 1.05 0 0 0 8 5.14z"></path></svg>
+              <span>Get Started in 3 Steps</span>
+            </a>
+            <a class="btn btn-glass" href="#hardware-wiring">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+              <span>Hardware &amp; Wiring V2</span>
+            </a>
+            <a class="btn btn-glass" href="#voice-commands">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+              <span>Voice Commands</span>
+            </a>
+          </div>
+
+          <div class="hero-stats">
+            <div class="stat-card">
+              <div class="stat-num">3 Tiers</div>
+              <div class="stat-label">Independent Safety Architecture</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">&lt;25 cm</div>
+              <div class="stat-label">Critical Ultrasonic Reflex Stop</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">7 Voices</div>
+              <div class="stat-label">Neural Spoken Languages Built In</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">112 px</div>
+              <div class="stat-label">Accessible Giant Push-To-Talk Mic</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <!-- Glassmorphic Architecture Highlights Card -->
+          <div class="glass-panel">
+            <h3 style="margin-top:0; margin-bottom:14px; font-size:1.25rem; color:var(--text-bright);">System Design Rules</h3>
+            <p style="font-size:0.92rem; color:var(--text-muted); margin-bottom:16px;">
+              Commodity electronics transform a user’s existing smartphone and compact wearables into a resilient guide.
+            </p>
+
+            <div class="glass-card" style="margin-bottom:12px; padding:16px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <span class="tag tag-tier0">Tier 0 &bull; Reflex</span>
+                <strong style="font-size:0.92rem;">Network-Free ESP32 + DAC</strong>
+              </div>
+              <p style="font-size:0.86rem; color:var(--text-muted); margin:0;">
+                Three HC-SR04 sensors pulse continuously. Stops instantly under 25 cm; steers 25–45 cm over PCM5102 I2S DAC. Protection survives total Wi-Fi loss.
               </p>
+            </div>
 
-              <a class="btn-hero-primary" style="width: 100%; justify-content: center;" href="/BlindSight-testing.apk" download="BlindSight-testing.apk">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                <span>Download BlindSight-testing.apk</span>
-              </a>
+            <div class="glass-card" style="margin-bottom:12px; padding:16px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <span class="tag tag-tier1">Tier 1 &bull; Edge Gateway</span>
+                <strong style="font-size:0.92rem;">Python Speech &amp; Vision Hub</strong>
+              </div>
+              <p style="font-size:0.86rem; color:var(--text-muted); margin:0;">
+                Local service in <code>edge_server/</code> evaluates camera frames and voice queries in milliseconds with dynamic cloud fallbacks.
+              </p>
+            </div>
+
+            <div class="glass-card" style="padding:16px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <span class="tag tag-tier2">Tier 2 &bull; Native Companion</span>
+                <strong style="font-size:0.92rem;">Android APK &amp; Web PWA</strong>
+              </div>
+              <p style="font-size:0.86rem; color:var(--text-muted); margin:0;">
+                Hands-free wake word ("hey BlindSight"), scene Q&amp;A, personal memory bank, and accessible high-contrast navigation radar.
+              </p>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- =================================================================== Architecture Section -->
-    <section id="architecture">
-      <div class="wrap">
-        <div class="section-head">
-          <div class="section-kicker">Core System Architecture</div>
-          <h2 class="section-title">Three Integrated Subsystems</h2>
-          <p class="section-desc">
-            Engineered with zero bloat. Every component serves an essential function in safety, awareness, and independence.
-          </p>
-        </div>
+    <!-- =================================================================== Documentation Layout -->
+    <div class="docs-layout">
 
-        <div class="grid-3">
-          <!-- 1. Android App -->
-          <div class="card">
-            <div class="card-icon amber">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-            </div>
-            <h3 class="card-title">1. Android Companion App</h3>
-            <p class="card-body">
-              Native Kotlin &amp; Jetpack Compose application designed strictly for accessibility.
-            </p>
-            <ul class="card-list">
-              <li><strong>Voice-First:</strong> Wake word detection + 112px accessible push-to-talk button.</li>
-              <li><strong>Scene Describer:</strong> Spoken commands capture camera frames for situational descriptions.</li>
-              <li><strong>Personal Memory Bank:</strong> Remembers key facts, places, and door locations offline.</li>
-              <li><strong>Obstacle Radar:</strong> Real-time distance visualization with authentic warning earcons.</li>
-              <li><strong>Multi-Language:</strong> Instant switching between 7 supported languages.</li>
+      <!-- Sticky Glass Table of Contents -->
+      <aside class="toc-sidebar">
+        <div class="toc-title">Documentation Index</div>
+        <nav class="toc-nav">
+          <a class="toc-link active" href="#overview">Overview &amp; Philosophy</a>
+          <a class="toc-link" href="#quickstart">Quickstart (3 Steps)</a>
+          <a class="toc-link" href="#android-app">Android APK Download</a>
+          <a class="toc-link" href="#architecture">3-Tier Safety System</a>
+          <a class="toc-link" href="#hardware-wiring">Hardware &amp; Wiring V2</a>
+          <a class="toc-link" href="#voice-commands">Voice Commands &amp; Memory</a>
+          <a class="toc-link" href="#faq">FAQ &amp; Limitations</a>
+        </nav>
+      </aside>
+
+      <!-- Main Docs Content Stream -->
+      <div class="doc-content">
+
+        <!-- ================================================================= 1. Philosophy -->
+        <section class="doc-section" id="philosophy">
+          <h2>Core Philosophy: Fail Loudly, Never Optimistically <a class="anchor" href="#philosophy">#</a></h2>
+          <p>
+            Blind and low-vision pedestrians face hazards from low wires, drop-offs, and quiet electric vehicles. Traditional electronic aids cost thousands of dollars, while smartphone apps frequently freeze silently or hallucinate descriptions.
+          </p>
+
+          <div class="callout safety">
+            <strong>The Core Tenet:</strong> A mobility aid must fail loudly, never optimistically. Every tier reports its exact live condition. No endpoint ever synthesizes placeholder data, serves a cached expired JPEG, or pretends an offline service is healthy. A missing neural model, dead sensor, or lost network generates an immediate, honest spoken alert.
+          </div>
+
+          <div class="glass-card" style="margin-top:20px;">
+            <h4 style="color:var(--text-bright); margin-bottom:10px;">Three Golden Engineering Constraints:</h4>
+            <ul>
+              <li><strong>Zero-cloud collision reflex:</strong> If cloud servers go down or cellular signal drops, the ultrasonic stop and steer reflex functions with 100% autonomy on raw hardware.</li>
+              <li><strong>No silent failures:</strong> If an audio buffer underflows or a sensor drops, the watchdog trips and announces the failure state.</li>
+              <li><strong>Accessible by design:</strong> WCAG AAA compliant palette (#05070c background, #f59e0b high-visibility amber), touch targets &ge;56px (primary mic button 112px), single assertive screen-reader live region.</li>
             </ul>
           </div>
+        </section>
 
-          <!-- 2. ESP32 Reflex Glasses -->
-          <div class="card">
-            <div class="card-icon cyan">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="m4.93 4.93 4.24 4.24"></path><path d="m14.83 9.17 4.24-4.24"></path><path d="m14.83 14.83 4.24 4.24"></path><path d="m9.17 14.83-4.24 4.24"></path><circle cx="12" cy="12" r="2"></circle></svg>
+        <!-- ================================================================= 2. Quickstart -->
+        <section class="doc-section" id="quickstart">
+          <h2>Quickstart Guide <a class="anchor" href="#quickstart">#</a></h2>
+          <p>
+            Deploy the BlindSight gateway in three simple steps across Windows or Linux environments:
+          </p>
+
+          <div class="tabs-wrap" data-tabs>
+            <div class="tab-nav">
+              <button class="tab-btn active" data-tab="tab-win">Windows 10/11</button>
+              <button class="tab-btn" data-tab="tab-linux">Linux &amp; Raspberry Pi</button>
+              <button class="tab-btn" data-tab="tab-android">Android Sideloading</button>
             </div>
-            <h3 class="card-title">2. ESP32 Reflex Hardware</h3>
-            <p class="card-body">
-              Firmware in <code>firmware/esp32_main/</code> delivering instantaneous physical obstacle reflexes.
-            </p>
-            <ul class="card-list">
-              <li><strong>3x HC-SR04 Sonar:</strong> Left, Center, and Right obstacle sensors sweep continuously.</li>
-              <li><strong>PCM5102 I2S DAC:</strong> Zero-latency stereo audio alerts played directly into earphones.</li>
-              <li><strong>Push-to-Talk Pin:</strong> Physical button on GPIO 32 for tactile interaction.</li>
-              <li><strong>Fail Loudly:</strong> Hardware reflex operates autonomously even if phones or WiFi disconnect.</li>
-              <li><strong>ESP32-CAM:</strong> Optional compact camera module streaming video over WiFi.</li>
+
+            <!-- Windows Tab -->
+            <div class="tab-panel active" id="tab-win">
+              <p>Clone the repository and run the local edge server:</p>
+              <pre data-lang="bash" data-name="Windows Command Prompt">git clone https://github.com/devrift/blindsight.git
+cd blindsight
+python edge_server/server.py</pre>
+              <p>The edge gateway starts on port 5000 and serves speech, vision, and navigation telemetry.</p>
+            </div>
+
+            <!-- Linux Tab -->
+            <div class="tab-panel" id="tab-linux">
+              <p>On any Linux distribution or SBC:</p>
+              <pre data-lang="bash" data-name="Terminal">git clone https://github.com/devrift/blindsight.git
+cd blindsight
+pip install -r edge_server/requirements.txt
+python edge_server/server.py</pre>
+            </div>
+
+            <!-- Android Tab -->
+            <div class="tab-panel" id="tab-android">
+              <p>Download the pre-compiled native APK directly onto your phone, allow installation from Unknown Sources, and open BlindSight to navigate.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================= 3. Android APK -->
+        <section class="doc-section" id="android-app">
+          <div class="glass-card" style="padding: 24px; border: 2px solid var(--accent); margin-bottom: 24px; background: linear-gradient(145deg, rgba(15,23,42,0.95), rgba(11,17,32,0.95)); border-radius: 16px;">
+            <div style="display:flex; flex-wrap:wrap; gap: 24px; align-items: center; justify-content: space-between;">
+              <div style="flex: 1; min-width: 280px;">
+                <div style="display:inline-block; font-size: 0.8rem; font-weight: 700; color: #34d399; background: rgba(52,211,153,0.15); padding: 4px 10px; border-radius: 20px; margin-bottom: 8px;">
+                  ● Ready for Android 7.0+ (Nougat &ndash; 15)
+                </div>
+                <h3 style="margin: 0 0 8px 0; color: var(--text-bright); font-size: 1.5rem;">Download BlindSight Testing APK</h3>
+                <p style="margin: 0 0 16px 0; color: var(--text-dim); font-size: 0.95rem; line-height: 1.5;">
+                  Get the official native Android build with autonomous voice companion, ultrasonic reflex radar alerts, and multimodal camera vision.
+                </p>
+                <div style="display:flex; flex-wrap:wrap; gap: 12px; align-items:center;">
+                  <a class="btn btn-primary" href="/BlindSight-testing.apk" download="BlindSight-testing.apk" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-weight: 800; padding: 14px 28px; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 10px; border-radius: 12px; text-decoration: none; box-shadow: 0 6px 20px rgba(245,158,11,0.35);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Download APK v1.5 (22.4 MB)</span>
+                  </a>
+                  <span style="font-size: 0.85rem; color: var(--text-dim);">Build 5 &bull; Android 7.0 &ndash; 15</span>
+                </div>
+              </div>
+
+              <div style="text-align: center; background: #ffffff; padding: 12px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">
+                <img src="/assets/img/apk-qr.png" alt="Scan QR code to install APK on your phone" width="160" height="160" style="display:block; border-radius: 6px;" />
+                <span style="display: block; font-size: 0.75rem; color: #334155; font-weight: 700; margin-top: 6px;">Scan with Phone Camera</span>
+              </div>
+            </div>
+          </div>
+
+          <h2>Android Companion Features <a class="anchor" href="#android-app">#</a></h2>
+          <div class="glass-panel" style="margin-bottom:20px;">
+            <h4 style="color:var(--text-bright); margin-bottom:12px;">Key Advantages of the Native Companion:</h4>
+            <ul>
+              <li><strong>Giant Accessible Push-to-Talk:</strong> High-visibility 112px microphone button with tactile haptic confirmation.</li>
+              <li><strong>Wake Word &amp; Hands-Free:</strong> Continuous background listener responds to <em>"BlindSight"</em> or <em>"hey BlindSight"</em>.</li>
+              <li><strong>Multimodal Scene Camera:</strong> Instant spoken descriptions of obstacles, doors, and pathways.</li>
+              <li><strong>Offline Personal Memory Bank:</strong> Securely remembers names, locations, and personal items offline.</li>
             </ul>
           </div>
+        </section>
 
-          <!-- 3. Edge Intelligence Server -->
-          <div class="card">
-            <div class="card-icon emerald">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+        <!-- ================================================================= 4. Architecture -->
+        <section class="doc-section" id="architecture">
+          <h2>Three-Tier Safety Architecture <a class="anchor" href="#architecture">#</a></h2>
+          <p>
+            The system partitions responsibilities so that critical obstacle detection never depends on internet access:
+          </p>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 20px;">
+            <!-- Tier 0 -->
+            <div class="glass-card">
+              <span class="tag tag-tier0" style="margin-bottom:8px; display:inline-block;">Tier 0 &bull; Critical Reflex</span>
+              <h3 style="color:var(--text-bright); margin-top:0;">ESP32 Hardware</h3>
+              <p style="font-size:0.9rem; color:var(--text-muted);">
+                3x HC-SR04 ultrasonic array continuously scanning Left, Center, and Right. Direct hardware audio reflexes via PCM5102 I2S DAC.
+              </p>
             </div>
-            <h3 class="card-title">3. Edge Server Gateway</h3>
-            <p class="card-body">
-              Python Flask service in <code>edge_server/</code> providing speech and multimodal intelligence.
-            </p>
-            <ul class="card-list">
-              <li><strong>Unified API:</strong> <code>/api/chat</code>, <code>/api/voice</code>, <code>/api/upload-frame</code>, <code>/api/tts</code>.</li>
-              <li><strong>Multimodal Vision:</strong> Rapid image inspection for obstacles, paths, text, and signs.</li>
-              <li><strong>Dynamic Fallbacks:</strong> Graceful degradation ensures voice queries always receive prompt answers.</li>
-              <li><strong>No Fluff:</strong> Direct, helpful, concise navigation assistance.</li>
+
+            <!-- Tier 1 -->
+            <div class="glass-card">
+              <span class="tag tag-tier1" style="margin-bottom:8px; display:inline-block;">Tier 1 &bull; Edge Gateway</span>
+              <h3 style="color:var(--text-bright); margin-top:0;">Local Intelligence Hub</h3>
+              <p style="font-size:0.9rem; color:var(--text-muted);">
+                Python Flask service handling speech-to-text, camera frame analysis, and contextual dialogue with instant local earcons.
+              </p>
+            </div>
+
+            <!-- Tier 2 -->
+            <div class="glass-card">
+              <span class="tag tag-tier2" style="margin-bottom:8px; display:inline-block;">Tier 2 &bull; Companion Shell</span>
+              <h3 style="color:var(--text-bright); margin-top:0;">Android App (v1.5)</h3>
+              <p style="font-size:0.9rem; color:var(--text-muted);">
+                Touch-first and voice-first accessible interface with radar obstacle telemetry, memory management, and 7 spoken languages.
+              </p>
+            </div>
+          </div>
+
+          <!-- Ultrasonic Thresholds -->
+          <h3 style="margin-top: 30px; margin-bottom: 12px; color: var(--text-bright);">Ultrasonic Reflex Thresholds</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+            <div class="glass-card" style="border-left: 4px solid #f43f5e;">
+              <strong style="color: #f43f5e; font-size: 1.1rem; display: block;">&lt; 25 cm</strong>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Critical Stop Alert (<code>stop.wav</code>)</span>
+            </div>
+            <div class="glass-card" style="border-left: 4px solid #f59e0b;">
+              <strong style="color: #f59e0b; font-size: 1.1rem; display: block;">25 – 45 cm</strong>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Steering Direction (<code>left.wav</code> / <code>right.wav</code>)</span>
+            </div>
+            <div class="glass-card" style="border-left: 4px solid #38bdf8;">
+              <strong style="color: #38bdf8; font-size: 1.1rem; display: block;">&lt; 100 cm</strong>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Caution Guidance (<code>careful.wav</code>)</span>
+            </div>
+            <div class="glass-card" style="border-left: 4px solid #10b981;">
+              <strong style="color: #10b981; font-size: 1.1rem; display: block;">&ge; 100 cm</strong>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Path Clear Confirmation (<code>clear.wav</code>)</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================= 5. Hardware & Wiring -->
+        <section class="doc-section" id="hardware-wiring">
+          <h2>ESP32 Pinout &amp; Wiring Matrix <a class="anchor" href="#hardware-wiring">#</a></h2>
+          <p>
+            Exact GPIO pin mapping configured in <code>firmware/esp32_main/src/main.cpp</code>:
+          </p>
+
+          <div class="table-wrap">
+            <table class="api-table">
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th>Function / Signal</th>
+                  <th>ESP32 GPIO</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Left Sonar</strong> (HC-SR04)</td>
+                  <td>TRIG / ECHO</td>
+                  <td><code>TRIG 13</code> / <code>ECHO 34</code></td>
+                  <td>GPIO 34 is input-only</td>
+                </tr>
+                <tr>
+                  <td><strong>Center Sonar</strong> (HC-SR04)</td>
+                  <td>TRIG / ECHO</td>
+                  <td><code>TRIG 14</code> / <code>ECHO 35</code></td>
+                  <td>GPIO 35 is input-only</td>
+                </tr>
+                <tr>
+                  <td><strong>Right Sonar</strong> (HC-SR04)</td>
+                  <td>TRIG / ECHO</td>
+                  <td><code>TRIG 27</code> / <code>ECHO 39</code></td>
+                  <td>GPIO 39 is input-only</td>
+                </tr>
+                <tr>
+                  <td><strong>PCM5102 I2S DAC</strong></td>
+                  <td>BCK (Bit Clock)</td>
+                  <td><code>GPIO 26</code></td>
+                  <td>Direct 16-bit 44.1kHz audio</td>
+                </tr>
+                <tr>
+                  <td><strong>PCM5102 I2S DAC</strong></td>
+                  <td>WS (Word Select / LRCK)</td>
+                  <td><code>GPIO 25</code></td>
+                  <td>Left / Right audio framing</td>
+                </tr>
+                <tr>
+                  <td><strong>PCM5102 I2S DAC</strong></td>
+                  <td>DIN (Data In)</td>
+                  <td><code>GPIO 22</code></td>
+                  <td>Zero-latency reflex earcons</td>
+                </tr>
+                <tr>
+                  <td><strong>Push-To-Talk Button</strong></td>
+                  <td>Tactile Trigger</td>
+                  <td><code>GPIO 32</code></td>
+                  <td>Active LOW with internal pull-up</td>
+                </tr>
+                <tr>
+                  <td><strong>Status LED</strong></td>
+                  <td>State Indicator</td>
+                  <td><code>GPIO 2</code></td>
+                  <td>Onboard system beacon</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ================================================================= 6. Voice Commands -->
+        <section class="doc-section" id="voice-commands">
+          <h2>Voice Commands &amp; Memory Bank <a class="anchor" href="#voice-commands">#</a></h2>
+          <p>
+            BlindSight operates fully through natural spoken commands:
+          </p>
+
+          <div class="table-wrap">
+            <table class="api-table">
+              <thead>
+                <tr>
+                  <th>Intent</th>
+                  <th>Example Voice Command</th>
+                  <th>Response Behavior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Wake Word</strong></td>
+                  <td><em>"hey BlindSight"</em> / <em>"ok BlindSight"</em></td>
+                  <td>Plays wake chime and begins listening hands-free</td>
+                </tr>
+                <tr>
+                  <td><strong>Multimodal Vision</strong></td>
+                  <td><em>"describe"</em> / <em>"what is around me"</em></td>
+                  <td>Captures camera frame and speaks situational description</td>
+                </tr>
+                <tr>
+                  <td><strong>Store Fact</strong></td>
+                  <td><em>"remember that my keys are on the desk"</em></td>
+                  <td>Saves fact to persistent on-device memory bank</td>
+                </tr>
+                <tr>
+                  <td><strong>Recall Memory</strong></td>
+                  <td><em>"what do you remember?"</em> / <em>"where are my keys"</em></td>
+                  <td>Queries memory bank and recites saved facts</td>
+                </tr>
+                <tr>
+                  <td><strong>Forget Fact</strong></td>
+                  <td><em>"forget my keys"</em> / <em>"forget everything"</em></td>
+                  <td>Removes specific fact or clears memory bank</td>
+                </tr>
+                <tr>
+                  <td><strong>Language Switch</strong></td>
+                  <td><em>"language hindi"</em> / <em>"switch to spanish"</em></td>
+                  <td>Instantly switches speech synthesis and recognition</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ================================================================= 7. FAQ & Limitations -->
+        <section class="doc-section" id="faq">
+          <h2>Limitations &amp; Safety Notes <a class="anchor" href="#faq">#</a></h2>
+          <p>
+            In alignment with the principle of failing loudly:
+          </p>
+
+          <div class="callout safety">
+            <ul>
+              <li><strong>White Cane Partnership:</strong> BlindSight is an electronic companion designed to detect head-height and mid-body obstacles. It should always be used alongside a traditional white cane for ground-level drop-offs.</li>
+              <li><strong>Ultrasonic Material Factors:</strong> Extremely soft acoustic-absorbing fabrics (e.g. heavy wool coats) can soften 40 kHz echoes.</li>
+              <li><strong>Autonomous Reflex:</strong> Hardware ultrasonic alerts on the ESP32 operate 100% offline and will alert you even if phone battery or Wi-Fi runs out.</li>
             </ul>
           </div>
-        </div>
+        </section>
 
-        <!-- Ultrasonic Reflex Thresholds -->
-        <div class="reflex-grid">
-          <div class="reflex-pill danger">
-            <div class="reflex-dist">&lt; 25 cm</div>
-            <div class="reflex-action">CRITICAL STOP (stop.wav)</div>
-          </div>
-          <div class="reflex-pill caution">
-            <div class="reflex-dist">25 – 45 cm</div>
-            <div class="reflex-action">STEER (left.wav / right.wav)</div>
-          </div>
-          <div class="reflex-pill info">
-            <div class="reflex-dist">&lt; 100 cm</div>
-            <div class="reflex-action">CAUTION (careful.wav)</div>
-          </div>
-          <div class="reflex-pill safe">
-            <div class="reflex-dist">&ge; 100 cm</div>
-            <div class="reflex-action">PATH CLEAR (clear.wav)</div>
-          </div>
-        </div>
       </div>
-    </section>
-
-    <!-- =================================================================== Hardware Pinout -->
-    <section id="hardware">
-      <div class="wrap">
-        <div class="section-head">
-          <div class="section-kicker">Hardware Specifications</div>
-          <h2 class="section-title">ESP32 Pinout &amp; Connections</h2>
-          <p class="section-desc">
-            Exact GPIO pin mapping implemented in <code>firmware/esp32_main/src/main.cpp</code>.
-          </p>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Component</th>
-                <th>Signal / Role</th>
-                <th>ESP32 GPIO Pin</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Left Ultrasonic</strong> (HC-SR04)</td>
-                <td>Trigger / Echo</td>
-                <td><code>TRIG 13</code> / <code>ECHO 34</code></td>
-                <td>Left side coverage (GPIO 34 is input-only)</td>
-              </tr>
-              <tr>
-                <td><strong>Center Ultrasonic</strong> (HC-SR04)</td>
-                <td>Trigger / Echo</td>
-                <td><code>TRIG 14</code> / <code>ECHO 35</code></td>
-                <td>Front-facing coverage (GPIO 35 is input-only)</td>
-              </tr>
-              <tr>
-                <td><strong>Right Ultrasonic</strong> (HC-SR04)</td>
-                <td>Trigger / Echo</td>
-                <td><code>TRIG 27</code> / <code>ECHO 39</code></td>
-                <td>Right side coverage (GPIO 39 is input-only)</td>
-              </tr>
-              <tr>
-                <td><strong>I2S Audio DAC</strong> (PCM5102)</td>
-                <td>BCK (Bit Clock)</td>
-                <td><code>GPIO 26</code></td>
-                <td>Direct 16-bit 44.1kHz audio</td>
-              </tr>
-              <tr>
-                <td><strong>I2S Audio DAC</strong> (PCM5102)</td>
-                <td>WS / LRCK (Word Select)</td>
-                <td><code>GPIO 25</code></td>
-                <td>Left/Right audio framing</td>
-              </tr>
-              <tr>
-                <td><strong>I2S Audio DAC</strong> (PCM5102)</td>
-                <td>DIN / DATA</td>
-                <td><code>GPIO 22</code></td>
-                <td>Zero-latency reflex earcon playback</td>
-              </tr>
-              <tr>
-                <td><strong>Tactile Mic Button</strong></td>
-                <td>Push-To-Talk</td>
-                <td><code>GPIO 32</code></td>
-                <td>Active LOW with internal pull-up resistor</td>
-              </tr>
-              <tr>
-                <td><strong>Status Indicator</strong></td>
-                <td>System LED</td>
-                <td><code>GPIO 2</code></td>
-                <td>Onboard status beacon</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- =================================================================== Sideload Guide -->
-    <section id="sideload">
-      <div class="wrap">
-        <div class="section-head">
-          <div class="section-kicker">Android Installation</div>
-          <h2 class="section-title">Install in 3 Simple Steps</h2>
-          <p class="section-desc">
-            BlindSight is distributed as a direct APK. Follow these steps to install and start navigating.
-          </p>
-        </div>
-
-        <div class="steps-grid">
-          <div class="step-card">
-            <div class="step-number">1</div>
-            <h3 class="step-title">Download the APK</h3>
-            <p class="step-desc">
-              Tap the <strong>Download APK</strong> button or scan the QR code above on your Android smartphone (compatible with Android 7.0 through 15).
-            </p>
-          </div>
-
-          <div class="step-card">
-            <div class="step-number">2</div>
-            <h3 class="step-title">Allow Unknown Sources</h3>
-            <p class="step-desc">
-              When Android displays a prompt, tap <em>Settings</em> and toggle <em>Allow from this source</em> for your browser or file manager.
-            </p>
-          </div>
-
-          <div class="step-card">
-            <div class="step-number">3</div>
-            <h3 class="step-title">Open &amp; Speak</h3>
-            <p class="step-desc">
-              Grant Microphone and Camera permissions when asked. Tap the center 112px mic button or say <em>"BlindSight"</em> to start hands-free navigation.
-            </p>
-          </div>
-        </div>
-
-        <div style="margin-top: 2.5rem; text-align: center;">
-          <a class="btn-hero-primary" href="/BlindSight-testing.apk" download="BlindSight-testing.apk">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <span>Download BlindSight-testing.apk (v1.5 • 22.4 MB)</span>
-          </a>
-        </div>
-      </div>
-    </section>
+    </div>
   </main>
 
+  <!-- =================================================================== Back to Top Button -->
+  <button class="back-to-top" id="back-to-top" aria-label="Back to top">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+  </button>
+
+  <!-- =================================================================== Command Palette Search Modal -->
+  <div class="modal-backdrop" id="search-modal" aria-hidden="true">
+    <div class="search-modal">
+      <div class="modal-search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" class="modal-input" id="modal-search-input" placeholder="Search BlindSight documentation, commands, pins, APIs...">
+        <span class="modal-esc">ESC</span>
+      </div>
+      <div class="modal-results" id="modal-results">
+        <!-- Results injected dynamically via main.js -->
+      </div>
+    </div>
+  </div>
+
   <!-- =================================================================== Footer -->
-  <footer>
+  <footer class="footer">
     <div class="wrap">
-      <div class="footer-content">
+      <div class="footer-grid">
         <div>
-          <strong>BlindSight</strong> &bull; Voice-First Mobility Aid &bull; Built by Lavyansh &amp; Agastaya Verma
+          <div class="footer-brand">
+            <img src="/assets/img/icon.svg" alt="BlindSight" width="28" height="28" style="border-radius:6px;">
+            <span>BlindSight Companion</span>
+          </div>
+          <p style="font-size:0.92rem; color:var(--text-muted); max-width:38ch; margin-bottom:14px;">
+            A voice-first, three-tier navigation and awareness companion for blind and low-vision pedestrians.
+          </p>
+          <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-faint);">
+            MIT Licensed &bull; Open Source Mobility Aid
+          </div>
         </div>
-        <div class="footer-links">
-          <a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
-          <a href="https://github.com/devrift/blindsight/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
-          <a href="/BlindSight-testing.apk" download="BlindSight-testing.apk">Download APK</a>
+
+        <div class="footer-col">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#quickstart">Quickstart Guide</a></li>
+            <li><a href="#architecture">3-Tier Safety</a></li>
+            <li><a href="#voice-commands">Voice Commands</a></li>
+          </ul>
         </div>
+
+        <div class="footer-col">
+          <h4>Hardware &amp; Code</h4>
+          <ul>
+            <li><a href="#hardware-wiring">Wiring Diagram V2</a></li>
+            <li><a href="#android-app">Android APK</a></li>
+            <li><a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener">GitHub Project</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Repository</h4>
+          <ul>
+            <li><a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener">GitHub Project</a></li>
+            <li><a href="/BlindSight-testing.apk" download="BlindSight-testing.apk">Download APK (v1.5)</a></li>
+            <li><a href="https://github.com/devrift/blindsight/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>BlindSight Project &bull; Built by Lavyansh &amp; Agastaya Verma &bull; Glassmorphic Aesthetics.</div>
+        <div>"A mobility aid must fail loudly, never optimistically."</div>
       </div>
     </div>
   </footer>
 
+  <!-- Scripts -->
+  <script src="/assets/js/highlight.js"></script>
   <script src="/assets/js/main.js"></script>
 </body>
 </html>
