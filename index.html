@@ -1,21 +1,1155 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#05070c">
-  <meta name="description" content="Download BlindSight: AI Visual Assistant & Orientation Companion for Android.">
-  <title>BlindSight — Download Android App</title>
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="BlindSight">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlindSight — Voice-First Navigation Companion Documentation</title>
+  <meta name="description" content="Technical documentation for BlindSight: an accessible, voice-first three-tier navigation companion for blind and low-vision users featuring ESP32 ultrasonic reflex, Raspberry Pi edge vision, and PWA companion.">
+  <link rel="icon" type="image/svg+xml" href="/assets/img/icon.svg">
+  <link rel="alternate icon" type="image/png" href="/assets/img/favicon.png">
+  <link rel="stylesheet" href="/assets/css/style.css">
 </head>
 <body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.tsx"></script>
+
+  <!-- Ambient Floating Mesh Glow Orbs -->
+  <div class="ambient-glow-wrap" aria-hidden="true">
+    <div class="glow-orb glow-orb-1"></div>
+    <div class="glow-orb glow-orb-2"></div>
+    <div class="glow-orb glow-orb-3"></div>
+  </div>
+
+  <!-- Scroll Progress Indicator Bar -->
+  <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+
+  <!-- Floating Glassmorphic Top Navbar -->
+  <div class="nav-wrap">
+    <header class="nav">
+      <a class="brand" href="index.html">
+        <img class="brand-icon" src="/assets/img/icon.svg" alt="BlindSight Logo">
+        <span>BlindSight</span>
+        <span class="badge-ver">v3.3</span>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#overview" class="active">Overview</a>
+        <a href="#quickstart">Quickstart</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#hardware-wiring">Hardware &amp; Wiring</a>
+        <a href="#firmware-variants">Firmware</a>
+        <a href="#voice-commands">Commands</a>
+        <a href="#api-reference">REST API</a>
+        <a href="#android-app">Android APK</a>
+      </nav>
+
+      <div class="nav-cta">
+        <button class="search-trigger" data-search-trigger aria-label="Search documentation">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span>Search docs...</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        <button class="icon-btn" data-theme-toggle aria-label="Toggle theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path></svg>
+        </button>
+
+        <a class="icon-btn" href="https://github.com/devrift/blindsight" target="_blank" rel="noopener noreferrer" aria-label="GitHub Repository">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.54-3.87-1.54-.53-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.02 1.75 2.68 1.24 3.34.95.1-.74.4-1.25.72-1.53-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12v3.14c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
+        </a>
+
+        <button class="icon-btn nav-burger" data-nav-burger aria-label="Open mobile menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+      </div>
+    </header>
+  </div>
+
+  <!-- Main Container -->
+  <main class="wrap">
+
+    <!-- =================================================================== Hero Header -->
+    <section class="hero" id="overview">
+      <div class="hero-grid">
+        <div>
+          <div class="kicker">
+            <span class="pulse-dot"></span>
+            <span>Three-Tier Mobility Aid &bull; v3.3 Verified</span>
+          </div>
+
+          <h1>
+            Voice-First Navigation Companion for <br>
+            <span class="grad-text">Blind &amp; Low-Vision Users.</span>
+          </h1>
+
+          <p class="lead">
+            BlindSight combines zero-latency ultrasonic reflex audio on an ESP32 (&lt;25 cm stop protection), offline edge YOLOv8 vision on a Raspberry Pi, and a voice-first cloud companion with 7 neural languages. Built strictly on one inviolable rule: <strong>a mobility aid must fail loudly, never optimistically.</strong>
+          </p>
+
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/BlindSight-testing.apk" download="BlindSight-testing.apk" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-weight: 800; box-shadow: 0 4px 18px rgba(245,158,11,0.35);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Download Android APK (v1.5)</span>
+            </a>
+            <a class="btn btn-primary" href="#quickstart">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72c0 .8.87 1.3 1.56.9l11-6.86a1.05 1.05 0 0 0 0-1.8l-11-6.86A1.05 1.05 0 0 0 8 5.14z"></path></svg>
+              <span>Get Started in 3 Steps</span>
+            </a>
+            <a class="btn btn-glass" href="#hardware-wiring">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+              <span>Hardware &amp; Wiring V2</span>
+            </a>
+            <a class="btn btn-glass" href="#voice-commands">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+              <span>Voice Commands</span>
+            </a>
+          </div>
+
+          <div class="hero-stats">
+            <div class="stat-card">
+              <div class="stat-num">3 Tiers</div>
+              <div class="stat-label">Independent Safety Architecture</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">&lt;25 cm</div>
+              <div class="stat-label">Critical Ultrasonic Reflex Stop</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">7 Voices</div>
+              <div class="stat-label">Neural Spoken Languages Built In</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">93 / 93</div>
+              <div class="stat-label">Automated CI Contract Tests Passing</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <!-- Glassmorphic Architecture Highlights Card -->
+          <div class="glass-panel">
+            <h3 style="margin-top:0; margin-bottom:14px; font-size:1.25rem; color:var(--text-bright);">System Design Rules</h3>
+            <p style="font-size:0.92rem; color:var(--text-muted); margin-bottom:16px;">
+              Commodity electronics transform a user’s existing smartphone and compact wearables into a resilient guide.
+            </p>
+
+            <div class="glass-card" style="margin-bottom:12px; padding:16px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <span class="tag tag-tier0">Tier 0 &bull; Reflex</span>
+                <strong style="font-size:0.92rem;">Network-Free ESP32 + DAC</strong>
+              </div>
+              <p style="font-size:0.86rem; color:var(--text-muted); margin:0;">
+                Three HC-SR04 sensors pulse at 40 kHz. Stops instantly under 25 cm; steers 25–45 cm over PCM5102 I2S DAC. Protection survives total Wi-Fi loss.
+              </p>
+            </div>
+
+            <div class="glass-card" style="margin-bottom:12px; padding:16px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <span class="tag tag-tier1">Tier 1 &bull; Edge Vision</span>
+                <strong style="font-size:0.92rem;">Raspberry Pi YOLOv8 ONNX</strong>
+              </div>
+              <p style="font-size:0.86rem; color:var(--text-muted); margin:0;">
+                Isolated subprocess evaluates frames in ~1.5 s with zero cloud dependency. Edge-TTS neural speech renderer with offline espeak-ng fallback.
+              </p>
+            </div>
+
+            <div class="glass-card" style="padding:16px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <span class="tag tag-tier2">Tier 2 &bull; Cloud Companion</span>
+                <strong style="font-size:0.92rem;">Voice-First PWA &amp; Android Shell</strong>
+              </div>
+              <p style="font-size:0.86rem; color:var(--text-muted); margin:0;">
+                Continuous wake word ("hey BlindSight"), scene Q&amp;A, 20 personal memory slots, and scoped self-signed certificate trust.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== Documentation Layout -->
+    <div class="docs-layout">
+
+      <!-- Sticky Glass Table of Contents -->
+      <aside class="toc-sidebar">
+        <div class="toc-title">Documentation Index</div>
+        <nav class="toc-nav">
+          <a class="toc-link active" href="#overview">Overview &amp; Philosophy</a>
+          <a class="toc-link" href="#quickstart">Quickstart (3 Steps)</a>
+          <a class="toc-link" href="#architecture">3-Tier Safety System</a>
+          <a class="toc-link" href="#hardware-wiring">Hardware &amp; Wiring V2</a>
+          <a class="toc-link" href="#firmware-variants">Firmware Contracts</a>
+          <a class="toc-link" href="#safety-rules">12 Audited Safety Rules</a>
+          <a class="toc-link" href="#voice-commands">Voice Commands &amp; Memory</a>
+          <a class="toc-link" href="#api-reference">REST API Specification</a>
+          <a class="toc-link" href="#android-app">Android Shell (APK)</a>
+          <a class="toc-link" href="#testing-audit">CI &amp; Field Verification</a>
+          <a class="toc-link" href="#faq">FAQ &amp; Limitations</a>
+        </nav>
+      </aside>
+
+      <!-- Main Docs Content Stream -->
+      <div class="doc-content">
+
+        <!-- ================================================================= 1. Philosophy -->
+        <section class="doc-section" id="philosophy">
+          <h2>Core Philosophy: Fail Loudly, Never Optimistically <a class="anchor" href="#philosophy">#</a></h2>
+          <p>
+            Blind and low-vision pedestrians face life-threatening hazards from overhead tree branches, low wires, drop-offs, and quiet electric vehicles. Traditional electronic aids cost thousands of dollars, while smartphone apps frequently freeze silently or hallucinate descriptions.
+          </p>
+
+          <div class="callout safety">
+            <strong>The Core Tenet:</strong> A mobility aid must fail loudly, never optimistically. Every tier reports its exact live condition. No endpoint ever synthesizes placeholder data, serves a cached expired JPEG, or pretends an offline service is healthy. A missing neural model, dead sensor, or lost network generates an immediate, honest spoken alert.
+          </div>
+
+          <div class="glass-card" style="margin-top:20px;">
+            <h4 style="color:var(--text-bright); margin-bottom:10px;">Three Golden Engineering Constraints:</h4>
+            <ul>
+              <li><strong>Zero-cloud collision reflex:</strong> If cloud servers go down or cellular signal drops, the ultrasonic stop and steer reflex must function with 100% autonomy on raw hardware.</li>
+              <li><strong>No silent failures:</strong> If an ESP32-CAM frame drops or an audio buffer underflows, the watchdog trips and announces the failure state.</li>
+              <li><strong>Accessible by design:</strong> WCAG AAA compliant palette (#05070c background, #f59e0b high-visibility amber), touch targets ≥56px (primary mic button 112px), single assertive screen-reader live region.</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- ================================================================= 2. Quickstart -->
+        <section class="doc-section" id="quickstart">
+          <h2>Quickstart Guide <a class="anchor" href="#quickstart">#</a></h2>
+          <p>
+            Deploy the BlindSight companion gateway in three simple steps. You do not need to be a developer to get running on Windows, Linux, or a Raspberry Pi.
+          </p>
+
+          <div class="tabs-wrap" data-tabs>
+            <div class="tab-nav">
+              <button class="tab-btn active" data-tab="tab-win">Windows 10/11</button>
+              <button class="tab-btn" data-tab="tab-pi">Raspberry Pi &amp; Linux</button>
+              <button class="tab-btn" data-tab="tab-manual">Manual Python venv</button>
+            </div>
+
+            <!-- Windows Tab -->
+            <div class="tab-panel active" id="tab-win">
+              <p>Download the latest release zip from GitHub, unpack it anywhere (e.g., <code>C:\BlindSight</code>), and double-click the automated starter script:</p>
+              <pre data-lang="bash" data-name="Windows Command Prompt">git clone https://github.com/devrift/blindsight.git
+cd blindsight
+start_blindsight.bat</pre>
+              <p>The first run automatically installs dependencies and opens <code>http://localhost:5000</code> in your default browser.</p>
+            </div>
+
+            <!-- Pi / Linux Tab -->
+            <div class="tab-panel" id="tab-pi">
+              <p>On Raspberry Pi OS (Bookworm or Bullseye) or any Debian-based Linux distribution:</p>
+              <pre data-lang="bash" data-name="Raspberry Pi Terminal">git clone https://github.com/devrift/blindsight.git
+cd blindsight
+chmod +x start_blindsight.sh
+./start_blindsight.sh</pre>
+              <p>The script displays both the local IP address and the HTTPS certificate address for pairing mobile phones on the same Wi-Fi network.</p>
+            </div>
+
+            <!-- Manual Tab -->
+            <div class="tab-panel" id="tab-manual">
+              <p>To run the Flask and edge-vision server in an isolated virtual environment:</p>
+              <pre data-lang="bash" data-name="Manual Setup">python3 -m venv .venv
+source .venv/bin/activate    # On Windows: .venv\Scripts\activate
+pip install -r edge_server/requirements.txt
+python3 edge_server/server.py</pre>
+            </div>
+          </div>
+
+          <h3>Pairing Your Smartphone</h3>
+          <p>Connect your mobile device to the same Wi-Fi network as the gateway machine:</p>
+          <ul>
+            <li><strong>Android Phone (Chrome / Edge / Native Shell):</strong> Open the <code>https://&lt;gateway-ip&gt;:5000</code> URL printed in the terminal. Accept the self-signed certificate once, permit microphone access, and speak <code>"hey BlindSight"</code>.</li>
+            <li><strong>iPhone / iPad (Safari):</strong> Apple restricts web apps from continuous wake-word background listening. BlindSight automatically detects iOS and activates dictation mode: tap the large button, tap the microphone icon on the native iOS keyboard, dictate, and tap Ask. Speech audio replies back through the neural voice engine.</li>
+            <li><strong>Local Workstation:</strong> Simply browse to <code>http://localhost:5000</code>.</li>
+          </ul>
+
+          <div class="callout info">
+            <strong>Optional Cloud Intelligence:</strong> To enable generative vision questions beyond the local ONNX model, copy <code>edge_server/.env.example</code> to <code>edge_server/.env</code> and supply your <code>OPENROUTER_API_KEY=sk-or-...</code>. Without a key, offline reflex, memory, and status remain 100% active.
+          </div>
+        </section>
+
+        <!-- ================================================================= 3. Architecture -->
+        <section class="doc-section" id="architecture">
+          <h2>Three-Tier Safety Architecture <a class="anchor" href="#architecture">#</a></h2>
+          <p>
+            BlindSight decouples immediate life-safety reflexes from computationally intensive edge computer vision and high-level conversational AI.
+          </p>
+
+          <div class="glass-panel" style="margin-bottom:24px;">
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:20px;">
+              
+              <!-- Tier 0 -->
+              <div class="glass-card">
+                <div class="card-icon" style="background:rgba(245, 158, 11, 0.15); color:var(--amber);">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 12 8"></polygon><line x1="16" y1="12" x2="12" y2="12"></line></svg>
+                </div>
+                <h4 class="card-title">Tier 0: Ultrasonic Reflex</h4>
+                <p class="card-desc">
+                  Runs directly on the ESP32 DevKit V1 microcontroller. Reads 3 ultrasonic sensors simultaneously. If any centre obstacle is detected within <strong>25 cm</strong>, it interrupts all routines and streams <code>stop.wav</code> over I2S to the PCM5102 DAC in under 10 ms.
+                </p>
+                <div style="margin-top:14px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint);">
+                  Hardware: ESP32 &bull; 3x HC-SR04 &bull; PCM5102 DAC
+                </div>
+              </div>
+
+              <!-- Tier 1 -->
+              <div class="glass-card">
+                <div class="card-icon" style="background:rgba(56, 189, 248, 0.15); color:var(--sky);">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                </div>
+                <h4 class="card-title">Tier 1: Edge Machine Vision</h4>
+                <p class="card-desc">
+                  Hosted on a Raspberry Pi 3B+ or local gateway laptop. Executes a YOLOv8-nano ONNX neural network in an isolated subprocess (~1.5 s inference per frame). Operates completely offline, converting bounding boxes into clear spatial announcements.
+                </p>
+                <div style="margin-top:14px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint);">
+                  Runtime: ONNX Runtime &bull; edge-tts &bull; espeak-ng
+                </div>
+              </div>
+
+              <!-- Tier 2 -->
+              <div class="glass-card">
+                <div class="card-icon" style="background:rgba(168, 85, 247, 0.15); color:#c084fc;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                </div>
+                <h4 class="card-title">Tier 2: Cloud Companion</h4>
+                <p class="card-desc">
+                  Voice-first progressive web app paired with native Android shell. Provides hands-free wake word detection, long-term personal memory (up to 20 facts saved locally), 7 spoken languages, and rich scene Q&amp;A via OpenRouter vision-language models.
+                </p>
+                <div style="margin-top:14px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint);">
+                  Stack: TypeScript PWA &bull; Web Audio &bull; Android Shell
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <h3>Ultrasonic Threshold Guidance Table</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Distance Band</th>
+                  <th>Direction</th>
+                  <th>Action Triggered</th>
+                  <th>Audio Feedback</th>
+                  <th>Safety Tier</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>&lt; 25 cm</strong></td>
+                  <td>Centre</td>
+                  <td>Emergency Stop Halt</td>
+                  <td><code>stop.wav</code> (Critical alarm)</td>
+                  <td><span class="tag tag-tier0">Tier 0 Reflex</span></td>
+                </tr>
+                <tr>
+                  <td><strong>25 &ndash; 45 cm</strong></td>
+                  <td>Left / Right</td>
+                  <td>Steering Guidance</td>
+                  <td><code>left.wav</code> or <code>right.wav</code></td>
+                  <td><span class="tag tag-tier0">Tier 0 Reflex</span></td>
+                </tr>
+                <tr>
+                  <td><strong>45 &ndash; 100 cm</strong></td>
+                  <td>All Sensors</td>
+                  <td>Cautionary Proximity Alert</td>
+                  <td><code>careful.wav</code></td>
+                  <td><span class="tag tag-tier0">Tier 0 Reflex</span></td>
+                </tr>
+                <tr>
+                  <td><strong>&ge; 100 cm</strong></td>
+                  <td>Forward Path</td>
+                  <td>Clear Trajectory Confirmation</td>
+                  <td><code>clear.wav</code></td>
+                  <td><span class="tag tag-tier0">Tier 0 Reflex</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ================================================================= 4. Hardware & Wiring V2 -->
+        <section class="doc-section" id="hardware-wiring">
+          <h2>Hardware &amp; Wiring V2 <a class="anchor" href="#hardware-wiring">#</a></h2>
+          <p>
+            The production wiring specification eliminates fragile dual-rail Arduino distribution boards in favor of a <strong>unified 5V 3A DC buck converter</strong> with a single common ground plane.
+          </p>
+
+          <div class="callout safety">
+            <strong>Critical Divider Rule:</strong> The ESP32 GPIO pins are strictly 3.3V tolerant. HC-SR04 ECHO pins output 5V logic pulses. Never connect an ECHO pin directly to an ESP32. Every ECHO wire requires a voltage divider: <code>ECHO &rarr; 1 k&Omega; &rarr; GPIO &rarr; 2 k&Omega; &rarr; GND</code>.
+          </div>
+
+          <div class="tabs-wrap" data-tabs>
+            <div class="tab-nav">
+              <button class="tab-btn active" data-tab="tab-hw-power">Power Map (V2)</button>
+              <button class="tab-btn" data-tab="tab-hw-esp32">Main ESP32 Pinout</button>
+              <button class="tab-btn" data-tab="tab-hw-cam">ESP32-CAM Pinout</button>
+              <button class="tab-btn" data-tab="tab-hw-bom">Bill of Materials</button>
+            </div>
+
+            <!-- Tab: Power -->
+            <div class="tab-panel active" id="tab-hw-power">
+              <div class="glass-card" style="margin-bottom:16px;">
+                <h4 style="color:var(--text-bright); margin-bottom:10px;">Unified 5V 3A Buck Architecture</h4>
+                <ul>
+                  <li><strong>Power Source:</strong> 12V Li-ion battery pack or 12V 2A DC wall adapter.</li>
+                  <li><strong>Protection:</strong> 3A fast-blow inline fuse on the 12V positive rail.</li>
+                  <li><strong>Step-Down:</strong> High-efficiency LM2596 or XL4015 buck regulator calibrated to <strong>5.05V DC</strong> under load.</li>
+                  <li><strong>Common Ground:</strong> All sensor grounds, DAC ground, ESP32 grounds, and buck GND bonded together at a single bus bar to eliminate ground loop hum in audio.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Tab: ESP32 Pinout -->
+            <div class="tab-panel" id="tab-hw-esp32">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Module</th>
+                      <th>Module Pin</th>
+                      <th>ESP32 DevKit V1 Pin</th>
+                      <th>Notes &amp; Resistors</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td rowspan="5"><strong>PCM5102 I2S DAC</strong></td>
+                      <td>VCC</td>
+                      <td>5V Rail</td>
+                      <td>Verify DAC module 5V tolerant regulator</td>
+                    </tr>
+                    <tr>
+                      <td>GND</td>
+                      <td>Common GND</td>
+                      <td>Clean audio return</td>
+                    </tr>
+                    <tr>
+                      <td>BCK / BCLK</td>
+                      <td><code>GPIO 26</code></td>
+                      <td>I2S Bit Clock</td>
+                    </tr>
+                    <tr>
+                      <td>LCK / LRCK / WS</td>
+                      <td><code>GPIO 25</code></td>
+                      <td>I2S Word Select</td>
+                    </tr>
+                    <tr>
+                      <td>DIN</td>
+                      <td><code>GPIO 22</code></td>
+                      <td>I2S Serial Data</td>
+                    </tr>
+                    <tr>
+                      <td rowspan="2"><strong>Left HC-SR04</strong></td>
+                      <td>TRIG</td>
+                      <td><code>GPIO 13</code></td>
+                      <td>Direct connection</td>
+                    </tr>
+                    <tr>
+                      <td>ECHO</td>
+                      <td><code>GPIO 34</code></td>
+                      <td>Through 1 k&Omega; / 2 k&Omega; divider to GND</td>
+                    </tr>
+                    <tr>
+                      <td rowspan="2"><strong>Centre HC-SR04</strong></td>
+                      <td>TRIG</td>
+                      <td><code>GPIO 14</code></td>
+                      <td>Direct connection</td>
+                    </tr>
+                    <tr>
+                      <td>ECHO</td>
+                      <td><code>GPIO 35</code></td>
+                      <td>Through 1 k&Omega; / 2 k&Omega; divider to GND</td>
+                    </tr>
+                    <tr>
+                      <td rowspan="2"><strong>Right HC-SR04</strong></td>
+                      <td>TRIG</td>
+                      <td><code>GPIO 27</code></td>
+                      <td>Direct connection</td>
+                    </tr>
+                    <tr>
+                      <td>ECHO</td>
+                      <td><code>GPIO 39</code></td>
+                      <td>Through 1 k&Omega; / 2 k&Omega; divider to GND</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Emergency Button</strong></td>
+                      <td>Pin 1 &bull; Pin 2</td>
+                      <td><code>GPIO 32</code> &bull; GND</td>
+                      <td>Internal <code>INPUT_PULLUP</code>; Active LOW</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Tab: ESP32-CAM -->
+            <div class="tab-panel" id="tab-hw-cam">
+              <div class="glass-card">
+                <h4 style="color:var(--text-bright); margin-bottom:8px;">ESP32-CAM AI Thinker Configuration</h4>
+                <p style="font-size:0.92rem; color:var(--text-muted);">
+                  The camera module sits in a lightweight headmount/chestmount frame, capturing 320x240 JPEG frames and streaming them wirelessly to the main ESP32 over connectionless ESP-NOW.
+                </p>
+                <ul>
+                  <li><strong>Power:</strong> 5V Rail &amp; Common GND. Place a <strong>470&ndash;1000 &micro;F, &ge;6.3V electrolytic capacitor</strong> directly between the camera 5V and GND pins to suppress WiFi burst voltage drops.</li>
+                  <li><strong>Flashing Mode:</strong> Ground <code>GPIO 0</code> during power-up or reset to enter download mode. Disconnect <code>GPIO 0</code> for standard boot.</li>
+                  <li><strong>Serial Uplink:</strong> <code>U0R</code> (RX) and <code>U0T</code> (TX) connect to USB-TTL adapter at 115200 baud only while uploading firmware.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Tab: BOM -->
+            <div class="tab-panel" id="tab-hw-bom">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Component</th>
+                      <th>Quantity</th>
+                      <th>Tier</th>
+                      <th>Specification &amp; Purpose</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>ESP32 DevKit V1</td>
+                      <td>1</td>
+                      <td><span class="tag tag-tier0">Tier 0</span></td>
+                      <td>30-pin dual-core Xtensa LX6 MCU &bull; Reflex Controller</td>
+                    </tr>
+                    <tr>
+                      <td>HC-SR04 Ultrasonic</td>
+                      <td>3</td>
+                      <td><span class="tag tag-tier0">Tier 0</span></td>
+                      <td>40 kHz ultrasonic transducers &bull; Left, Centre, Right</td>
+                    </tr>
+                    <tr>
+                      <td>PCM5102 I2S DAC Module</td>
+                      <td>1</td>
+                      <td><span class="tag tag-tier0">Tier 0</span></td>
+                      <td>High-resolution audio DAC &bull; Drives headphones/speaker</td>
+                    </tr>
+                    <tr>
+                      <td>ESP32-CAM AI Thinker</td>
+                      <td>1</td>
+                      <td><span class="tag tag-tier0">Tier 0 &rarr; 1</span></td>
+                      <td>OV2640 camera module with ESP-NOW wireless uplink</td>
+                    </tr>
+                    <tr>
+                      <td>Raspberry Pi 3B+ or PC</td>
+                      <td>1</td>
+                      <td><span class="tag tag-tier1">Tier 1</span></td>
+                      <td>Edge vision server &bull; YOLOv8-nano ONNX &bull; TTS engine</td>
+                    </tr>
+                    <tr>
+                      <td>DC-DC Buck Converter</td>
+                      <td>1</td>
+                      <td>Power</td>
+                      <td>LM2596/XL4015 Step-Down &bull; 12V to 5V 3A</td>
+                    </tr>
+                    <tr>
+                      <td>Resistors (1 k&Omega; &amp; 2 k&Omega;)</td>
+                      <td>3 + 3</td>
+                      <td>Signal</td>
+                      <td>1/4W 1% metal film voltage dividers for ECHO pins</td>
+                    </tr>
+                    <tr>
+                      <td>Capacitor (470&ndash;1000 &micro;F)</td>
+                      <td>1</td>
+                      <td>Power</td>
+                      <td>Low-ESR electrolytic capacitor across ESP32-CAM rail</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ================================================================= 5. Firmware Variants -->
+        <section class="doc-section" id="firmware-variants">
+          <h2>Firmware Synchronization Contract <a class="anchor" href="#firmware-variants">#</a></h2>
+          <p>
+            The main ESP32 reflex firmware exists across <strong>three distinct implementations</strong> to accommodate different builder skillsets. A strict development contract mandates that any bug fix or threshold modification must be committed across all three files simultaneously:
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Implementation</th>
+                  <th>Path in Repository</th>
+                  <th>Target Audience</th>
+                  <th>Config Mechanism</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>PlatformIO</strong></td>
+                  <td><code>firmware/esp32_main/src/main.cpp</code></td>
+                  <td>VS Code developers &amp; CI automation</td>
+                  <td><code>include/secrets.h</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Arduino IDE</strong></td>
+                  <td><code>firmware/esp32_main/BlindSight_Main_ESP32.ino</code></td>
+                  <td>Arduino GUI users (no terminal needed)</td>
+                  <td>Constants block at top of sketch</td>
+                </tr>
+                <tr>
+                  <td><strong>PowerShell Script</strong></td>
+                  <td><code>docs/hardware/Install_BlindSight_Main_ESP32.ps1</code></td>
+                  <td>Non-technical builders (one-click automated)</td>
+                  <td>Automated serial injection</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            The ESP32-CAM companion firmware similarly maintains two synced copies: <code>firmware/esp32_cam/src/main.cpp</code> (PlatformIO) and <code>firmware/esp32_cam/BlindSight_Camera.ino</code> (Arduino IDE).
+          </p>
+        </section>
+
+        <!-- ================================================================= 6. The 12 Safety Rules -->
+        <section class="doc-section" id="safety-rules">
+          <h2>12 Audited Safety Rules <a class="anchor" href="#safety-rules">#</a></h2>
+          <p>
+            Audited in October 2026, these 12 rules prevent firmware lockups, strict-aliasing memory corruption, audio buffer overflows, and dangerous packet leakage:
+          </p>
+
+          <div class="accordion-list">
+            
+            <div class="accordion-item open">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 01</span>
+                  <span>Bounded Wi-Fi Connection Timeout</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                <code>WiFi.status()</code> loops are bounded strictly by <code>WIFI_CONNECT_TIMEOUT_MS</code> (15 seconds). Under no circumstances may <code>setup()</code> loop indefinitely waiting for a router: the main loop must begin executing immediately so the offline ultrasonic reflex and tactile button function even if the gateway is completely powered down.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 02</span>
+                  <span>ESP-NOW Callback Version Guard</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Supports ESP-IDF 4.x and ESP-IDF 5.x via <code>#if defined(ESP_ARDUINO_VERSION_MAJOR) &amp;&amp; ESP_ARDUINO_VERSION_MAJOR &gt;= 3</code>. Handles the API change between <code>const uint8_t *mac</code> and <code>esp_now_recv_info_t</code> without silent compile warnings.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 03</span>
+                  <span>Sender MAC Address Filtering</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                The main ESP32 invokes <code>isCamera(mac)</code> on every incoming ESP-NOW frame. Frames from unknown or spoofed transmitters are immediately dropped to prevent packet injection or buffer contamination.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 04</span>
+                  <span>Audio URL from /analyse JSON Reply</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Audio endpoints are dynamically routed to <code>/audio/&lt;16-hex-chars&gt;</code>. Calling bare <code>GET /audio</code> returns 404; the firmware parses <code>audio_url</code> directly from the JSON analysis response.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 05</span>
+                  <span>HTTP Client Timeouts &ge; 60 Seconds</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Standard Arduino <code>HTTPClient</code> defaults to 5 seconds. Because Tier 1 edge inference on complex scenes may require up to 25 seconds and neural TTS up to 20 seconds, timeout is strictly clamped to &ge; 60,000 ms.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 06</span>
+                  <span>Stalled-Frame JPEG Chunk Recovery</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                If the main board does not receive the next expected 220-byte image slice within <code>FRAME_STALL_TIMEOUT_MS</code> (3 seconds), the partial image buffer is safely purged. This prevents corrupt hybrid images if the camera reboots mid-frame.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 07</span>
+                  <span>Channels Guard in playWavStream</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Streamed audio explicitly clamps channel counts: <code>if (channels &lt; 1) channels = 1; if (channels &gt; 2) channels = 2;</code>. A corrupted or malformed header specifying 0 channels will otherwise loop indefinitely and overflow the 512-sample stack buffer.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 08</span>
+                  <span>Safe memcpy for WAV Header Fields</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Never cast unaligned byte buffers to <code>uint32_t*</code> pointers, which triggers undefined behavior and unaligned bus faults on the Xtensa processor. Header fields are read exclusively via safe <code>memcpy</code> calls.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 09</span>
+                  <span>DAC Sample Rate Re-Assertion</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Before playing any local alert clip, <code>playFile()</code> re-asserts <code>CLIP_SAMPLE_RATE</code> (22,050 Hz) on the I2S clock generator. This ensures network audio streamed at 16,000 Hz or 44,100 Hz never leaves the DAC pitch-distorted for subsequent reflex alarms.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 10</span>
+                  <span>Audited Ultrasonic Stop Threshold</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                <code>quickRule()</code> asserts: "Obstacle critical. Stop." whenever centre ultrasonic distance drops below 25 cm. The main loop maps any rule containing "Stop" directly to <code>/stop.wav</code>, pre-empting all speech and radio operations.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 11</span>
+                  <span>Disable 802.11 Modem Sleep</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Both boards explicitly invoke <code>WiFi.setSleep(false)</code> in initialization. The ESP32's automatic power-saving sleep mode drops short connectionless ESP-NOW packets and introduces unacceptable jitter into the vision stream.
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <div class="accordion-header">
+                <div class="accordion-title">
+                  <span class="rule-num">Rule 12</span>
+                  <span>Standardized SCCB Pin Spelling</span>
+                </div>
+                <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div class="accordion-body">
+                Camera code strictly uses <code>pin_sccb_sda</code> and <code>pin_sccb_scl</code> (the upstream Espressif standard). Deprecated <code>pin_sscb_*</code> aliases are banished across all builds to guarantee forward compatibility with esp32-camera &ge; v2.0.2.
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ================================================================= 7. Voice Commands & Memory -->
+        <section class="doc-section" id="voice-commands">
+          <h2>Voice Commands &amp; Personal Memory <a class="anchor" href="#voice-commands">#</a></h2>
+          <p>
+            BlindSight operates purely through voice interaction. Speak naturally to the companion using the wake word or tap the high-contrast mic button:
+          </p>
+
+          <!-- Interactive Command Search Filter -->
+          <div class="filter-bar">
+            <input type="text" class="filter-input" id="cmd-search-input" placeholder="Type to filter commands (e.g., remember, language, stop)...">
+            <div class="filter-pills">
+              <button class="filter-pill active" data-cmd-filter="all">All Commands</button>
+              <button class="filter-pill" data-cmd-filter="offline">Offline Capable</button>
+              <button class="filter-pill" data-cmd-filter="memory">Memory</button>
+              <button class="filter-pill" data-cmd-filter="vision">Vision</button>
+              <button class="filter-pill" data-cmd-filter="system">System</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Spoken Trigger Phrase</th>
+                  <th>Behavior &amp; Function</th>
+                  <th>Works Offline?</th>
+                  <th>Category</th>
+                </tr>
+              </thead>
+              <tbody id="cmd-table-body">
+                <tr class="cmd-row" data-cat="system">
+                  <td><code>"hey BlindSight, &lt;question&gt;"</code></td>
+                  <td>Activates continuous listening, transcribes spoken inquiry, queries vision or cloud companion.</td>
+                  <td><span class="tag tag-cloud">Cloud Required</span></td>
+                  <td>System / Wake</td>
+                </tr>
+                <tr class="cmd-row" data-cat="vision">
+                  <td><code>"describe"</code> or <code>"what is around me"</code></td>
+                  <td>Forces immediate camera frame capture, executes YOLOv8 edge analysis and returns spoken spatial breakdown.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Vision</td>
+                </tr>
+                <tr class="cmd-row" data-cat="vision">
+                  <td><code>"look for me"</code></td>
+                  <td>Inspects the nearest high-confidence visual objects (chairs, doors, stairs, crosswalks).</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Vision</td>
+                </tr>
+                <tr class="cmd-row" data-cat="memory">
+                  <td><code>"remember that &lt;fact&gt;"</code></td>
+                  <td>Stores a permanent personal memory slot (up to 20 facts, e.g., "my bus stop is at the corner of 4th").</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Memory</td>
+                </tr>
+                <tr class="cmd-row" data-cat="memory">
+                  <td><code>"what do you remember?"</code> or <code>"list memories"</code></td>
+                  <td>Reads all currently stored personal facts aloud sequentially.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Memory</td>
+                </tr>
+                <tr class="cmd-row" data-cat="memory">
+                  <td><code>"forget &lt;item&gt;"</code> or <code>"forget everything"</code></td>
+                  <td>Deletes specified memory slot or purges entire 20-slot storage vault.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Memory</td>
+                </tr>
+                <tr class="cmd-row" data-cat="system">
+                  <td><code>"language hindi"</code> (or spanish, french, etc.)</td>
+                  <td>Switches speech synthesis and neural voice output instantly across 7 supported languages.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Settings</td>
+                </tr>
+                <tr class="cmd-row" data-cat="system">
+                  <td><code>"read status"</code></td>
+                  <td>Speaks live battery voltage, Wi-Fi link strength, sensor connectivity, and edge server health.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Diagnostics</td>
+                </tr>
+                <tr class="cmd-row" data-cat="system">
+                  <td><code>"clear chat"</code> or <code>"start over"</code></td>
+                  <td>Resets ongoing conversation context while safely preserving all taught personal memories.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>System</td>
+                </tr>
+                <tr class="cmd-row" data-cat="system">
+                  <td><code>"stop"</code></td>
+                  <td>Immediately silences all active speech audio playback and releases the audio pipeline.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Safety / Mute</td>
+                </tr>
+                <tr class="cmd-row" data-cat="system">
+                  <td><code>"help"</code></td>
+                  <td>Spoken tutorial reciting all available voice commands and quick tips.</td>
+                  <td><span class="tag tag-offline">Offline OK</span></td>
+                  <td>Help</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Supported Neural Spoken Languages</h3>
+          <p>
+            BlindSight renders high-fidelity neural voices via Microsoft Cognitive speech engines with automatic fallback to local <code>espeak-ng</code> or browser speech synthesis:
+          </p>
+          <div style="display:flex; flex-wrap:wrap; gap:8px; margin:16px 0;">
+            <span class="tag tag-offline">English (en) &bull; ChristopherNeural / JennyNeural</span>
+            <span class="tag tag-offline">Hindi (hi) &bull; SwaraNeural / MadhurNeural</span>
+            <span class="tag tag-offline">Bengali (bn) &bull; TanishaaNeural / BashkarNeural</span>
+            <span class="tag tag-offline">Tamil (ta) &bull; PallaviNeural / ValluvarNeural</span>
+            <span class="tag tag-offline">Telugu (te) &bull; ShrutiNeural / MohanNeural</span>
+            <span class="tag tag-offline">Spanish (es) &bull; ElviraNeural / AlvaroNeural</span>
+            <span class="tag tag-offline">French (fr) &bull; DeniseNeural / HenriNeural</span>
+          </div>
+        </section>
+
+        <!-- ================================================================= 8. REST API Reference -->
+        <section class="doc-section" id="api-reference">
+          <h2>REST API Specification <a class="anchor" href="#api-reference">#</a></h2>
+          <p>
+            The gateway server exposes an HTTP API adhered to by the web companion, native Android shell, and ESP32 uplink:
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Route Endpoint</th>
+                  <th>Method</th>
+                  <th>Auth</th>
+                  <th>Description &amp; Behavior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="api-config">
+                  <td><code>/api/config</code></td>
+                  <td><span class="method method-get">GET</span></td>
+                  <td>None</td>
+                  <td>Returns gateway configuration: token requirement, maximum frame age threshold (&le;30s).</td>
+                </tr>
+                <tr id="api-prefs">
+                  <td><code>/api/prefs</code></td>
+                  <td><span class="method method-get">GET</span> / <span class="method method-post">POST</span></td>
+                  <td>POST: Token</td>
+                  <td>Retrieves or updates user language, neural voice model, and accessibility text sizing.</td>
+                </tr>
+                <tr id="api-voices">
+                  <td><code>/api/tts/voices</code></td>
+                  <td><span class="method method-get">GET</span></td>
+                  <td>None</td>
+                  <td>Returns catalogue of available neural TTS voices for the currently active language.</td>
+                </tr>
+                <tr id="api-chat">
+                  <td><code>/api/chat</code></td>
+                  <td><span class="method method-post">POST</span></td>
+                  <td>Token</td>
+                  <td>User prompt + optional camera JPEG payload. Returns assistant answer and generated audio URL. Returns 429 when rate limited.</td>
+                </tr>
+                <tr id="api-frame">
+                  <td><code>/api/latest-frame</code></td>
+                  <td><span class="method method-get">GET</span></td>
+                  <td>Token</td>
+                  <td>Returns freshest JPEG camera frame (&le;30 s old). <strong>Returns HTTP 404 if no fresh frame exists &mdash; never a stale placeholder.</strong></td>
+                </tr>
+                <tr id="api-analyse">
+                  <td><code>/analyse</code></td>
+                  <td><span class="method method-post">POST</span></td>
+                  <td>None</td>
+                  <td>Multipart image upload from ESP32. Runs YOLOv8 edge vision; returns detection summary and speech audio URL.</td>
+                </tr>
+                <tr id="api-audio">
+                  <td><code>/audio/&lt;id&gt;</code></td>
+                  <td><span class="method method-get">GET</span></td>
+                  <td>None</td>
+                  <td>Streams rendered reply audio (neural MP3 preferred, espeak WAV fallback).</td>
+                </tr>
+                <tr id="api-sw">
+                  <td><code>/sw.js</code></td>
+                  <td><span class="method method-get">GET</span></td>
+                  <td>None</td>
+                  <td>PWA Service Worker served with <code>Service-Worker-Allowed: /</code> header for root scope caching.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Example: Chat &amp; Vision Analysis Request</h3>
+          <pre data-lang="bash" data-name="curl request">curl -X POST https://192.168.1.100:5000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "X-Companion-Token: your-token-if-configured" \
+  -d '{
+    "prompt": "What is directly in front of me?",
+    "include_frame": true
+  }'</pre>
+
+          <pre data-lang="json" data-name="JSON Response (200 OK)">{
+  "text": "A low wooden bench is about three feet ahead on your right. Path on the left is clear.",
+  "audio_url": "/audio/7b2e9a1c8f4d0e32",
+  "detected_objects": [
+    { "label": "bench", "confidence": 0.89, "position": "right-centre" }
+  ],
+  "frame_age_seconds": 1.2
+}</pre>
+        </section>
+
+        <!-- ================================================================= 9. Android APK -->
+        <section class="doc-section" id="android-app">
+          <div class="glass-card" style="padding: 24px; border: 2px solid var(--accent); margin-bottom: 24px; background: linear-gradient(145deg, rgba(15,23,42,0.95), rgba(11,17,32,0.95)); border-radius: 16px;">
+            <div style="display:flex; flex-wrap:wrap; gap: 24px; align-items: center; justify-content: space-between;">
+              <div style="flex: 1; min-width: 280px;">
+                <div style="display:inline-block; font-size: 0.8rem; font-weight: 700; color: #34d399; background: rgba(52,211,153,0.15); padding: 4px 10px; border-radius: 20px; margin-bottom: 8px;">
+                  ● Ready for Android 7.0+ (Nougat &ndash; 15)
+                </div>
+                <h3 style="margin: 0 0 8px 0; color: var(--text-bright); font-size: 1.5rem;">Download BlindSight Testing APK</h3>
+                <p style="margin: 0 0 16px 0; color: var(--text-dim); font-size: 0.95rem; line-height: 1.5;">
+                  Get the official native Android build with autonomous voice companion, ultrasonic reflex alerts, and computer vision.
+                </p>
+                <div style="display:flex; flex-wrap:wrap; gap: 12px; align-items:center;">
+                  <a class="btn btn-primary" href="/BlindSight-testing.apk" download="BlindSight-testing.apk" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-weight: 800; padding: 14px 28px; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 10px; border-radius: 12px; text-decoration: none; box-shadow: 0 6px 20px rgba(245,158,11,0.35);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Download APK v1.5 (22.4 MB)</span>
+                  </a>
+                  <span style="font-size: 0.85rem; color: var(--text-dim);">Build 5 &bull; Android 7.0 &ndash; 15</span>
+                </div>
+              </div>
+
+              <div style="text-align: center; background: #ffffff; padding: 12px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=4&data=https%3A%2F%2Fblindsight-rift8.vercel.app%2FBlindSight-testing.apk" alt="Scan QR code to install APK on your phone" width="160" height="160" style="display:block; border-radius: 6px;" />
+                <span style="display: block; font-size: 0.75rem; color: #334155; font-weight: 700; margin-top: 6px;">Scan with Phone Camera</span>
+              </div>
+            </div>
+          </div>
+          <h2>Android Shell APK <a class="anchor" href="#android-app">#</a></h2>
+          <p>
+            The BlindSight Android application is a lightweight native shell wrapping the web companion in an optimized, hardware-accelerated WebView container:
+          </p>
+
+          <div class="glass-panel" style="margin-bottom:20px;">
+            <h4 style="color:var(--text-bright); margin-bottom:12px;">Advantages of the Native Shell over Mobile Browsers:</h4>
+            <ul>
+              <li><strong>Scoped Self-Signed SSL Trust:</strong> The Android app automatically trusts the self-signed certificate of your configured gateway IP address. No browser certificate bypass warnings or security flags needed.</li>
+              <li><strong>Native Microphone Permissions:</strong> Persistent background mic permissions without browser tab sleep suspensions.</li>
+              <li><strong>True Fullscreen Accessibility:</strong> Removes the URL address bar, bottom navigation tabs, and zoom gestures that interfere with visually impaired navigation.</li>
+              <li><strong>Connection Recovery:</strong> Features a graceful "Gateway not reachable" state with retry triggers instead of browser network errors.</li>
+            </ul>
+          </div>
+
+          <h3>Installation (No Android Studio Required)</h3>
+          <ol>
+            <li>Navigate to the BlindSight GitHub repository &rarr; <strong>Actions</strong> tab &rarr; select the latest <strong>Android APK</strong> workflow run.</li>
+            <li>Download the <code>blindsight-debug-apk</code> artifact (contains <code>app-debug.apk</code>).</li>
+            <li>Transfer the file to your Android phone via USB, Google Drive, or local storage.</li>
+            <li>Tap the APK to install. Sideloading warning: select <strong>Settings &rarr; Allow from this source</strong>.</li>
+            <li>Open BlindSight, enter your gateway server IP (e.g., <code>https://192.168.1.100:5000</code>), and grant microphone permission when prompted.</li>
+          </ol>
+        </section>
+
+        <!-- ================================================================= 10. Testing & Verification -->
+        <section class="doc-section" id="testing-audit">
+          <h2>CI &amp; Field Verification (93 Tests) <a class="anchor" href="#testing-audit">#</a></h2>
+          <p>
+            Because BlindSight is a personal safety device, it undergoes rigorous automated validation on every commit before release:
+          </p>
+
+          <div class="glass-card" style="margin-bottom:20px;">
+            <h4 style="color:var(--text-bright); margin-bottom:10px;">Automated Test Suite Breakdown (v3.3 Delivery):</h4>
+            <ul>
+              <li><strong>Fail-Closed Vision Contracts:</strong> Verifies that zero-byte images, corrupt headers, or timeout frames trigger immediate spoken errors rather than placeholder descriptions.</li>
+              <li><strong>Anti-Fake WAV Spectrum Gates:</strong> Audio unit tests inspect rendered audio files to ensure valid RIFF headers, correct sample rate assertions (22,050 Hz), and non-empty audio frequency spectrums.</li>
+              <li><strong>Companion Memory Integrity:</strong> Rigorous serialization tests ensuring memory writes, updates, and wipes persist across app restarts without data leakage.</li>
+              <li><strong>PWA Shell Accessibility:</strong> Headless audit validating WCAG AAA color contrast, ARIA assertive live regions, and touch target minimums.</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- ================================================================= 11. FAQ & Limitations -->
+        <section class="doc-section" id="faq">
+          <h2>Honest Limitations &amp; Bench-Pending Items <a class="anchor" href="#faq">#</a></h2>
+          <p>
+            In alignment with the principle of failing loudly, BlindSight openly acknowledges its hardware and platform constraints:
+          </p>
+
+          <div class="callout safety">
+            <ul>
+              <li><strong>iOS Wake Word Restriction:</strong> Apple iOS Safari does not permit continuous microphone listening in web applications. On iPhone or iPad, the companion requires tapping the primary button and using native iOS keyboard dictation.</li>
+              <li><strong>Ultrasonic Environmental Factors:</strong> Soft, sound-absorbing fabrics (e.g., thick wool coats) or acute angles can attenuate 40 kHz ultrasonic echoes. The physical white cane should always accompany the electronic companion.</li>
+              <li><strong>ESP-NOW Wireless Range:</strong> ESP32-to-ESP32 camera transmission operates reliably at room-scale distances (~5 to 8 meters line-of-sight).</li>
+              <li><strong>Internet Requirement for Neural Voices:</strong> Microsoft neural TTS voices require active internet access on the gateway. In offline mode, the system seamlessly falls back to <code>espeak-ng</code>.</li>
+            </ul>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- =================================================================== Back to Top Button -->
+  <button class="back-to-top" id="back-to-top" aria-label="Back to top">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+  </button>
+
+  <!-- =================================================================== Command Palette Search Modal -->
+  <div class="modal-backdrop" id="search-modal" aria-hidden="true">
+    <div class="search-modal">
+      <div class="modal-search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" class="modal-input" id="modal-search-input" placeholder="Search BlindSight documentation, commands, pins, APIs...">
+        <span class="modal-esc">ESC</span>
+      </div>
+      <div class="modal-results" id="modal-results">
+        <!-- Results injected dynamically via main.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== Footer -->
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">
+            <img src="/assets/img/icon.svg" alt="BlindSight" width="28" height="28" style="border-radius:6px;">
+            <span>BlindSight Companion</span>
+          </div>
+          <p style="font-size:0.92rem; color:var(--text-muted); max-width:38ch; margin-bottom:14px;">
+            A voice-first, three-tier navigation and awareness companion for blind and low-vision pedestrians.
+          </p>
+          <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-faint);">
+            MIT Licensed &bull; Open Source Mobility Aid
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#quickstart">Quickstart Guide</a></li>
+            <li><a href="#architecture">3-Tier Safety</a></li>
+            <li><a href="#voice-commands">Voice Commands</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Hardware &amp; Code</h4>
+          <ul>
+            <li><a href="#hardware-wiring">Wiring Diagram V2</a></li>
+            <li><a href="#firmware-variants">Firmware Contracts</a></li>
+            <li><a href="#safety-rules">12 Safety Rules</a></li>
+            <li><a href="#api-reference">REST API Specs</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Repository</h4>
+          <ul>
+            <li><a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener">GitHub Project</a></li>
+            <li><a href="https://github.com/devrift/blindsight/actions" target="_blank" rel="noopener">Android APK Artifacts</a></li>
+            <li><a href="https://github.com/devrift/blindsight/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+            <li><a href="#testing-audit">93 Automated Tests</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>BlindSight Project &bull; Built with Glassmorphic Aesthetics &amp; WCAG AAA Principles.</div>
+        <div>"A mobility aid must fail loudly, never optimistically."</div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="/assets/js/highlight.js"></script>
+  <script src="/assets/js/main.js"></script>
 </body>
 </html>
