@@ -57,11 +57,15 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     private var autoSweepJob: Job? = null
 
+    var launchVoiceIntent: (() -> Unit)? = null
+
     init {
         ttsHelper = TtsHelper(application) { ready ->
             if (ready) {
                 speak("BlindSight assistant active. Say \"Hey BlindSight\" or tap the center button to speak.") {
-                    speechRecognizerHelper?.startListening(_uiState.value.language.code)
+                    if (hasMicrophonePermission()) {
+                        speechRecognizerHelper?.startListening(_uiState.value.language.code)
+                    }
                 }
             }
         }
@@ -76,7 +80,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                     appState = AppState.IDLE,
                     statusText = err
                 )
-                ttsHelper?.playEarcon(TtsHelper.EarconType.ERROR)
+                if (err.contains("permission", ignoreCase = true) || err.contains("Audio recording", ignoreCase = true)) {
+                    ttsHelper?.playEarcon(TtsHelper.EarconType.ERROR)
+                }
             },
             onListeningStateChanged = { listening ->
                 if (!listening && _uiState.value.appState == AppState.COMMAND_LISTENING) {
@@ -84,6 +90,17 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
         )
+    }
+
+    fun hasMicrophonePermission(): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            getApplication(),
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    fun onMicrophonePermissionGranted() {
+        speechRecognizerHelper?.onPermissionGranted(_uiState.value.language.code)
     }
 
     fun getGeminiApiKey(): String = repository.getGeminiApiKey()
@@ -124,7 +141,11 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         )
 
         val langTag = _uiState.value.language.code
-        speechRecognizerHelper?.startListening(langTag)
+        if (speechRecognizerHelper?.isAvailable() == true) {
+            speechRecognizerHelper?.startListening(langTag, forceRestart = true)
+        } else {
+            launchVoiceIntent?.invoke()
+        }
     }
 
     fun onSpeechResult(spokenText: String) {
