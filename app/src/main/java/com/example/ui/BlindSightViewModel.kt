@@ -58,6 +58,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private var autoSweepJob: Job? = null
 
     var launchVoiceIntent: (() -> Unit)? = null
+    private var isUserCommandActive = false
 
     init {
         ttsHelper = TtsHelper(application) { ready ->
@@ -84,10 +85,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                     ttsHelper?.playEarcon(TtsHelper.EarconType.ERROR)
                 }
             },
-            onListeningStateChanged = { listening ->
-                if (!listening && _uiState.value.appState == AppState.COMMAND_LISTENING) {
-                    _uiState.value = _uiState.value.copy(appState = AppState.IDLE)
-                }
+            onListeningStateChanged = { _ ->
+                // Do not prematurely reset COMMAND_LISTENING to IDLE here because onEndOfSpeech() fires
+                // right before onResults() is delivered.
             }
         )
     }
@@ -130,22 +130,39 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val currentState = _uiState.value.appState
         if (currentState == AppState.SPEAKING) {
             stopSpeaking()
-            speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
             return
         }
 
+        isUserCommandActive = true
         ttsHelper?.playEarcon(TtsHelper.EarconType.LISTEN)
         _uiState.value = _uiState.value.copy(
             appState = AppState.COMMAND_LISTENING,
-            statusText = "Listening… Go ahead, say your question or command."
+            statusText = "Listening… Speak your question now."
         )
 
-        val langTag = _uiState.value.language.code
-        if (speechRecognizerHelper?.isAvailable() == true) {
-            speechRecognizerHelper?.startListening(langTag, forceRestart = true)
-        } else {
+        // Launch the official system Google Voice Search / Speech Dialog
+        // Shows real-time animated microphone waves and captures speech with 100% reliability
+        if (launchVoiceIntent != null) {
+            speechRecognizerHelper?.pauseListening()
             launchVoiceIntent?.invoke()
+        } else {
+            fallbackStartListening()
         }
+    }
+
+    fun fallbackStartListening() {
+        isUserCommandActive = true
+        val langTag = _uiState.value.language.code
+        speechRecognizerHelper?.startListening(langTag, forceRestart = true)
+    }
+
+    fun onVoiceIntentCancelled() {
+        isUserCommandActive = false
+        _uiState.value = _uiState.value.copy(
+            appState = AppState.IDLE,
+            statusText = "Listening for \"Hey BlindSight\" or tap center button."
+        )
+        speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
     }
 
     fun onSpeechResult(spokenText: String) {
@@ -175,6 +192,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
         // 1. Wake word alone: "Hey BlindSight"
         if (isWakeTriggered && cleanPrompt.isEmpty()) {
+            isUserCommandActive = true
             hapticHelper.vibrateConfirm()
             ttsHelper?.playEarcon(TtsHelper.EarconType.WAKE)
             _uiState.value = _uiState.value.copy(
@@ -186,12 +204,13 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
         val promptToProcess = if (isWakeTriggered) cleanPrompt else trimmed
 
-        // In continuous all-in-one mode, if in standby and no wake word was spoken,
-        // and user didn't tap button to command:
-        if (!isWakeTriggered && _uiState.value.appState == AppState.IDLE) {
+        // In continuous all-in-one mode, only drop if this is unprompted room noise in standby
+        val shouldProcess = isWakeTriggered || isUserCommandActive || _uiState.value.appState == AppState.COMMAND_LISTENING
+        if (!shouldProcess) {
             // Room noise/ambient speech - ignore quietly and continue standby listening
             return
         }
+        isUserCommandActive = false
 
         hapticHelper.vibrateConfirm()
         _uiState.value = _uiState.value.copy(

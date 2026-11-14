@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, ShieldAlert, Radio } from 'lucide-react';
+import { Eye, ShieldAlert, Radio, Download } from 'lucide-react';
 import { LanguageOption, ReflexTelemetry } from '../types';
 
 interface HeaderProps {
@@ -68,6 +68,18 @@ export const Header: React.FC<HeaderProps> = ({
           <Eye size={16} style={{ marginRight: 6 }} aria-hidden="true" />
           <span>Vision</span>
         </button>
+
+        <a
+          href="/BlindSight-testing.apk"
+          download="BlindSight-testing.apk"
+          className="badge clickable"
+          style={{ textDecoration: 'none', color: 'var(--accent)', borderColor: 'var(--accent)' }}
+          title="Download BlindSight Android APK"
+          aria-label="Download BlindSight Android testing APK"
+        >
+          <Download size={16} style={{ marginRight: 6 }} aria-hidden="true" />
+          <span>Download APK</span>
+        </a>
       </div>
     </header>
   );

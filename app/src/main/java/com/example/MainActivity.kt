@@ -36,7 +36,11 @@ class MainActivity : ComponentActivity() {
                         val text = matches?.firstOrNull()?.trim()
                         if (!text.isNullOrEmpty()) {
                             viewModel.onSpeechResult(text)
+                        } else {
+                            viewModel.onVoiceIntentCancelled()
                         }
+                    } else {
+                        viewModel.onVoiceIntentCancelled()
                     }
                 }
 
@@ -55,12 +59,14 @@ class MainActivity : ComponentActivity() {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                             putExtra(RecognizerIntent.EXTRA_LANGUAGE, viewModel.uiState.value.language.code)
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to BlindSight")
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to BlindSight…")
+                            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
                         }
                         try {
                             voiceIntentLauncher.launch(intent)
                         } catch (e: Exception) {
-                            viewModel.speak("Voice input dialog not available on this device.")
+                            viewModel.fallbackStartListening()
                         }
                     }
 

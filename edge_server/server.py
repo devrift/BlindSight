@@ -338,6 +338,24 @@ def latest_frame():
     return jsonify(error="No frame captured yet"), 404
 
 
+@app.route("/BlindSight-testing.apk", methods=["GET"])
+@app.route("/download/apk", methods=["GET"])
+def download_apk():
+    """Serves the compiled Android testing APK with strict package MIME headers."""
+    apk_path = ROOT_DIR / "public" / "BlindSight-testing.apk"
+    if not apk_path.is_file():
+        apk_path = ROOT_DIR / "BlindSight-testing.apk"
+    if not apk_path.is_file():
+        return jsonify(error="APK file not found on server"), 404
+
+    return send_file(
+        str(apk_path),
+        mimetype="application/vnd.android.package-archive",
+        as_attachment=True,
+        download_name="BlindSight-testing.apk"
+    )
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     print(f"Starting BlindSight AI Gateway on http://0.0.0.0:{port}")
