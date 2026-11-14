@@ -263,9 +263,9 @@ fun BlindSightScreen(
     if (showMemoryDialog) {
         MemoryBankDialog(
             facts = facts,
-            onAddFact = { viewModel.addManualFact(it) },
-            onForgetFact = { viewModel.forgetFact(it) },
-            onClearAll = { viewModel.clearAllFacts() },
+            onAddFact = { viewModel.addMemoryFact(it) },
+            onForgetFact = { viewModel.removeMemoryFact(it) },
+            onClearAll = { viewModel.clearAllMemories() },
             onDismiss = { showMemoryDialog = false }
         )
     }

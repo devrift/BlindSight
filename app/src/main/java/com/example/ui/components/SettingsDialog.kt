@@ -226,7 +226,7 @@ fun SettingsDialog(
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
                         Text(
-                            text = mode.description,
+                            text = mode.hint,
                             fontSize = 11.sp,
                             color = BlindSightTextMuted
                         )

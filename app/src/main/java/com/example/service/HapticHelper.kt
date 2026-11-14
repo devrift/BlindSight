@@ -28,6 +28,10 @@ class HapticHelper(context: Context) {
         vibratePattern(longArrayOf(0, 100, 80, 100))
     }
 
+    fun vibrateAlert() {
+        vibrateWarning()
+    }
+
     fun vibrateCriticalStop() {
         // Urgent repeating pulse for blind users to immediately freeze
         vibratePattern(longArrayOf(0, 200, 80, 200, 80, 300))

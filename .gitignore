@@ -66,9 +66,11 @@ state/*
 # Web + Android build artifacts (regenerable, never source)
 node_modules/
 dist/
+build/
 .gradle/
 app/build/
 local.properties
+*.apk
 
 # Signing material: never commit keys
 debug.keystore

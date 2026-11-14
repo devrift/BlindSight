@@ -8,6 +8,9 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     strictPort: true,
+    watch: {
+      ignored: ['**/build/**', '**/.gradle/**', '**/app/build/**', '**/*.apk', '**/edge_server/**', '**/*.log']
+    },
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:5000',
