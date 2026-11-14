@@ -301,11 +301,29 @@ def api_listen_mic():
 
 @app.route("/analyse", methods=["POST"])
 def analyse_frame():
-    """Receives camera frame from ESP32-CAM and runs YOLOv8n obstacle detection."""
+    """Receives camera frame from ESP32-CAM (multipart/form-data or raw bytes) and runs obstacle detection."""
     global last_vision_description, last_frame_timestamp
 
-    image_data = request.get_data()
-    if not image_data or len(image_data) < 500:
+    image_data = None
+    if "image" in request.files:
+        image_data = request.files["image"].read()
+    elif "file" in request.files:
+        image_data = request.files["file"].read()
+    else:
+        raw = request.get_data()
+        if raw.startswith(b"{") and b"image" in raw:
+            try:
+                data = json.loads(raw.decode("utf-8", errors="ignore"))
+                img_val = data.get("image", "")
+                if "," in img_val:
+                    img_val = img_val.split(",", 1)[1]
+                image_data = base64.b64decode(img_val)
+            except Exception:
+                image_data = raw
+        else:
+            image_data = raw
+
+    if not image_data or len(image_data) < 200:
         return jsonify(error="Empty image payload"), 400
 
     latest_path = RUNTIME_DIR / "latest.jpg"
@@ -314,7 +332,9 @@ def analyse_frame():
             f.write(image_data)
         last_frame_timestamp = time.time()
 
-        # Run local YOLOv8n ONNX inference
+        # Run local YOLOv8n ONNX inference if model is available
+        instruction = "Path ahead appears clear."
+        detections = []
         if vision_ai is not None:
             model_path = vision_ai.get_model_path()
             if model_path:
@@ -322,29 +342,60 @@ def analyse_frame():
                 detections = vision_ai.run_inference(latest_path, model_path, stats)
                 instruction = vision_ai.generate_sentence(detections)
                 last_vision_description = instruction
-                return jsonify({
-                    "success": True,
-                    "instruction": instruction,
-                    "detections": len(detections),
-                })
+
+        audio_file = "/audio/clear.wav"
+        ins_lower = instruction.lower()
+        if "stop" in ins_lower or "danger" in ins_lower or "critical" in ins_lower:
+            audio_file = "/audio/stop.wav"
+        elif "left" in ins_lower:
+            audio_file = "/audio/left.wav"
+        elif "right" in ins_lower:
+            audio_file = "/audio/right.wav"
+        elif "careful" in ins_lower or "caution" in ins_lower:
+            audio_file = "/audio/careful.wav"
+
+        return jsonify({
+            "success": True,
+            "instruction": instruction,
+            "detections": len(detections),
+            "audio_url": audio_file
+        })
     except Exception as e:
         print(f"Vision inference error: {e}")
-
-    last_vision_description = "Path ahead appears clear."
-    return jsonify({
-        "success": True,
-        "instruction": "Path ahead appears clear.",
-        "detections": 0,
-    })
+        last_vision_description = "Path ahead appears clear."
+        return jsonify({
+            "success": True,
+            "instruction": "Path ahead appears clear.",
+            "detections": 0,
+            "audio_url": "/audio/clear.wav"
+        })
 
 
 @app.route("/api/latest-frame", methods=["GET"])
+@app.route("/latest_frame", methods=["GET"])
 def latest_frame():
     """Serves the latest camera frame captured by the smart glasses."""
     latest_path = RUNTIME_DIR / "latest.jpg"
     if latest_path.is_file():
-        return send_file(latest_path, mimetype="image/jpeg", max_age=0)
+        resp = send_file(latest_path, mimetype="image/jpeg", max_age=0)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
     return jsonify(error="No frame captured yet"), 404
+
+
+@app.route("/audio/<path:filename>", methods=["GET"])
+def get_audio_clip(filename):
+    """Serves 16-bit PCM WAV audio clips for ESP32 I2S DAC playback."""
+    audio_dir = ROOT_DIR / "public" / "audio"
+    file_path = audio_dir / filename
+    if not file_path.is_file():
+        file_path = ROOT_DIR / "firmware" / "esp32_main" / "data" / filename
+    if file_path.is_file():
+        resp = send_file(file_path, mimetype="audio/wav")
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
+    return jsonify(error="Audio clip not found"), 404
 
 
 @app.route("/BlindSight-testing.apk", methods=["GET"])

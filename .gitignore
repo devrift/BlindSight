@@ -81,3 +81,7 @@ my-upload-key.jks
 # OS Noise
 .DS_Store
 Thumbs.db
+
+# Benchmarks & synthetic dataset
+dataset/navigation_benchmark_frames/
+*.log

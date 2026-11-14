@@ -193,6 +193,7 @@ fun BlindSightScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     VisionHelperView(
                         isScanning = uiState.isCameraScanning,
+                        latestFrameBytes = uiState.latestFrameBytes,
                         onDescribeScene = { viewModel.describeScene() }
                     )
                 }
@@ -248,6 +249,8 @@ fun BlindSightScreen(
             onTextSizeChange = { viewModel.setTextSize(it) },
             highContrastYellow = uiState.highContrastYellow,
             onToggleHighContrast = { viewModel.toggleHighContrastYellow() },
+            currentGatewayUrl = viewModel.getGatewayUrl(),
+            onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
             onReadHelp = {
                 viewModel.onSpeechResult("help")
                 showSettingsDialog = false

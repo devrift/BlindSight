@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,10 +25,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -43,6 +48,7 @@ import com.example.ui.theme.BlindSightTextPrimary
 @Composable
 fun VisionHelperView(
     isScanning: Boolean,
+    latestFrameBytes: ByteArray? = null,
     onDescribeScene: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -58,21 +64,60 @@ fun VisionHelperView(
             }
     ) {
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = Icons.Default.Visibility,
-                contentDescription = null,
-                tint = BlindSightAmber,
-                modifier = Modifier.size(22.dp)
-            )
-            Text(
-                text = "Tier 1 & 2: Camera Vision",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Visibility,
+                    contentDescription = null,
+                    tint = BlindSightAmber,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = "Tier 1 & 2: Camera Vision",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = BlindSightTextPrimary
+                )
+            }
+
+            if (latestFrameBytes != null && latestFrameBytes.isNotEmpty()) {
+                Text(
+                    text = "● Glasses Cam Active",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF10B981)
+                )
+            }
+        }
+
+        // Live Hardware Glasses Snapshot Preview (for sighted helpers)
+        if (latestFrameBytes != null && latestFrameBytes.isNotEmpty()) {
+            val bitmap = remember(latestFrameBytes) {
+                try {
+                    BitmapFactory.decodeByteArray(latestFrameBytes, 0, latestFrameBytes.size)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (bitmap != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Live snapshot received from BlindSight glasses camera",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, BlindSightAmber.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

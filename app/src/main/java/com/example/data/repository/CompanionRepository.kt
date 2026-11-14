@@ -84,6 +84,41 @@ class CompanionRepository(private val context: Context) {
         prefs.edit().putString("groq_api_key", key.trim()).apply()
     }
 
+    // --- Hardware Gateway URL for ESP32 Glasses Camera Frame Stream ---
+    fun getGatewayUrl(): String {
+        return prefs.getString("gateway_url", "http://192.168.29.173:5000") ?: "http://192.168.29.173:5000"
+    }
+
+    fun setGatewayUrl(url: String) {
+        val cleaned = url.trim().trimEnd('/')
+        prefs.edit().putString("gateway_url", cleaned).apply()
+    }
+
+    suspend fun fetchLatestHardwareFrame(): ByteArray? = withContext(Dispatchers.IO) {
+        val gateway = getGatewayUrl().trim().trimEnd('/')
+        if (gateway.isBlank()) return@withContext null
+        try {
+            val endpoint = if (gateway.startsWith("http://") || gateway.startsWith("https://")) {
+                "$gateway/api/latest-frame"
+            } else {
+                "http://$gateway/api/latest-frame"
+            }
+            val url = URL(endpoint)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 4000
+            conn.setRequestProperty("User-Agent", "BlindSight-Android/1.5")
+            if (conn.responseCode == 200) {
+                val bytes = conn.inputStream.readBytes()
+                if (bytes.size > 200 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) {
+                    return@withContext bytes
+                }
+            }
+        } catch (_: Exception) {}
+        return@withContext null
+    }
+
     // --- Memory Facts ---
     private fun loadFacts() {
         val raw = prefs.getString("saved_facts", "[]") ?: "[]"
@@ -530,11 +565,11 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val candidateModels = listOf(
-            "gemini-3-flash-preview",
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-3.8-flash"
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro"
         )
 
         val sysInstruction = if (!imageBase64.isNullOrBlank()) {
@@ -617,24 +652,32 @@ class CompanionRepository(private val context: Context) {
         return@withContext null
     }
 
-    // --- Scene Description with Gemini + Calm Fallback ---
+    // --- Scene Description with Gemini + Hardware Cam + Calm Fallback ---
     suspend fun generateSceneDescription(
         language: SupportedLanguage,
         imageBase64: String? = null
-    ): String {
+    ): String = withContext(Dispatchers.IO) {
+        var base64ToUse = imageBase64
+        if (base64ToUse.isNullOrBlank()) {
+            val hwBytes = fetchLatestHardwareFrame()
+            if (hwBytes != null && hwBytes.isNotEmpty()) {
+                base64ToUse = android.util.Base64.encodeToString(hwBytes, android.util.Base64.NO_WRAP)
+            }
+        }
+
         // 1. Try Gemini Vision if key configured
         val prompt = if (language == SupportedLanguage.HINDI) {
-            "आगे के रास्ते का सुरक्षित नेविगेशन के लिए विवरण दें।"
+            "आप दृष्टिबाधित व्यक्ति के गाइड हैं। आगे के रास्ते का संक्षिप्त और स्पष्ट विवरण 1-2 वाक्यों में दें। बाधाओं, सीढ़ियों या दरवाजों के बारे में बताएं।"
         } else {
-            "Describe the path ahead for safe navigation."
+            "You are an assistive vision guide for a blind pedestrian. In 1 to 2 concise sentences, describe the path directly ahead, noting obstacles, doors, steps, or people, and confirm whether it is clear to step forward."
         }
-        val geminiReply = queryGemini(prompt, imageBase64, language)
+        val geminiReply = queryGemini(prompt, base64ToUse, language)
         if (!geminiReply.isNullOrBlank()) {
-            return geminiReply
+            return@withContext geminiReply
         }
 
         // 2. Calm, confident fallback announcement (zero crash)
-        return when (language) {
+        return@withContext when (language) {
             SupportedLanguage.HINDI ->
                 "कैमरा फ़्रेम प्राप्त हुआ। आगे का पथ सुगम प्रतीत होता है। हमेशा अपने सेंसर और छड़ी के साथ सावधानी से आगे बढ़ें।"
             SupportedLanguage.SPANISH ->

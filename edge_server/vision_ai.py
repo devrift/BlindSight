@@ -39,6 +39,9 @@ LABEL_REPLACEMENTS = {
 CONF_THRESHOLD = 0.35
 IOU_THRESHOLD = 0.45
 
+_cached_session = None
+_cached_model_path = None
+
 
 @dataclass
 class Detection:
@@ -111,24 +114,36 @@ def nms(boxes: list[list[float]], scores: list[float], iou_threshold: float = 0.
 
 
 def run_inference(image_path: Path, model_path: Path, stats: dict) -> list[Detection]:
+    global _cached_session, _cached_model_path
     from PIL import Image
     import numpy as np
 
     t0 = time.time()
+    session = None
+    net = None
+    input_size = (320, 320)
+
     try:
         import onnxruntime as ort
-        sess_opts = ort.SessionOptions()
-        sess_opts.intra_op_num_threads = 2
-        sess_opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        session = ort.InferenceSession(str(model_path), sess_opts, providers=["CPUExecutionProvider"])
+        if _cached_session is None or _cached_model_path != str(model_path):
+            sess_opts = ort.SessionOptions()
+            sess_opts.intra_op_num_threads = 2
+            sess_opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            _cached_session = ort.InferenceSession(str(model_path), sess_opts, providers=["CPUExecutionProvider"])
+            _cached_model_path = str(model_path)
+        session = _cached_session
         backend = "onnxruntime"
+        inp = session.get_inputs()[0]
+        if len(inp.shape) == 4 and isinstance(inp.shape[2], int) and isinstance(inp.shape[3], int):
+            input_size = (int(inp.shape[3]), int(inp.shape[2]))
     except Exception:
         import cv2
         net = cv2.dnn.readNetFromONNX(str(model_path))
         net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
         net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
         backend = "cv2.dnn"
+        input_size = (320, 320)
 
     stats["load_s"] = time.time() - t0
     stats["backend"] = backend
@@ -138,7 +153,6 @@ def run_inference(image_path: Path, model_path: Path, stats: dict) -> list[Detec
     orig_w, orig_h = img.size
     stats["image"] = f"{orig_w}x{orig_h}"
 
-    input_size = (640, 640)
     resized = img.resize(input_size, Image.Resampling.BILINEAR)
     img_data = np.array(resized, dtype=np.float32) / 255.0
     img_data = np.transpose(img_data, (2, 0, 1))

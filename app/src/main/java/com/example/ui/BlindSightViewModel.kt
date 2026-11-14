@@ -38,7 +38,9 @@ data class UiState(
     val isAutoSweeping: Boolean = false,
     val isCameraScanning: Boolean = false,
     val textSizeMultiplier: Float = 1.0f,
-    val highContrastYellow: Boolean = false
+    val highContrastYellow: Boolean = false,
+    val gatewayUrl: String = "http://192.168.29.173:5000",
+    val latestFrameBytes: ByteArray? = null
 )
 
 class BlindSightViewModel(application: Application) : AndroidViewModel(application) {
@@ -130,10 +132,31 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val tabDescription = when (tab) {
             AppTab.COMPANION -> "Switched to Voice Companion tab."
             AppTab.RADAR -> "Switched to Obstacle Radar tab. Ultrasonic reflex sensors active."
-            AppTab.VISION -> "Switched to Camera Vision tab."
+            AppTab.VISION -> {
+                refreshLatestHardwareFrame()
+                "Switched to Camera Vision tab."
+            }
             AppTab.MEMORIES -> "Switched to Memory Bank tab."
         }
         speak(tabDescription)
+    }
+
+    fun getGatewayUrl(): String = repository.getGatewayUrl()
+
+    fun setGatewayUrl(url: String) {
+        repository.setGatewayUrl(url)
+        _uiState.value = _uiState.value.copy(gatewayUrl = repository.getGatewayUrl())
+        hapticHelper.vibrateConfirm()
+        speak("Glasses Gateway URL updated.")
+    }
+
+    fun refreshLatestHardwareFrame() {
+        viewModelScope.launch {
+            val bytes = repository.fetchLatestHardwareFrame()
+            if (bytes != null && bytes.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(latestFrameBytes = bytes)
+            }
+        }
     }
 
     fun onGiantMicClick() {
@@ -430,6 +453,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         )
 
         viewModelScope.launch {
+            // Check for fresh frame from hardware glasses
+            val hwBytes = repository.fetchLatestHardwareFrame()
+            if (hwBytes != null && hwBytes.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(latestFrameBytes = hwBytes)
+            }
+
             val description = repository.generateSceneDescription(_uiState.value.language)
             _uiState.value = _uiState.value.copy(
                 isCameraScanning = false,

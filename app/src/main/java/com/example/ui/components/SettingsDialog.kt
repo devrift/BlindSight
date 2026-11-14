@@ -23,9 +23,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,9 +60,12 @@ fun SettingsDialog(
     onTextSizeChange: (Float) -> Unit,
     highContrastYellow: Boolean,
     onToggleHighContrast: () -> Unit,
+    currentGatewayUrl: String = "",
+    onGatewayUrlChange: (String) -> Unit = {},
     onReadHelp: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var gatewayText by remember { mutableStateOf(currentGatewayUrl) }
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -214,6 +219,50 @@ fun SettingsDialog(
                         checkedTrackColor = BlindSightAmber.copy(alpha = 0.5f)
                     )
                 )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Hardware Glasses Gateway IP
+            Text(
+                text = "Glasses Gateway URL (v1.5 Cam)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = BlindSightTextPrimary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "IP where ESP32 uploads frames (e.g. http://192.168.29.173:5000)",
+                fontSize = 12.sp,
+                color = BlindSightTextMuted
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = gatewayText,
+                    onValueChange = { gatewayText = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF05070C),
+                        unfocusedContainerColor = Color(0xFF05070C),
+                        focusedTextColor = BlindSightTextPrimary,
+                        unfocusedTextColor = BlindSightTextPrimary,
+                        focusedIndicatorColor = BlindSightAmber,
+                        unfocusedIndicatorColor = BlindSightCardEdge
+                    )
+                )
+                Button(
+                    onClick = { onGatewayUrlChange(gatewayText) },
+                    colors = ButtonDefaults.buttonColors(containerColor = BlindSightAmber, contentColor = Color.Black),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Save", fontWeight = FontWeight.Bold)
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
