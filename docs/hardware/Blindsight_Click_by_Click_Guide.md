@@ -100,36 +100,36 @@ Follow `WIRING_V2_BUCK_AND_TTL.md` for power, and the pin table in
 
 ## 4. Configure and upload the main ESP32
 
-1. In VS Code, copy the example secrets file and open it:
-   ```
-   include/secrets.example.h  ->  include/secrets.h
-   ```
-   `src/main.cpp` will not compile until `include/secrets.h` exists; it stops
-   with a clear `#error` telling you to create it.
-2. In `include/secrets.h`, set your real values:
-   ```cpp
-   #define BLINDSIGHT_WIFI_SSID "BlindSight"
-   #define BLINDSIGHT_WIFI_PASSWORD "your password"
-   #define BLINDSIGHT_PI_HOST "192.168.4.1"
-   #define BLINDSIGHT_PI_PORT 5000
-   #define BLINDSIGHT_CAMERA_MAC {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
-   ```
-   `secrets.h` is git-ignored, so your password never lands in a commit.
-   (If you use the Arduino IDE `.ino` instead of PlatformIO, the same values are
-   plain lines at the top of the sketch — see `firmware/FIRMWARE_VARIANTS.md`.)
+1. **No secrets file is required for Wi-Fi or the server IP anymore (v1.5).**
+   The firmware uses the tzapu **WiFiManager** captive portal. Optionally copy
+   `include/secrets.example.h` → `include/secrets.h` only to bake in the camera
+   pairing MAC (`BLINDSIGHT_CAMERA_MAC`); otherwise the default is used and you
+   can pair later. `secrets.h` is git-ignored.
+2. Install the dependency (PlatformIO does this automatically via `lib_deps`):
+   `tzapu/WiFiManager @ ^2.0.17`. For Arduino IDE, install **WiFiManager by
+   tzapu** from Library Manager.
 3. Connect the **main ESP32 DevKit V1** to the computer using a data-capable USB cable.
 4. At the bottom PlatformIO toolbar, click the **right-arrow Upload button**.
 5. Click the **plug/serial-monitor icon** after upload. Set serial speed to **115200**.
 6. Copy the printed `MAIN MAC` address.
+7. On first boot (or whenever the saved network/server is unreachable) the ESP32
+   opens the **`BlindSight-Setup`** Wi-Fi AP. Join it on your phone, open
+   `http://192.168.4.1`, select the venue Wi-Fi, and enter the **Edge Server IP**
+   and **port** shown in the edge server terminal. Save; the device reboots and
+   persists the values in NVS. Hold the reflex button **3 s** to reopen the
+   portal at any time — a short press still fires the ultrasonic reflex.
 
 ## 5. Configure and upload the ESP32-CAM
 
 1. Click **File** → **Open Folder** and open `firmware/esp32_cam`.
-2. Open `src/main.cpp`.
-3. Enter the same Wi-Fi name/password.
-4. Create `include/secrets.h` from `include/secrets.example.h` (the sketch
-    `#error`s without it) and set `BLINDSIGHT_MAIN_ESP_MAC` to the six
-    hexadecimal bytes from the main board’s serial monitor.
+2. Open `src/main.cpp` (it includes the canonical `BlindSight_Camera.ino`).
+3. **Do not enter Wi-Fi credentials in code.** After upload the camera opens the
+   **`BlindSight-Cam-Setup`** portal; join it on your phone and select the same
+   venue Wi-Fi the main ESP32 uses.
+4. Optionally create `include/secrets.h` from `include/secrets.example.h` and set
+   `BLINDSIGHT_MAIN_ESP_MAC` to the six hexadecimal bytes from the main board's
+   serial monitor (Arduino IDE: edit the default `BLINDSIGHT_MAIN_ESP_MAC` in the
+   `.ino` or add a `secrets.h` next to it).
 5. Connect the ESP32-CAM to a USB-TTL adapter:
    - 5 V → 5 V
    - GND → GND
@@ -140,14 +140,14 @@ Follow `WIRING_V2_BUCK_AND_TTL.md` for power, and the pin table in
 7. When upload completes, remove GPIO 0 from GND and press the ESP32-CAM **RST** button.
 8. Open Serial Monitor at 115200 and copy the printed `CAM MAC` address.
 9. Return to the main ESP32 project and paste it as `BLINDSIGHT_CAMERA_MAC` in
-   `include/secrets.h` (PlatformIO) or as `CAMERA_MAC` at the top of the
-   `.ino` (Arduino IDE), then upload the main ESP32 firmware again. Packets
+   `include/secrets.h` (PlatformIO) or as the default `BLINDSIGHT_CAMERA_MAC` in
+   the `.ino` (Arduino IDE), then upload the main ESP32 firmware again. Packets
    from any other transmitter are ignored.
 
 ### Option B: Using Arduino IDE
 1. Open `firmware/esp32_cam/BlindSight_Camera.ino`.
 2. Select board: `AI Thinker ESP32-CAM`.
-3. Configure `WIFI_SSID`, `WIFI_PASSWORD`, and `MAIN_ESP_MAC`.
+3. Set only `BLINDSIGHT_MAIN_ESP_MAC` (Wi-Fi is configured via the portal).
 4. Connect with GPIO 0 grounded, click **Upload**, remove GPIO 0 jumper, and reset.
 
 ---
@@ -200,7 +200,7 @@ returns quietly when a file is missing.
 |---|---|
 | ESP32-CAM resets | 5V 3A buck rail, 470–1000 µF capacitor, short power leads |
 | No ESP-NOW image | Matching Wi-Fi SSID/channel, correct MAIN MAC address, sender MAC validation |
-| Pi upload 404/500 | Verify PI_URL, check `python3 server.py` logs in terminal |
+| Pi upload 404/500 | Verify the Edge Server IP in the `BlindSight-Setup` portal, check `python3 server.py` logs in terminal |
 | No DAC sound | Verify I2S pins (26, 25, 22), check LittleFS filesystem upload, common ground |
 | Wrong ultrasonic readings | Verify 1k/2k voltage dividers on ECHO lines, ensure sensors face forward |
 | ESP32-CAM upload timeout | Ensure GPIO 0 is grounded during power-up before clicking upload |

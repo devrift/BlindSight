@@ -102,28 +102,23 @@ Documents\Arduino\BlindSight_Main_ESP32\BlindSight_Main_ESP32.ino
 
 ---
 
-# STEP 5 — Edit 3 lines (the only "coding" you do)
+# STEP 5 — No code editing needed (v1.5 portal setup)
 
-Near the top of the sketch you'll see a box like this:
+**You do not edit Wi-Fi names, passwords, or IP addresses in the sketch anymore.**
+Since v1.5 the firmware uses the **WiFiManager** library: after you upload it,
+the ESP32 creates its own setup Wi-Fi network called **`BlindSight-Setup`**.
+You join that network on your phone and type the venue Wi-Fi + edge-server IP
+into a web page. The values are saved on the chip and survive reboots — moving
+to a new exhibit never requires re-uploading.
 
-```cpp
-// ##############################################################
-// ###############  EDIT THESE 3 LINES ONLY  ####################
-const char *WIFI_SSID     = "BlindSight";
-const char *WIFI_PASSWORD = "CHANGE_ME";
-const char *PI_URL        = "http://192.168.4.1:5000";
-// ##############################################################
-```
+Before uploading, install the one required library:
+**Sketch → Include Library → Manage Libraries → search "WiFiManager" →
+install "WiFiManager by tzapu" (version 2.0.17 or newer).**
 
-Change them to your real values:
-
-| Line | What to put |
-|---|---|
-| `WIFI_SSID` | Name of your **2.4GHz** Wi-Fi or phone hotspot |
-| `WIFI_PASSWORD` | That network's password |
-| `PI_URL` | Leave the default for now — Pi isn't set up yet |
-
-**Keep the quote marks.** Only change what's between them.
+After upload, if the saved network/server can't be reached (or on first boot),
+the portal opens automatically. You can also force it open any time by holding
+the reflex button (GPIO 32) for **3 seconds**. A normal short press still
+triggers the ultrasonic reflex as before.
 
 ### ⚠️ The #1 thing that breaks this
 **ESP32 cannot see 5GHz Wi-Fi. Ever.** It's a hardware limitation.

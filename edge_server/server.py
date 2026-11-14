@@ -10,8 +10,8 @@ Integrates:
 """
 from __future__ import annotations
 
-import io
 import os
+import socket
 import sys
 import time
 from pathlib import Path
@@ -19,10 +19,59 @@ from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request, send_file
 
+SERVER_VERSION = "1.5.0"
+
 SERVER_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SERVER_DIR.parent
 RUNTIME_DIR = SERVER_DIR / "runtime"
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def lan_ipv4_addresses() -> list[str]:
+    """Best-effort list of non-loopback IPv4 addresses this host is reachable on.
+
+    Uses only the standard library so it works on Raspberry Pi / Windows /
+    Linux without extra dependencies. The UDP "connect" trick does not send
+    any packets; it just asks the kernel which source address it would use to
+    reach the internet, which is the LAN IP the ESP32 should be pointed at.
+    """
+    found: set[str] = set()
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(0.5)
+            s.connect(("8.8.8.8", 80))
+            found.add(s.getsockname()[0])
+    except OSError:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            found.add(info[4][0])
+    except OSError:
+        pass
+
+    def usable(ip: str) -> bool:
+        return not (ip.startswith(("127.", "169.254.")) or ip == "0.0.0.0")
+
+    return sorted(ip for ip in found if usable(ip))
+
+
+def print_startup_banner(host: str, port: int) -> None:
+    ips = lan_ipv4_addresses()
+    print("=" * 60)
+    print(f"  BlindSight Edge Gateway v{SERVER_VERSION}")
+    print(f"  Listening on http://{host}:{port}  (all interfaces)")
+    if ips:
+        print("  Reachable LAN address(es) — type one into BlindSight-Setup:")
+        for ip in ips:
+            print(f"    http://{ip}:{port}")
+    else:
+        print("  No LAN IPv4 detected yet. Connect to Wi-Fi/Ethernet, then")
+        print("  restart, or run `hostname -I` (Linux) / `ipconfig` (Windows).")
+    print("  ESP32 portal: join 'BlindSight-Setup', enter the IP above + port.")
+    print("=" * 60)
 
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
@@ -67,6 +116,7 @@ def health():
     return jsonify({
         "status": "healthy",
         "service": "BlindSight Open.Jarvis Local Edge Gateway",
+        "version": SERVER_VERSION,
         "voice_engine": "Open.Jarvis Audio Assistant",
         "tier1_edge_reflex": "ready" if yolo_model else "model_missing",
         "tier2_voice_ai": "ready" if jarvis_assistant else "not_loaded",
@@ -204,10 +254,20 @@ def api_listen_mic():
 
 @app.route("/analyse", methods=["POST"])
 def analyse_frame():
-    """Receives camera frame from ESP32-CAM and runs YOLOv8n obstacle detection."""
+    """Receives a camera frame and runs YOLOv8n obstacle detection.
+
+    Accepts BOTH the ESP32 main firmware's multipart/form-data upload
+    (field name "image") and a raw JPEG body, so the device works without
+    reflashing regardless of which upload style a firmware revision uses.
+    """
     global last_vision_description, last_frame_timestamp
 
-    image_data = request.get_data()
+    image_data = b""
+    if "image" in request.files:
+        image_data = request.files["image"].read()
+    else:
+        image_data = request.get_data()
+
     if not image_data or len(image_data) < 500:
         return jsonify(error="Empty image payload"), 400
 
@@ -252,5 +312,8 @@ def latest_frame():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    print(f"Starting BlindSight Open.Jarvis Gateway on http://0.0.0.0:{port}")
+    # Bind to all interfaces so the ESP32 can reach us over any exhibit
+    # hotspot/router. The banner prints the actual LAN IP(s) to type into the
+    # BlindSight-Setup captive portal on the device.
+    print_startup_banner("0.0.0.0", port)
     app.run(host="0.0.0.0", port=port, debug=False)

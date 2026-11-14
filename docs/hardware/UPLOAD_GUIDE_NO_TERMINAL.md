@@ -55,11 +55,12 @@ https://espressif.github.io/arduino-esp32/package_esp32_index.json
 
 1. Left sidebar → click the **books icon** (Library Manager).
    Or: **Sketch → Include Library → Manage Libraries**
-2. Search: **ArduinoJson**
-3. Find **"ArduinoJson by Benoit Blanchon"** → click **INSTALL**
+2. Search: **WiFiManager**
+3. Find **"WiFiManager by tzapu"** → click **INSTALL** (version 2.0.17 or newer)
 
-Everything else (WiFi, esp_now, HTTPClient, LittleFS, I2S, esp_camera) is already
-built into the ESP32 core. Do not install anything else.
+Everything else (WiFi, WiFiManager's dependencies, esp_now, HTTPClient,
+LittleFS, Preferences, I2S, esp_camera) is already built into the ESP32 core.
+Do not install anything else.
 
 ---
 
@@ -101,19 +102,20 @@ Skip this for now. Come back only if **Part 6 step 3** shows no COM port.
 
 ## PART 6 — Upload the MAIN ESP32 (do this one FIRST)
 
-### 6.1 Edit the 3 settings
-Open `BlindSight_Main_ESP32.ino`. Near the top, find the box marked
-`EDIT THESE 3 LINES ONLY` and change:
+### 6.1 Nothing to edit — setup happens on your phone (v1.5)
+Open `BlindSight_Main_ESP32.ino` and **don't change anything**. Since v1.5 the
+Wi-Fi name/password and the edge-server IP/port are entered in the
+**`BlindSight-Setup`** captive portal after upload:
 
-| Line | Change it to |
-|---|---|
-| `WIFI_SSID` | your hotspot name (e.g. `"BlindSight"`) |
-| `WIFI_PASSWORD` | your hotspot password |
-| `PI_URL` | `"http://YOUR_PI_IP:5000"` |
+1. Upload the sketch (next step) and power the ESP32.
+2. On your phone, join the Wi-Fi network **`BlindSight-Setup`**.
+3. A setup page pops up (or open `http://192.168.4.1`).
+4. Pick your venue Wi-Fi, type its password, and enter the **Edge Server IP**
+   and **port** printed in the edge server terminal (e.g. `192.168.1.42` / `5000`).
+5. Save. The ESP32 reboots, connects, and remembers everything.
 
-Keep the quotes. Don't touch anything else.
-
-> Don't know the Pi IP yet? Leave the default. You can re-upload later in 30 seconds.
+> At a new exhibit, just hold the reflex button for **3 seconds** (or let the
+> boot check fail) and repeat — **no re-upload, no laptop needed**.
 
 ### 6.2 Set the board
 - **Tools → Board → esp32 → ESP32 Dev Module**
@@ -167,7 +169,13 @@ uint8_t MAIN_ESP_MAC[6] = {0x3C,0x71,0xBF,0x12,0x34,0x56};
 ```
 
 Rule: each pair of characters becomes `0x` + that pair, separated by commas.
-Also set the same `WIFI_SSID` and `WIFI_PASSWORD` as the main board.
+(With PlatformIO, put `#define BLINDSIGHT_MAIN_ESP_MAC {...}` in
+`include/secrets.h` instead.)
+
+**Do not edit Wi-Fi settings** — after upload the camera opens its own
+**`BlindSight-Cam-Setup`** portal. Join it on your phone and select the **same
+venue Wi-Fi the main ESP32 uses** so both boards share a radio channel for
+ESP-NOW.
 
 ### 7.2 Wire it for upload
 Using your Arduino-as-TTL setup (RESET→GND on the Arduino):
@@ -244,5 +252,5 @@ on a low-spec laptop. **This is a genuinely good choice for your machine.**
 1. ✅ Upload MAIN ESP32 → copy MAC
 2. ✅ Upload ESP32-CAM with that MAC
 3. ⬜ Set up the Pi server (`edge_server/server.py`, see README quickstart)
-4. ⬜ Point `PI_URL` at the Pi's real IP, re-upload main ESP32
+4. ⬜ Enter the Pi's LAN IP in the `BlindSight-Setup` portal (no re-upload!)
 5. ⬜ Bench test everything before mounting on the wearable

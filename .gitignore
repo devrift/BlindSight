@@ -43,6 +43,8 @@ runtime/*
 !runtime/.gitkeep
 uploads/*
 !uploads/.gitkeep
+# Edge server runtime frames / generated audio (created at run time)
+edge_server/runtime/
 
 # Companion memory / prefs / chat history: personal data, never committed.
 state/*
