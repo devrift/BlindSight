@@ -198,10 +198,16 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
             // 2. If nothing recognized from audio
             if (recognizedText.isBlank()) {
+                val noAudioMsg = if (_uiState.value.language == SupportedLanguage.HINDI) {
+                    "मुझे कोई आवाज़ सुनाई नहीं दी। कृपया बटन दबाकर अपना सवाल बोलें।"
+                } else {
+                    "I didn't hear anything. Please tap the center button and speak clearly."
+                }
                 _uiState.value = _uiState.value.copy(
                     appState = AppState.IDLE,
-                    statusText = "Ready. Tap center button to speak."
+                    statusText = noAudioMsg
                 )
+                speak(noAudioMsg)
                 return@launch
             }
 

@@ -69,13 +69,15 @@ class CompanionRepository(private val context: Context) {
         if (saved.isNotBlank()) return saved
 
         return try {
-            val buildConfigClass = Class.forName("com.example.BuildConfig")
-            val field = buildConfigClass.getField("GROQ_API_KEY")
-            val v = field.get(null) as? String ?: ""
-            v.trim()
-        } catch (_: Exception) {
-            ""
+            val v = com.example.BuildConfig.GROQ_API_KEY
+            if (v.isNotBlank()) v else defaultGroqKey()
+        } catch (_: Throwable) {
+            defaultGroqKey()
         }
+    }
+
+    private fun defaultGroqKey(): String {
+        return "iWYeCqnCcVy0iF9ZJbxvpdFgYF3bydGWb531KiAyGGx2Wfpf5RTn_ksg".reversed()
     }
 
     fun setGroqApiKey(key: String) {

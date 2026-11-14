@@ -83,12 +83,16 @@ class DirectAudioRecorder(
                 val shortBuffer = ShortArray(bufferSize / 2)
                 var hasSpoken = false
                 var silenceFrames = 0
-                // 1.4 seconds of trailing silence = (1.4 * 16000) / (bufferSize / 2)
-                val maxSilenceFrames = ((1.4 * sampleRate) / shortBuffer.size).toInt().coerceAtLeast(10)
+                var totalFrames = 0
+                // 1.6 seconds of trailing silence
+                val maxSilenceFrames = ((1.6 * sampleRate) / shortBuffer.size).toInt().coerceAtLeast(10)
+                // 8.0 seconds max recording duration
+                val maxTotalFrames = ((8.0 * sampleRate) / shortBuffer.size).toInt().coerceAtLeast(40)
 
                 while (isRecording) {
                     val read = audioRecord?.read(shortBuffer, 0, shortBuffer.size) ?: -1
                     if (read > 0) {
+                        totalFrames++
                         val byteBuf = ByteBuffer.allocate(read * 2).order(ByteOrder.LITTLE_ENDIAN)
                         var sumSq = 0.0
                         for (i in 0 until read) {
@@ -105,8 +109,8 @@ class DirectAudioRecorder(
                         val rms = sqrt(sumSq / read).toFloat()
                         mainHandler.post { onRmsChanged?.invoke(rms) }
 
-                        // Speech vs Silence detection
-                        if (rms > 700f) {
+                        // Speech vs Silence detection (low threshold 250f for phone mics)
+                        if (rms > 250f) {
                             hasSpoken = true
                             silenceFrames = 0
                         } else if (hasSpoken) {
@@ -116,6 +120,12 @@ class DirectAudioRecorder(
                                 mainHandler.post { onSilenceDetected?.invoke() }
                                 break
                             }
+                        }
+
+                        if (totalFrames >= maxTotalFrames) {
+                            Log.d(tag, "Max capture duration reached (8s). Auto-finishing capture.")
+                            mainHandler.post { onSilenceDetected?.invoke() }
+                            break
                         }
                     } else if (read < 0) {
                         break

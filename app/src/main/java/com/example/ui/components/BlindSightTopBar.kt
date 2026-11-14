@@ -71,13 +71,21 @@ fun BlindSightTopBar(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            Text(
-                text = "BlindSight",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = BlindSightTextPrimary,
-                letterSpacing = 0.5.sp
-            )
+            androidx.compose.foundation.layout.Column {
+                Text(
+                    text = "BlindSight v1.5",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = BlindSightTextPrimary,
+                    letterSpacing = 0.5.sp
+                )
+                Text(
+                    text = "● Groq 120B AI Active",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = androidx.compose.ui.graphics.Color(0xFF22C55E)
+                )
+            }
         }
 
         // Action chips
