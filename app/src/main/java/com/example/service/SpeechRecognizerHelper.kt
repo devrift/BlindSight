@@ -241,19 +241,17 @@ class SpeechRecognizerHelper(
 
     private fun handleClientError() {
         clientErrorCount++
-        Log.w(tag, "Encountered ERROR_CLIENT ($clientErrorCount/$maxClientRetries). Re-initializing...")
-
+        Log.w(tag, "Encountered ERROR_CLIENT ($clientErrorCount/$maxClientRetries).")
         destroyRecognizerInternal()
 
-        if (clientErrorCount <= maxClientRetries) {
+        if (isContinuousMode && clientErrorCount <= maxClientRetries) {
             val backoffMs = 500L * clientErrorCount
             mainHandler.postDelayed({
-                if (!isPaused && hasAudioPermission()) {
+                if (!isPaused && hasAudioPermission() && isContinuousMode) {
                     startListening(currentLanguageCode, forceRestart = true)
                 }
             }, backoffMs)
         } else {
-            Log.w(tag, "SpeechRecognizer binding unreachable after $maxClientRetries attempts.")
             clientErrorCount = 0
             onError("Tap center button to speak.")
         }

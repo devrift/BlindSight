@@ -35,6 +35,67 @@ export class VisionAiService {
     }
   }
 
+  static getGroqApiKey(): string {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('blindsight_groq_api_key');
+      if (stored && stored.trim()) return stored.trim();
+    }
+    const envKey = (import.meta as any).env?.VITE_GROQ_API_KEY || (import.meta as any).env?.GROQ_API_KEY;
+    return (envKey && String(envKey).trim()) || '';
+  }
+
+  static setGroqApiKey(key: string): void {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('blindsight_groq_api_key', key.trim());
+    }
+  }
+
+  /**
+   * Directly queries Groq ultra-fast 120B parameter model
+   */
+  static async queryGroqDirect(prompt: string, langCode: LanguageCode): Promise<string | null> {
+    const key = this.getGroqApiKey();
+    if (!key) return null;
+
+    const sysPrompt = langCode === 'hi'
+      ? "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक बुद्धिमान, चौकस और अत्यंत आत्मीय वॉयस साथी। हर उत्तर स्वाभाविक, सम्मानजनक और आत्मीय हिंदी में 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है।"
+      : "You are BlindSight — the dedicated AI visual guide and caring voice companion walking beside a blind user. Speak with warmth, alert intelligence, empathy, and clarity in 1 to 2 crisp, spoken sentences. Chat naturally, answer questions, solve tasks, or tell jokes. Your name is BlindSight.";
+
+    const models = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'];
+    for (const model of models) {
+      try {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 6000);
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${key}`
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: sysPrompt },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 600
+          }),
+          signal: ctrl.signal
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content?.trim();
+          if (content) return content;
+        }
+      } catch (e) {
+        console.warn('Groq direct query attempt notice:', e);
+      }
+    }
+    return null;
+  }
+
   /**
    * Captures a single image frame from an active video element
    */
@@ -232,6 +293,18 @@ export class VisionAiService {
         ok: true,
         imageAttached: !!imageToUse
       };
+    }
+
+    // 3. For conversational questions, query Groq 120B AI Companion directly (sub-300ms, zero quota limit)
+    if (!isVisionRequest) {
+      const groqDirect = await this.queryGroqDirect(prompt, langCode);
+      if (groqDirect) {
+        return {
+          reply: groqDirect,
+          ok: true,
+          imageAttached: false
+        };
+      }
     }
 
     // 3. Multimodal scene requests without Gemini answer

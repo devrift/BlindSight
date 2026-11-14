@@ -47,6 +47,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private val hapticHelper = HapticHelper(application)
     private var ttsHelper: TtsHelper? = null
     private var speechRecognizerHelper: SpeechRecognizerHelper? = null
+    private var directAudioRecorder: com.example.service.DirectAudioRecorder? = null
 
     val facts: StateFlow<List<MemoryFact>> = repository.facts
     val history: StateFlow<List<ChatMessage>> = repository.history
@@ -60,13 +61,15 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private var isUserCommandActive = false
 
     init {
+        directAudioRecorder = com.example.service.DirectAudioRecorder(
+            onSilenceDetected = {
+                finishListeningAndProcess()
+            }
+        )
+
         ttsHelper = TtsHelper(application) { ready ->
             if (ready) {
-                speak("BlindSight assistant active. Say \"Hey BlindSight\" or tap the center button to speak.") {
-                    if (hasMicrophonePermission()) {
-                        speechRecognizerHelper?.startListening(_uiState.value.language.code)
-                    }
-                }
+                speak("BlindSight assistant active. Tap the center button to speak.")
             }
         }
 
@@ -141,6 +144,20 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
+        if (currentState == AppState.COMMAND_LISTENING) {
+            // User tapped again to finish speaking
+            finishListeningAndProcess()
+            return
+        }
+
+        if (!hasMicrophonePermission()) {
+            _uiState.value = _uiState.value.copy(
+                statusText = "Microphone permission required. Please allow access in Settings."
+            )
+            speak("Microphone permission required. Please allow access in Settings.")
+            return
+        }
+
         isUserCommandActive = true
         ttsHelper?.playEarcon(TtsHelper.EarconType.LISTEN)
         _uiState.value = _uiState.value.copy(
@@ -148,9 +165,53 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             statusText = "Listening… Speak your question to BlindSight."
         )
 
-        // 100% In-App listening: animated visual radar and amber glow, zero external popups
-        val langTag = _uiState.value.language.code
-        speechRecognizerHelper?.startListening(langTag, forceRestart = true)
+        // 100% In-App recording directly to Groq Whisper: Zero Google SpeechRecognizer oscillation!
+        val started = directAudioRecorder?.startRecording() ?: false
+        if (!started) {
+            val langTag = _uiState.value.language.code
+            speechRecognizerHelper?.startListening(langTag, forceRestart = true)
+        }
+    }
+
+    fun finishListeningAndProcess() {
+        if (_uiState.value.appState != AppState.COMMAND_LISTENING) return
+
+        val wavBytes = directAudioRecorder?.stopRecording() ?: ByteArray(0)
+        hapticHelper.vibrateConfirm()
+        ttsHelper?.playEarcon(TtsHelper.EarconType.OK)
+
+        _uiState.value = _uiState.value.copy(
+            appState = AppState.THINKING,
+            statusText = "Transcribing voice…"
+        )
+
+        viewModelScope.launch {
+            var recognizedText = ""
+
+            // 1. Primary: Groq Whisper Turbo (Ultra-fast ~200ms, understands Indian accents & Hindi)
+            if (wavBytes.isNotEmpty() && wavBytes.size > 800) {
+                val whisperResult = repository.transcribeGroqWhisper(wavBytes, _uiState.value.language)
+                if (!whisperResult.isNullOrBlank()) {
+                    recognizedText = whisperResult.trim()
+                }
+            }
+
+            // 2. If nothing recognized from audio
+            if (recognizedText.isBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    appState = AppState.IDLE,
+                    statusText = "Ready. Tap center button to speak."
+                )
+                return@launch
+            }
+
+            _uiState.value = _uiState.value.copy(
+                heardText = recognizedText,
+                statusText = "Processing: \"$recognizedText\""
+            )
+
+            processPrompt(recognizedText)
+        }
     }
 
     fun onSpeechResult(spokenText: String) {
@@ -251,12 +312,18 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // 3. Try Gemini Multimodal / Deep QA if configured
-        val geminiReply = repository.queryGemini(prompt, lang = _uiState.value.language)
-        val reply = if (!geminiReply.isNullOrBlank()) {
-            geminiReply
+        // 3. Ultra-Fast Frontier AI Companion via Groq (120B parameter, sub-second latency, zero quota lockout)
+        val groqReply = repository.queryGroq(prompt, lang = _uiState.value.language)
+        val reply = if (!groqReply.isNullOrBlank()) {
+            groqReply
         } else {
-            buildConversationalAnswer(prompt)
+            // 4. Fallback to Gemini Multimodal / Deep QA if configured
+            val geminiReply = repository.queryGemini(prompt, lang = _uiState.value.language)
+            if (!geminiReply.isNullOrBlank()) {
+                geminiReply
+            } else {
+                buildConversationalAnswer(prompt)
+            }
         }
 
         repository.addMessage(isUser = false, text = reply)

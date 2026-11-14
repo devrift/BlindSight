@@ -277,6 +277,31 @@ class JarvisVoiceAssistant:
                 except Exception:
                     pass
 
+    def _transcribe_groq_whisper(self, wav_bytes: bytes, lang: str = "en") -> str:
+        """Transcribe speech using Groq Whisper Large v3 Turbo (sub-300ms, multi-accent)."""
+        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        if not api_key or not wav_bytes or len(wav_bytes) < 400:
+            return ""
+        try:
+            files = {"file": ("speech.wav", wav_bytes, "audio/wav")}
+            data = {"model": "whisper-large-v3-turbo", "response_format": "json"}
+            if lang and not lang.startswith("auto"):
+                data["language"] = lang.split("-")[0]
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files=files,
+                data=data,
+                timeout=6.0
+            )
+            if resp.ok:
+                raw_text = resp.json().get("text", "").strip()
+                if raw_text and raw_text.lower() not in ("(silence)", "none", "thank you.", "thank you", "silence"):
+                    return clean_phonetic_substitutions(raw_text)
+        except Exception as e:
+            print(f"[BlindSight] Groq Whisper notice: {e}")
+        return ""
+
     def transcribe_audio_bytes(self, audio_bytes: bytes, language: str = "en-US") -> Tuple[str, str]:
         """Convert WAV audio bytes to text with normalization and multi-engine fallback."""
         if not audio_bytes or len(audio_bytes) < 100:
@@ -285,7 +310,12 @@ class JarvisVoiceAssistant:
         # 1. Normalize audio waveform so quiet speech is loud and clear
         norm_bytes = self._normalize_wav_audio(audio_bytes)
 
-        # 2. Try Google STT with multi-accent retry (e.g. en-IN for Indian English)
+        # 2. Tier 1: Groq Whisper Large v3 Turbo (Lightning fast ~200ms, high accuracy)
+        groq_text = self._transcribe_groq_whisper(norm_bytes, lang=language)
+        if groq_text:
+            return groq_text, language
+
+        # 3. Tier 2: Google STT with multi-accent retry (e.g. en-IN for Indian English)
         try:
             buf = io.BytesIO(norm_bytes)
             with sr.AudioFile(buf) as source:
@@ -311,12 +341,12 @@ class JarvisVoiceAssistant:
         except Exception as exc:
             print(f"[JarvisVoice] Google STT error: {exc}")
 
-        # 3. Fallback to Local Offline Faster-Whisper (zero network dependency)
+        # 4. Fallback to Local Offline Faster-Whisper (zero network dependency)
         whisper_text = self._transcribe_whisper_offline(norm_bytes, lang=language)
         if whisper_text:
             return whisper_text, language
 
-        # 4. Fallback to Gemini Multimodal Audio (understands Indian accents, Hinglish, quiet speech)
+        # 5. Fallback to Gemini Multimodal Audio (understands Indian accents, Hinglish, quiet speech)
         gemini_text = self._transcribe_gemini_audio(norm_bytes, lang=language)
         if gemini_text:
             return gemini_text, language
@@ -403,6 +433,48 @@ class JarvisVoiceAssistant:
         except Exception as e:
             print(f"[JarvisVoice] Mic record failed: {e}")
             return b""
+
+    def query_groq_llm(self, prompt: str, lang: str = "en") -> Optional[str]:
+        """Query Groq ultra-fast 120B parameter conversational LLM (sub-500ms response)."""
+        key = os.getenv("GROQ_API_KEY", "").strip()
+        if not key:
+            return None
+        sys_prompt = (
+            "You are BlindSight — the dedicated AI visual guide, mobility protector, and caring voice companion for a blind user.\n"
+            "You speak with warmth, empathy, alert attentiveness, and calm reassurance, walking right beside the user as their trusted friend.\n"
+            "RULES:\n"
+            "- Keep spoken responses crisp, friendly, and under 1-2 natural sentences.\n"
+            "- If the user asks who you are or your name, state warmly that you are BlindSight, their visual guide and voice companion.\n"
+            "- You can chat about anything, tell funny jokes, solve math, translate languages, and help with daily tasks.\n"
+            "- Speak naturally and warmly in the user's spoken language (English, Hindi, etc.)."
+        )
+        if lang == "hi":
+            sys_prompt += "\nआप दृष्टिबाधित उपयोगकर्ता के सच्चे साथी हैं। स्वाभाविक, सम्मानजनक और आत्मीय हिंदी में बात करें। आपका नाम ब्लाइंडसाइट है।"
+
+        models = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+        for m in models:
+            try:
+                r = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json={
+                        "model": m,
+                        "messages": [
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "temperature": 0.7,
+                        "max_tokens": 600
+                    },
+                    timeout=5.0
+                )
+                if r.ok:
+                    ans = r.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if ans:
+                        return ans
+            except Exception as e:
+                print(f"[BlindSight] Groq model {m} notice: {e}")
+        return None
 
     def query_gemini(
         self,
@@ -590,7 +662,12 @@ class JarvisVoiceAssistant:
 
             return "The camera view is unclear or obstructed. Please proceed with caution." if lang == "en" else "कैमरा दृश्य स्पष्ट नहीं है। कृपया सावधानी से आगे बढ़ें।"
 
-        # 3. Dynamic Smart Gemini AI Companion Brain (strictly uses API key for real intelligence)
+        # 3. Ultra-Fast Frontier AI Companion via Groq (120B parameter, sub-second latency, zero quota lockout)
+        groq_reply = self.query_groq_llm(cmd_clean, lang=lang)
+        if groq_reply:
+            return groq_reply
+
+        # 4. Fallback to Gemini Multimodal AI Brain
         gemini_chat_reply = self.query_gemini(
             cmd_clean,
             is_vision_query=False,

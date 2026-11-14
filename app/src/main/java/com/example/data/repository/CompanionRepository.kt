@@ -63,6 +63,25 @@ class CompanionRepository(private val context: Context) {
         prefs.edit().putString("gemini_api_key", key.trim()).apply()
     }
 
+    // --- Groq API Key Access ---
+    fun getGroqApiKey(): String {
+        val saved = prefs.getString("groq_api_key", "") ?: ""
+        if (saved.isNotBlank()) return saved
+
+        return try {
+            val buildConfigClass = Class.forName("com.example.BuildConfig")
+            val field = buildConfigClass.getField("GROQ_API_KEY")
+            val v = field.get(null) as? String ?: ""
+            v.trim()
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    fun setGroqApiKey(key: String) {
+        prefs.edit().putString("groq_api_key", key.trim()).apply()
+    }
+
     // --- Memory Facts ---
     private fun loadFacts() {
         val raw = prefs.getString("saved_facts", "[]") ?: "[]"
@@ -359,6 +378,144 @@ class CompanionRepository(private val context: Context) {
         }
 
         return null
+    }
+
+    // --- Groq Ultra-Fast Conversational AI Brain ---
+    suspend fun queryGroq(
+        prompt: String,
+        lang: SupportedLanguage = SupportedLanguage.ENGLISH
+    ): String? = withContext(Dispatchers.IO) {
+        val apiKey = getGroqApiKey()
+        if (apiKey.isBlank()) return@withContext null
+
+        val sysInstruction = if (lang == SupportedLanguage.HINDI) {
+            "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक बुद्धिमान, चौकस और अत्यंत आत्मीय वॉयस साथी। हर उत्तर स्वाभाविक, सम्मानजनक और आत्मीय हिंदी में 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है।"
+        } else {
+            "You are BlindSight — the dedicated AI visual guide and caring voice companion walking beside a blind user. Speak with warmth, alert intelligence, empathy, and clarity in 1 to 2 crisp, spoken sentences. Chat naturally, answer questions, solve tasks, or tell jokes. Your name is BlindSight."
+        }
+
+        val models = listOf("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b")
+        for (m in models) {
+            try {
+                val url = URL("https://api.groq.com/openai/v1/chat/completions")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Authorization", "Bearer $apiKey")
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.connectTimeout = 4000
+                conn.readTimeout = 8000
+                conn.doOutput = true
+
+                val messagesArr = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", sysInstruction)
+                    })
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", prompt)
+                    })
+                }
+
+                val body = JSONObject().apply {
+                    put("model", m)
+                    put("messages", messagesArr)
+                    put("temperature", 0.7)
+                    put("max_tokens", 600)
+                }.toString()
+
+                conn.outputStream.use { os ->
+                    os.write(body.toByteArray(Charsets.UTF_8))
+                }
+
+                if (conn.responseCode == 200) {
+                    val resText = conn.inputStream.bufferedReader().use { it.readText() }
+                    val resJson = JSONObject(resText)
+                    val choices = resJson.optJSONArray("choices")
+                    val message = choices?.optJSONObject(0)?.optJSONObject("message")
+                    val content = message?.optString("content")?.trim()
+                    if (!content.isNullOrBlank()) {
+                        return@withContext content
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("CompanionRepository", "Groq model $m error: ${e.message}")
+            }
+        }
+        return@withContext null
+    }
+
+    // --- Groq Whisper Speech-To-Text API ---
+    suspend fun transcribeGroqWhisper(
+        wavBytes: ByteArray,
+        lang: SupportedLanguage = SupportedLanguage.ENGLISH
+    ): String? = withContext(Dispatchers.IO) {
+        val apiKey = getGroqApiKey()
+        if (apiKey.isBlank() || wavBytes.size < 400) return@withContext null
+
+        try {
+            val boundary = "----BlindSightBoundary" + System.currentTimeMillis()
+            val lineEnd = "\r\n"
+            val twoHyphens = "--"
+
+            val url = URL("https://api.groq.com/openai/v1/audio/transcriptions")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            conn.connectTimeout = 5000
+            conn.readTimeout = 10000
+            conn.doOutput = true
+
+            conn.outputStream.use { os ->
+                val writer = java.io.PrintWriter(java.io.OutputStreamWriter(os, "UTF-8"), true)
+
+                // Part 1: model
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"model\"").append(lineEnd).append(lineEnd)
+                writer.append("whisper-large-v3-turbo").append(lineEnd)
+
+                // Part 2: language
+                val langCode = if (lang == SupportedLanguage.HINDI) "hi" else "en"
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"language\"").append(lineEnd).append(lineEnd)
+                writer.append(langCode).append(lineEnd)
+
+                // Part 3: response_format
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"response_format\"").append(lineEnd).append(lineEnd)
+                writer.append("json").append(lineEnd)
+
+                // Part 4: file
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"").append(lineEnd)
+                writer.append("Content-Type: audio/wav").append(lineEnd).append(lineEnd)
+                writer.flush()
+
+                os.write(wavBytes)
+                os.flush()
+
+                writer.append(lineEnd)
+                writer.append(twoHyphens).append(boundary).append(twoHyphens).append(lineEnd)
+                writer.flush()
+            }
+
+            if (conn.responseCode == 200) {
+                val resText = conn.inputStream.bufferedReader().use { it.readText() }
+                val resJson = JSONObject(resText)
+                val text = resJson.optString("text")?.trim() ?: ""
+                val low = text.lowercase()
+                if (text.isNotBlank() && low !in listOf("thank you.", "thank you", "silence", "(silence)", "you", "none")) {
+                    return@withContext text
+                }
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                Log.w("CompanionRepository", "Groq whisper HTTP ${conn.responseCode}: $err")
+            }
+        } catch (e: Exception) {
+            Log.e("CompanionRepository", "Groq Whisper STT failed: ${e.message}", e)
+        }
+        return@withContext null
     }
 
     // --- Google Gemini Multimodal Vision API ---
