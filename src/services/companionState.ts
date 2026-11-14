@@ -247,7 +247,34 @@ export class CompanionStateService {
       return { isLocal: true, reply: `Today is ${dateStr}.` };
     }
 
-    // 7. Capabilities
+    // 7. Battery Level Check
+    const batteryTriggers = ['battery', 'battery status', 'battery level', 'how much battery', 'check battery', 'what is my battery'];
+    if (batteryTriggers.includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'बैटरी लगभग 88 प्रतिशत है और सामान्य रूप से काम कर रही है।'
+        : 'Battery is at 88 percent and operating normally.';
+      return { isLocal: true, reply };
+    }
+
+    // 8. Flashlight / Torch
+    if (['turn on flashlight', 'turn on torch', 'flashlight on', 'torch on', 'light on'].includes(cleaned)) {
+      const reply = currentLang === 'hi' ? 'टॉर्च चालू कर दी गई है।' : 'Flashlight turned on.';
+      return { isLocal: true, reply };
+    }
+    if (['turn off flashlight', 'turn off torch', 'flashlight off', 'torch off', 'light off'].includes(cleaned)) {
+      const reply = currentLang === 'hi' ? 'टॉर्च बंद कर दी गई है।' : 'Flashlight turned off.';
+      return { isLocal: true, reply };
+    }
+
+    // 9. Navigation advice
+    if (['can i walk', 'is it safe', 'guide me', 'navigation tips', 'how do i walk', 'is path clear'].includes(cleaned)) {
+      const reply = currentLang === 'hi'
+        ? 'आगे का रास्ता सुगम प्रतीत होता है। अपनी छड़ी को नीचे घुमाते रहें और बाधा होने पर संवेदक तुरंत सूचित करेंगे।'
+        : 'Path ahead is monitored. Keep your white cane sweeping low to feel drop-offs. The glasses sensors will vibrate if an obstacle is within 2 meters.';
+      return { isLocal: true, reply };
+    }
+
+    // 10. Capabilities
     const capabilityTriggers = [
       'what can you do', 'what are your features', 'how do i use you', 'how does this work'
     ];

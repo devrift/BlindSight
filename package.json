@@ -1,11 +1,11 @@
 {
   "name": "blindsight-companion",
-  "version": "1.5.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000",
+    "dev": "node --max-http-header-size=65536 ./node_modules/vite/bin/vite.js --host 0.0.0.0 --port 3000",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "preview": "node --max-http-header-size=65536 ./node_modules/vite/bin/vite.js preview --host 0.0.0.0 --port 3000",
     "website": "node website/server.js"
   },
   "dependencies": {

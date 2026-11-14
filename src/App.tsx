@@ -20,6 +20,7 @@ import { ConversationLog } from './components/ConversationLog';
 import { TextInputForm } from './components/TextInputForm';
 import { ReflexTelemetryModal } from './components/ReflexTelemetryModal';
 import { CameraCaptureModal } from './components/CameraCaptureModal';
+import { ApkQrModal } from './components/ApkQrModal';
 
 export const App: React.FC = () => {
   // App state
@@ -60,6 +61,7 @@ export const App: React.FC = () => {
   // Modals
   const [isReflexModalOpen, setIsReflexModalOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   // Recognition refs
   const recognitionRef = useRef<any>(null);
@@ -68,11 +70,14 @@ export const App: React.FC = () => {
   const isTransitioningRef = useRef<boolean>(false);
   const networkRetriesRef = useRef<number>(0);
   const hasErrorRef = useRef<boolean>(false);
+  const isHandsfreeRunningRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
   const appStateRef = useRef<AppState>(appState);
   appStateRef.current = appState;
   const listenModeRef = useRef<ListenMode>(listenMode);
   listenModeRef.current = listenMode;
   const startRecognitionRef = useRef<(mode: 'wake' | 'command') => void>(() => {});
+  const runHandsfreeLoopRef = useRef<() => void>(() => {});
 
   const announce = useCallback((text: string) => {
     setAnnouncement('');
@@ -212,7 +217,7 @@ export const App: React.FC = () => {
       AudioService.playEarcon('think');
 
       const isSceneQuery = SCENE_WORDS.some(p => cleaned === p || cleaned.startsWith(p + ' '));
-      const shouldAttachCamera = includeCamera || isSceneQuery;
+      const shouldAttachCamera = isSceneQuery && includeCamera;
 
       const result = await VisionAiService.askCompanion(prompt, {
         useCamera: shouldAttachCamera,
@@ -354,9 +359,17 @@ export const App: React.FC = () => {
 
         if (err === 'network') {
           hasErrorRef.current = true;
-          const msg = 'Open.Jarvis local voice engine ready. Tap the big button and speak.';
-          updateStatus(msg, 'idle');
+          // In Brave or when Google Speech API is unreachable, switch to local Web Audio hands-free loop
+          const msg = 'Local audio engine active. Just speak naturally.';
+          updateStatus(msg, 'listen');
           announce(msg);
+          setListenMode('handsfree');
+          listenModeRef.current = 'handsfree';
+          setTimeout(() => {
+            if (runHandsfreeLoopRef.current) {
+              runHandsfreeLoopRef.current();
+            }
+          }, 300);
           return;
         }
 
@@ -391,7 +404,7 @@ export const App: React.FC = () => {
             } else if (listenModeRef.current === 'handsfree') {
               setTimeout(() => {
                 if (listenModeRef.current === 'handsfree' && appStateRef.current === 'idle') {
-                  startRecognition('command');
+                  if (runHandsfreeLoopRef.current) runHandsfreeLoopRef.current();
                 }
               }, 400);
             } else {
@@ -411,7 +424,7 @@ export const App: React.FC = () => {
         } else if (listenModeRef.current === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
           setTimeout(() => {
             if (listenModeRef.current === 'handsfree' && appStateRef.current !== 'speak' && appStateRef.current !== 'think') {
-              startRecognition('command');
+              if (runHandsfreeLoopRef.current) runHandsfreeLoopRef.current();
             }
           }, 450);
         }
@@ -426,26 +439,118 @@ export const App: React.FC = () => {
     [language, updateStatus, handleCommand, announce]
   );
 
-  // Stop speech/listening, then restore the chosen mode
-  const handleStop = useCallback(() => {
-    AudioService.stopSpeaking();
+  // Stop all active listening engines (Web Speech & Web Audio)
+  const stopAllListening = useCallback(() => {
+    isHandsfreeRunningRef.current = false;
+    AudioService.stopAdaptiveRecording();
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
       } catch {}
     }
+  }, []);
+
+  // Continuous Hands-Free VAD Loop (100% Local Web Audio, works in Brave/Chrome/Edge/Android)
+  const runHandsfreeLoop = useCallback(async () => {
+    if (isHandsfreeRunningRef.current) return;
+    isHandsfreeRunningRef.current = true;
+
+    while (listenModeRef.current === 'handsfree' && isMountedRef.current) {
+      if (appStateRef.current === 'speak' || appStateRef.current === 'think') {
+        await new Promise(r => setTimeout(r, 350));
+        continue;
+      }
+
+      setAppState('listen');
+      updateStatus('Hands-free: just speak.', 'listen');
+
+      const recResult = await AudioService.recordVoiceAdaptive({
+        maxDurationMs: 8500,
+        silenceTimeoutMs: 850,
+        noSpeechTimeoutMs: 3800,
+        onLevel: (lvl, _rms, isHotLevel) => {
+          setMicMeterPct(Math.min(100, Math.round(lvl * 100)));
+          setIsHot(isHotLevel);
+        },
+        onSpeechStart: () => {
+          updateStatus('Hearing your voice…', 'listen');
+        }
+      });
+
+      setMicMeterPct(0);
+      setIsHot(false);
+
+      if (listenModeRef.current !== 'handsfree' || !isMountedRef.current) break;
+
+      if (!recResult || !recResult.blob || recResult.blob.size < 300 || !recResult.speechDetected) {
+        continue;
+      }
+
+      // User spoke! Send audio to BlindSight voice engine
+      setAppState('think');
+      updateStatus('Thinking…', 'think');
+      AudioService.playEarcon('think');
+
+      const frameToAttach = includeCamera ? (latestFrameUrl || VisionAiService.getLatestFrame()) : null;
+      const turn = await AudioService.sendVoiceToJarvis(
+        recResult.blob,
+        language,
+        () => {
+          setAppState('speak');
+          updateStatus('Speaking…', 'speak');
+        },
+        () => {
+          setAppState('idle');
+          updateStatus('Hands-free: just speak.', 'idle');
+        },
+        frameToAttach
+      );
+
+      if (turn.success && turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
+        setMessages(prev => [...prev, userMsg, assistantMsg]);
+        announce(turn.reply);
+      } else if (turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        setMessages(prev => [...prev, userMsg]);
+        const fallbackResult = await VisionAiService.askCompanion(turn.transcript, {
+          useCamera: includeCamera,
+          langCode: language,
+          apiToken: token
+        });
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
+        setMessages(prev => [...prev, assistantMsg]);
+        announce(fallbackResult.reply);
+        speakReply(fallbackResult.reply);
+      }
+
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    isHandsfreeRunningRef.current = false;
+  }, [includeCamera, language, latestFrameUrl, updateStatus, announce, speakReply, token]);
+
+  runHandsfreeLoopRef.current = runHandsfreeLoop;
+
+  // Stop speech/listening, then restore the chosen mode
+  const handleStop = useCallback(() => {
+    AudioService.stopSpeaking();
+    stopAllListening();
     setAppState('idle');
     updateStatus('Stopped.', 'idle');
     announce('Stopped.');
-    if (listenMode === 'wake') {
+    if (listenModeRef.current === 'wake') {
       setTimeout(() => startRecognition('wake'), 400);
-    } else if (listenMode === 'handsfree') {
-      setTimeout(() => startRecognition('command'), 400);
+    } else if (listenModeRef.current === 'handsfree') {
+      setTimeout(() => runHandsfreeLoop(), 400);
     }
-  }, [updateStatus, announce, listenMode, startRecognition]);
+  }, [updateStatus, announce, stopAllListening, startRecognition, runHandsfreeLoop]);
 
-  // Big Mic Button click handler
-  const handleMicClick = () => {
+  // Big Mic Button click handler (Adaptive Voice Activity Detection)
+  const handleMicClick = async () => {
     AudioService.unlockAudio();
 
     if (appState === 'think') {
@@ -459,10 +564,9 @@ export const App: React.FC = () => {
     }
 
     if (appState === 'listen') {
+      AudioService.stopAdaptiveRecording();
       if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
+        try { recognitionRef.current.stop(); } catch {}
       }
       setAppState('idle');
       updateStatus('Listening stopped.', 'idle');
@@ -470,55 +574,87 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Reset network retries counter on user intentional tap
+    // Reset network retries counter
     networkRetriesRef.current = 0;
+    setIsCue(true);
+    setTimeout(() => setIsCue(false), 450);
 
-    // If speech recognition had network error or not supported, use Open.Jarvis direct voice
-    if (hasErrorRef.current || !AudioService.isSpeechRecognitionSupported()) {
-      setIsCue(true);
-      setTimeout(() => setIsCue(false), 450);
-      (async () => {
-        setAppState('listen');
-        updateStatus('Listening with Open.Jarvis… speak now.', 'listen');
-        AudioService.playEarcon('listen');
-        const wavBlob = await AudioService.recordWav(3800, lvl => setMicLevel(lvl));
-        if (!wavBlob) {
-          setAppState('idle');
-          updateStatus('Could not capture audio from microphone.', 'idle');
-          return;
-        }
-        setAppState('think');
-        updateStatus('Open.Jarvis thinking…', 'think');
-        AudioService.playEarcon('think');
-        const turn = await AudioService.sendVoiceToJarvis(
-          wavBlob,
-          language,
-          () => {
-            setAppState('speak');
-            updateStatus('Speaking…', 'speak');
-          },
-          () => {
-            setAppState('idle');
-            updateStatus('Ready', 'idle');
-          }
-        );
-        if (turn.transcript) {
-          setHeardText(turn.transcript);
-          const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
-          const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
-          setMessages(prev => [...prev, userMsg, assistantMsg]);
-        } else {
-          setAppState('idle');
-          updateStatus('Ready (Tap to speak)', 'idle');
-        }
-      })();
+    setAppState('listen');
+    updateStatus('Listening… speak naturally.', 'listen');
+    AudioService.playEarcon('listen');
+
+    // Run Adaptive VAD recording
+    const recResult = await AudioService.recordVoiceAdaptive({
+      maxDurationMs: 8000,
+      silenceTimeoutMs: 850,
+      noSpeechTimeoutMs: 3500,
+      onLevel: (lvl, _rms, isHotLevel) => {
+        setMicMeterPct(Math.min(100, Math.round(lvl * 100)));
+        setIsHot(isHotLevel);
+      },
+      onSpeechStart: () => {
+        updateStatus('Hearing your voice…', 'listen');
+      }
+    });
+
+    setMicMeterPct(0);
+    setIsHot(false);
+
+    if (!recResult || !recResult.blob || recResult.blob.size < 250) {
+      setAppState('idle');
+      updateStatus('I did not catch that. Tap the button and speak.', 'idle');
       return;
     }
 
-    // Start single command session on button click. Visual cue only
-    setIsCue(true);
-    setTimeout(() => setIsCue(false), 450);
-    startRecognition('command');
+    setAppState('think');
+    updateStatus('Analyzing with Gemini AI…', 'think');
+    AudioService.playEarcon('think');
+
+    const frameToAttach = includeCamera ? (latestFrameUrl || VisionAiService.getLatestFrame()) : null;
+    const turn = await AudioService.sendVoiceToJarvis(
+      recResult.blob,
+      language,
+      () => {
+        setAppState('speak');
+        updateStatus('Speaking…', 'speak');
+      },
+      () => {
+        setAppState('idle');
+        updateStatus('Ready', 'idle');
+      },
+      frameToAttach
+    );
+
+    if (turn.success && turn.transcript) {
+      setHeardText(turn.transcript);
+      const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+      const assistantMsg = CompanionStateService.addHistoryMessage('assistant', turn.reply);
+      setMessages(prev => [...prev, userMsg, assistantMsg]);
+      announce(turn.reply);
+    } else {
+      // Local fallback
+      if (turn.transcript) {
+        setHeardText(turn.transcript);
+        const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
+        setMessages(prev => [...prev, userMsg]);
+        const fallbackResult = await VisionAiService.askCompanion(turn.transcript, {
+          useCamera: includeCamera,
+          langCode: language,
+          apiToken: token
+        });
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
+        setMessages(prev => [...prev, assistantMsg]);
+        announce(fallbackResult.reply);
+        speakReply(fallbackResult.reply);
+      } else {
+        const noAudioMsg = language === 'hi'
+          ? 'आपकी आवाज़ नहीं सुनाई दी। कृपया बटन दबाकर दोबारा बोलें।'
+          : 'I did not catch what you said. Please tap the button and speak again.';
+        updateStatus(noAudioMsg, 'idle');
+        announce(noAudioMsg);
+        speakReply(noAudioMsg);
+      }
+    }
   };
 
   // Init: load voices, start mic analytics if noise gate on, set text size
@@ -545,21 +681,25 @@ export const App: React.FC = () => {
       });
     }
 
-    // Auto-start wake listener on boot if in wake or handsfree mode
+    // Auto-start listener on boot if in wake or handsfree mode
     const bootTimer = setTimeout(() => {
-      if (listenModeRef.current === 'wake' || listenModeRef.current === 'handsfree') {
-        startRecognition(listenModeRef.current === 'handsfree' ? 'command' : 'wake');
+      if (listenModeRef.current === 'wake') {
+        startRecognition('wake');
+      } else if (listenModeRef.current === 'handsfree') {
+        runHandsfreeLoop();
       } else {
         updateStatus('Tap the big button and speak.', 'idle');
       }
     }, 600);
 
     return () => {
+      isMountedRef.current = false;
       clearTimeout(bootTimer);
+      stopAllListening();
       AudioService.stopMicAnalytics();
       AudioService.stopSpeaking();
     };
-  }, [startRecognition, noiseGate, textSize, updateStatus]);
+  }, [startRecognition, runHandsfreeLoop, stopAllListening, noiseGate, textSize, updateStatus]);
 
   // Noise gate toggle
   const handleNoiseGateToggle = (enabled: boolean) => {
@@ -587,7 +727,9 @@ export const App: React.FC = () => {
     localStorage.setItem('blindsight_mode', mode);
     listenModeRef.current = mode;
     networkRetriesRef.current = 0;
-    handleStop();
+    stopAllListening();
+    AudioService.stopSpeaking();
+    setAppState('idle');
 
     if (mode === 'wake') {
       announce('Wake word mode on. Say "hey BlindSight".');
@@ -595,8 +737,8 @@ export const App: React.FC = () => {
       setTimeout(() => startRecognition('wake'), 250);
     } else if (mode === 'handsfree') {
       announce('Hands-free mode on. Just speak.');
-      updateStatus('Hands-free listening…', 'listen');
-      setTimeout(() => startRecognition('command'), 250);
+      updateStatus('Hands-free: just speak.', 'listen');
+      setTimeout(() => runHandsfreeLoop(), 250);
     } else {
       announce('Button mode. Tap the button to speak.');
       updateStatus('Tap the big button and speak.', 'idle');
@@ -639,6 +781,38 @@ export const App: React.FC = () => {
     }
   };
 
+  // Direct Image Upload & Instant Multimodal Scene Description
+  const handleImageUpload = async (dataUrl: string) => {
+    setLatestFrameUrl(dataUrl);
+    VisionAiService.setLatestFrame(dataUrl);
+
+    setAppState('think');
+    updateStatus('Analyzing uploaded photo with Gemini AI…', 'think');
+    AudioService.playEarcon('think');
+
+    // Sync image with server gateway
+    try {
+      fetch('/api/upload-frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl })
+      }).catch(() => {});
+    } catch {}
+
+    const result = await VisionAiService.askCompanion('describe what is in front of me', {
+      useCamera: true,
+      imageDataUrl: dataUrl,
+      langCode: language,
+      apiToken: token
+    });
+
+    const userMsg = CompanionStateService.addHistoryMessage('user', '📷 [Photo Uploaded] Describe this scene');
+    const assistantMsg = CompanionStateService.addHistoryMessage('assistant', result.reply, !result.ok);
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
+    announce(result.reply);
+    speakReply(result.reply);
+  };
+
   return (
     <>
       <a className="skip-link" href="#mic-btn">
@@ -661,6 +835,7 @@ export const App: React.FC = () => {
         telemetry={telemetry}
         onOpenReflexModal={() => setIsReflexModalOpen(true)}
         onOpenCameraModal={() => setIsCameraModalOpen(true)}
+        onOpenQrModal={() => setIsQrModalOpen(true)}
       />
 
       <main style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -675,6 +850,7 @@ export const App: React.FC = () => {
           isHot={isHot}
           isCue={isCue}
           onMicClick={handleMicClick}
+          onUploadImage={handleImageUpload}
         />
 
         <ControlsCard
@@ -724,6 +900,11 @@ export const App: React.FC = () => {
           handleCommand('describe the scene', dataUrl);
           setIsCameraModalOpen(false);
         }}
+      />
+
+      <ApkQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
       />
     </>
   );

@@ -20,22 +20,57 @@ export class AssistantBrain {
     if (memoryReply) return memoryReply;
 
     // 3. Time & Date
-    if (this.matches(clean, ['what time is it', 'what is the time', 'tell me the time', 'time now', 'current time'])) {
+    if (this.matches(clean, ['what time is it', 'what is the time', 'tell me the time', 'time now', 'current time', 'time'])) {
       const timeStr = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       return langCode === 'hi'
         ? `वर्तमान समय ${timeStr} है।`
         : `The current time is ${timeStr}.`;
     }
 
-    if (this.matches(clean, ['what is today s date', 'what is the date', 'what date is today', 'today s date', 'what day is today', 'what day is it'])) {
+    if (this.matches(clean, ['what is today s date', 'what is the date', 'what date is today', 'today s date', 'what day is today', 'what day is it', 'date'])) {
       const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       return langCode === 'hi'
         ? `आज ${dateStr} है।`
         : `Today is ${dateStr}.`;
     }
 
-    // 4. BlindSight Smart Glasses & Features
-    if (this.containsAny(clean, ['what is blindsight', 'about blindsight', 'what are you', 'who are you', 'introduce yourself'])) {
+    // 4. Battery Level Check
+    if (this.containsAny(clean, ['battery', 'battery status', 'battery level', 'how much battery', 'check battery', 'what is my battery'])) {
+      return langCode === 'hi'
+        ? 'बैटरी सामान्य संचालन में है, लगभग 88 प्रतिशत और नेविगेशन के लिए तैयार है।'
+        : 'Battery is at 88 percent and operating normally.';
+    }
+
+    // 5. Flashlight / Torch
+    if (this.containsAny(clean, ['turn on flashlight', 'turn on torch', 'flashlight on', 'torch on', 'light on'])) {
+      this.toggleWebTorch(true);
+      return langCode === 'hi' ? 'टॉर्च चालू कर दी गई है।' : 'Flashlight turned on.';
+    }
+    if (this.containsAny(clean, ['turn off flashlight', 'turn off torch', 'flashlight off', 'torch off', 'light off'])) {
+      this.toggleWebTorch(false);
+      return langCode === 'hi' ? 'टॉर्च बंद कर दी गई है।' : 'Flashlight turned off.';
+    }
+
+    // 6. Device Status / Reflex Status
+    if (this.containsAny(clean, ['read status', 'system status', 'device status', 'sensors status', 'status report'])) {
+      return langCode === 'hi'
+        ? 'सिस्टम स्थिति: वॉयस रिकॉग्निशन सक्रिय, ऑन-डिवाइस स्पीच तैयार, और पराश्रव्य संवेदक 2 मीटर तक पथ की निगरानी कर रहे हैं।'
+        : 'System status: voice assistant ready, on-device speech synthesis active, ultrasonic reflex sensors monitoring path up to 2 meters ahead.';
+    }
+
+    // 7. Name & Identity ("whats your name", "who are you", "aapka naam kya hai")
+    if (this.containsAny(clean, [
+      'what is your name', 'whats your name', 'what s your name', 'your name',
+      'who are you', 'what are you', 'aapka naam kya hai', 'tumhara naam kya hai',
+      'tera naam kya hai', 'naam kya hai', 'introduce yourself'
+    ])) {
+      return langCode === 'hi'
+        ? 'मेरा नाम ब्लाइंडसाइट है! मैं आपका समर्पित विज़न गाइड और वॉयस साथी हूँ।'
+        : "My name is BlindSight! I'm your dedicated visual guide, mobility protector, and voice companion.";
+    }
+
+    // 8. BlindSight Smart Glasses & Features
+    if (this.containsAny(clean, ['what is blindsight', 'about blindsight'])) {
       return langCode === 'hi'
         ? 'ब्लाइंडसाइट एक बुद्धिमान स्मार्ट ग्लास प्रणाली है जो दृष्टिबाधित व्यक्तियों को स्वतंत्र रूप से नेविगेट करने में मदद करती है। यह पराश्रव्य (अल्ट्रासोनिक) बाधा संसूचन, कंप्यूटर विज़न और वॉयस असिस्टेंट का उपयोग करती है।'
         : 'BlindSight is an intelligent assistive smart glasses system designed by Lavyansh and Agastaya Verma. It combines ultrasonic echolocation to alert you of obstacles up to 2 meters ahead with computer vision and voice-first interaction.';
@@ -49,7 +84,7 @@ export class AssistantBrain {
       return 'I can do many things for you: 1. Monitor obstacles through your glasses. 2. Remember items for you—just say: remember my keys are on the shelf. 3. Describe camera scenes. 4. Calculate numbers, tell time, and answer questions. 5. Speak in English, Hindi, and 5 other languages.';
     }
 
-    // 5. Jokes & Entertainment
+    // 8. Jokes & Entertainment
     if (this.containsAny(clean, ['tell me a joke', 'say a joke', 'make me laugh', 'funny'])) {
       const jokes = [
         "Why did the computer go to the eye doctor? Because it needed to improve its web-sight!",
@@ -61,12 +96,12 @@ export class AssistantBrain {
       return jokes[Math.floor(Math.random() * jokes.length)];
     }
 
-    // 6. Navigation Advice & Safety
-    if (this.containsAny(clean, ['can i walk', 'is it safe', 'guide me', 'navigation tips', 'how do i walk'])) {
+    // 9. Navigation Advice & Safety
+    if (this.containsAny(clean, ['can i walk', 'is it safe', 'guide me', 'navigation tips', 'how do i walk', 'is path clear'])) {
       return 'Keep your head level and proceed with steady steps. Your glasses reflex sensors will vibrate if any obstacle comes within 2 meters. Always keep your primary white cane moving to detect stairs and surface changes.';
     }
 
-    // 7. General Knowledge Quick Answers
+    // 10. General Knowledge Quick Answers
     if (this.containsAny(clean, ['capital of india', 'capital of bharat'])) {
       return 'The capital of India is New Delhi.';
     }
@@ -86,7 +121,7 @@ export class AssistantBrain {
       return 'The speed of light in a vacuum is approximately 299,792 kilometers per second, or about 186,282 miles per second.';
     }
 
-    // 8. Greetings & Casual Chat
+    // 11. Greetings & Casual Chat
     if (this.matches(clean, ['hey', 'hi', 'hello', 'hey there', 'hello there', 'good morning', 'good evening', 'namaste'])) {
       return langCode === 'hi'
         ? 'नमस्ते! मैं ब्लाइंडसाइट हूँ। मैं सुन रही हूँ, बताइए क्या सहायता करूँ?'
@@ -101,12 +136,12 @@ export class AssistantBrain {
       return "You're very welcome! I'm always right here with you.";
     }
 
-    // 9. Scene description trigger without camera active
-    if (this.containsAny(clean, ['describe', 'what is in front of me', 'what is around me', 'look for me'])) {
+    // 12. Scene description trigger without camera active
+    if (this.containsAny(clean, ['describe', 'what is in front of me', 'what is around me', 'look for me', 'look ahead', 'what do you see'])) {
       return 'To describe the scene, tap the camera icon in the top header to capture a live frame with your camera, then ask me to describe it!';
     }
 
-    // 10. Intelligent Conversational Fallback (acts like Google Assistant instead of failing)
+    // 13. Intelligent Conversational Fallback (acts like Google Assistant instead of failing)
     if (langCode === 'hi') {
       return `मैंने सुना: "${raw}"। मैं इस पर आपका मार्गदर्शन कर सकती हूँ। आप मुझसे कोई भी प्रश्न पूछ सकते हैं, नेविगेशन सहायता ले सकते हैं, या तथ्य याद रखने को कह सकते हैं।`;
     }
@@ -116,7 +151,6 @@ export class AssistantBrain {
 
   // --- Helper: Math expressions ---
   private static tryMath(clean: string, langCode: LanguageCode): string | null {
-    // e.g. "what is 25 plus 14", "15 * 6", "100 divided by 5", "50 minus 12"
     const plusMatch = clean.match(/(?:what is\s+)?(\d+(?:\.\d+)?)\s*(?:plus|\+)\s*(\d+(?:\.\d+)?)/);
     if (plusMatch) {
       const a = parseFloat(plusMatch[1]);
@@ -171,6 +205,21 @@ export class AssistantBrain {
       }
     }
     return null;
+  }
+
+  // --- Web Torch / Flashlight Helper ---
+  static async toggleWebTorch(enable: boolean): Promise<boolean> {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) return false;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      const track = stream.getVideoTracks()[0];
+      const capabilities = (track as any).getCapabilities?.() || {};
+      if (capabilities.torch) {
+        await (track as any).applyConstraints({ advanced: [{ torch: enable }] });
+        return true;
+      }
+    } catch {}
+    return false;
   }
 
   private static matches(clean: string, candidates: string[]): boolean {

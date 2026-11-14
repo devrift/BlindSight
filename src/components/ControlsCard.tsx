@@ -64,19 +64,12 @@ export const ControlsCard: React.FC<ControlsCardProps> = ({
 
   return (
     <section className="card controls-card" aria-label="Companion settings">
-      {/* Listening Mode */}
+      {/* Unified Assistant Mode */}
       <div className="control">
-        <label htmlFor="mode-select">Listening mode</label>
-        <select
-          id="mode-select"
-          aria-label="Listening mode"
-          value={listenMode}
-          onChange={e => onModeChange(e.target.value as ListenMode)}
-        >
-          <option value="wake">Wake word</option>
-          <option value="handsfree">Hands-free</option>
-          <option value="button">Button only</option>
-        </select>
+        <label>Assistant mode</label>
+        <div style={{ fontSize: '0.88rem', color: '#f59e0b', fontWeight: 600, padding: '8px 0' }}>
+          All-in-One (Wake word + Tap to speak)
+        </div>
       </div>
 
       {/* Noise Gate */}

@@ -50,16 +50,6 @@ export function cleanSpeech(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Default Svara-TTS URL derives from the host that served this page (the edge
-// server / Vite dev server), NOT "localhost" — on a phone at an exhibit,
-// "localhost" would point at the phone itself. A saved override still wins.
-function defaultSvaraUrl(): string {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    return `${window.location.protocol}//${window.location.hostname}:8000/v1/audio/speech`;
-  }
-  return 'http://localhost:8000/v1/audio/speech';
-}
-
 export class AudioService {
   private static audioCtx: AudioContext | null = null;
   private static analyser: AnalyserNode | null = null;
@@ -73,9 +63,9 @@ export class AudioService {
   private static audioUnlocked = false;
   private static currentWavAudio: HTMLAudioElement | null = null;
 
-  // Svara-TTS v1 OpenAI-compatible configuration (see defaultSvaraUrl above).
+  // Svara-TTS v1 OpenAI-compatible configuration
   private static svaraUrl = typeof window !== 'undefined'
-    ? localStorage.getItem('blindsight_svara_url') || defaultSvaraUrl()
+    ? localStorage.getItem('blindsight_svara_url') || 'http://localhost:8000/v1/audio/speech'
     : 'http://localhost:8000/v1/audio/speech';
   private static svaraEnabled = typeof window !== 'undefined'
     ? localStorage.getItem('blindsight_use_svara') === 'on'
@@ -424,32 +414,176 @@ export class AudioService {
     }
   }
 
-  // --- Direct PCM WAV Recorder (Zero Browser Cloud Dependencies) ---
+  // --- Direct Adaptive PCM WAV Recorder with VAD (Zero Browser Cloud Dependencies) ---
   private static wavStream: MediaStream | null = null;
   private static scriptProcessor: ScriptProcessorNode | null = null;
-  private static pcmSamples: Float32Array[] = [];
+  private static stopRecordingSignal: (() => void) | null = null;
 
-  static async recordWav(durationMs = 3800, onLevel?: (lvl: number) => void): Promise<Blob | null> {
+  static stopAdaptiveRecording(): void {
+    if (this.stopRecordingSignal) {
+      this.stopRecordingSignal();
+      this.stopRecordingSignal = null;
+    }
+  }
+
+  static async recordVoiceAdaptive(options: {
+    maxDurationMs?: number;
+    silenceTimeoutMs?: number;
+    noSpeechTimeoutMs?: number;
+    onLevel?: (level: number, rms: number, isHot: boolean) => void;
+    onSpeechStart?: () => void;
+  } = {}): Promise<{ blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null> {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices) return null;
+    const maxDurationMs = options.maxDurationMs || 8500;
+    const silenceTimeoutMs = options.silenceTimeoutMs || 900;
+    const noSpeechTimeoutMs = options.noSpeechTimeoutMs || 3800;
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       this.wavStream = stream;
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioContextClass({ sampleRate: 16000 });
+      if (ctx.state === 'suspended') await ctx.resume();
+
       const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
-      
-      this.pcmSamples = [];
+      const processor = ctx.createScriptProcessor(2048, 1, 1);
+
+      const allChunks: Float32Array[] = [];
+      let speechDetected = false;
+      let lastSpeechTime = 0;
+      const startTime = Date.now();
+      let ambientNoise = 0.004;
+
+      let resolvePromise: (res: { blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null) => void;
+      const donePromise = new Promise<{ blob: Blob; durationMs: number; speechDetected: boolean; peakAmp: number } | null>(r => {
+        resolvePromise = r;
+      });
+
+      let isFinished = false;
+      const finish = () => {
+        if (isFinished) return;
+        isFinished = true;
+        this.stopRecordingSignal = null;
+
+        try { processor.disconnect(); } catch {}
+        try { source.disconnect(); } catch {}
+        try { stream.getTracks().forEach(t => t.stop()); } catch {}
+        try { ctx.close(); } catch {}
+        this.wavStream = null;
+        this.scriptProcessor = null;
+
+        let totalLen = 0;
+        for (const c of allChunks) totalLen += c.length;
+        if (totalLen === 0) {
+          resolvePromise(null);
+          return;
+        }
+
+        const merged = new Float32Array(totalLen);
+        let offset = 0;
+        for (const c of allChunks) {
+          merged.set(c, offset);
+          offset += c.length;
+        }
+
+        // 1. DC Offset Removal
+        let sum = 0;
+        for (let i = 0; i < merged.length; i++) sum += merged[i];
+        const mean = sum / merged.length;
+        for (let i = 0; i < merged.length; i++) merged[i] -= mean;
+
+        // 2. Peak Normalization (amplifies even soft whispering to clear speech)
+        let maxAmp = 0;
+        for (let i = 0; i < merged.length; i++) {
+          const abs = Math.abs(merged[i]);
+          if (abs > maxAmp) maxAmp = abs;
+        }
+
+        // If dead silence (noise floor under 0.0025), treat as no audio
+        if (maxAmp < 0.0025) {
+          resolvePromise(null);
+          return;
+        }
+
+        // Adaptive gain boost
+        const boost = Math.min(0.88 / maxAmp, 25.0);
+        for (let i = 0; i < merged.length; i++) {
+          merged[i] = Math.max(-1.0, Math.min(1.0, merged[i] * boost));
+        }
+
+        const blob = this.encodeWAV(merged, 16000);
+        resolvePromise({
+          blob,
+          durationMs: Date.now() - startTime,
+          speechDetected: speechDetected || maxAmp > 0.008,
+          peakAmp: maxAmp
+        });
+      };
+
+      this.stopRecordingSignal = finish;
+
       processor.onaudioprocess = (e) => {
+        if (isFinished) return;
         const input = e.inputBuffer.getChannelData(0);
-        this.pcmSamples.push(new Float32Array(input));
-        if (onLevel) {
-          let sum = 0;
-          for (let i = 0; i < input.length; i++) sum += Math.abs(input[i]);
-          onLevel(Math.min(1.0, (sum / input.length) * 5));
+        const chunk = new Float32Array(input);
+        const now = Date.now();
+
+        allChunks.push(chunk);
+
+        // Calculate chunk RMS
+        let sumSq = 0;
+        for (let i = 0; i < chunk.length; i++) sumSq += chunk[i] * chunk[i];
+        const rms = Math.sqrt(sumSq / chunk.length);
+
+        // Track ambient floor dynamically without letting speech corrupt it
+        if (rms < 0.02) {
+          ambientNoise = ambientNoise * 0.9 + rms * 0.1;
+        }
+
+        // Highly sensitive adaptive speech threshold (catches natural soft voice)
+        const speechThreshold = Math.max(0.005, ambientNoise * 1.5 + 0.003);
+        const isHot = rms > speechThreshold;
+
+        // Visual feedback level (0.0 to 1.0)
+        const uiLevel = Math.min(1.0, rms / Math.max(speechThreshold * 2.5, 0.04));
+        if (options.onLevel) {
+          options.onLevel(uiLevel, rms, isHot);
+        }
+
+        if (isHot) {
+          if (!speechDetected) {
+            speechDetected = true;
+            if (options.onSpeechStart) options.onSpeechStart();
+          }
+          lastSpeechTime = now;
+        }
+
+        // Auto-stop after user finishes speaking and pauses
+        if (speechDetected) {
+          const silenceMs = now - lastSpeechTime;
+          if (silenceMs >= silenceTimeoutMs) {
+            finish();
+            return;
+          }
+        }
+
+        // User never spoke within timeout
+        if (!speechDetected && now - startTime >= noSpeechTimeoutMs) {
+          finish();
+          return;
+        }
+
+        // Safety cap
+        if (now - startTime >= maxDurationMs) {
+          finish();
+          return;
         }
       };
 
@@ -457,29 +591,22 @@ export class AudioService {
       processor.connect(ctx.destination);
       this.scriptProcessor = processor;
 
-      await new Promise(r => setTimeout(r, durationMs));
-
-      processor.disconnect();
-      source.disconnect();
-      stream.getTracks().forEach(t => t.stop());
-      ctx.close().catch(() => {});
-      this.wavStream = null;
-      this.scriptProcessor = null;
-
-      let totalLen = 0;
-      for (const chunk of this.pcmSamples) totalLen += chunk.length;
-      const merged = new Float32Array(totalLen);
-      let offset = 0;
-      for (const chunk of this.pcmSamples) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      return this.encodeWAV(merged, 16000);
+      return await donePromise;
     } catch (e) {
-      console.warn('WAV recording error:', e);
+      console.warn('Adaptive recording error:', e);
       return null;
     }
+  }
+
+  static async recordWav(durationMs = 3800, onLevel?: (lvl: number) => void): Promise<Blob | null> {
+    const res = await this.recordVoiceAdaptive({
+      maxDurationMs: durationMs,
+      silenceTimeoutMs: 900,
+      onLevel: lvl => {
+        if (onLevel) onLevel(lvl);
+      }
+    });
+    return res ? res.blob : null;
   }
 
   private static encodeWAV(samples: Float32Array, sampleRate: number): Blob {
@@ -518,14 +645,19 @@ export class AudioService {
     audioBlob: Blob,
     lang = 'en',
     onStart?: () => void,
-    onEnd?: () => void
+    onEnd?: () => void,
+    cameraDataUrl?: string | null
   ): Promise<{ transcript: string; reply: string; wakeDetected: boolean; success: boolean }> {
     try {
       const ctrl = new AbortController();
       const timer = window.setTimeout(() => ctrl.abort(), 20000);
+      const headers: Record<string, string> = { 'Content-Type': 'audio/wav' };
+      if (cameraDataUrl) {
+        headers['X-Camera-Frame'] = cameraDataUrl;
+      }
       const resp = await fetch(`/api/voice?lang=${encodeURIComponent(lang)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'audio/wav' },
+        headers,
         body: audioBlob,
         signal: ctrl.signal
       });

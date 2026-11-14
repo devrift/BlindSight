@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, X, RefreshCw, Eye } from 'lucide-react';
+import { Camera, X, RefreshCw, Eye, Upload } from 'lucide-react';
 import { VisionAiService } from '../services/visionAi';
 import { LanguageCode } from '../types';
 
@@ -129,16 +129,45 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
             className="badge clickable"
-            style={{ flex: 1, justifyContent: 'center', background: 'var(--accent)', color: '#000', fontWeight: 700 }}
+            style={{ flex: 1, minWidth: 160, justifyContent: 'center', background: 'var(--accent)', color: '#000', fontWeight: 700 }}
             onClick={handleCapture}
             disabled={!hasCamera}
           >
             <Eye size={18} style={{ marginRight: 8 }} /> Describe Current Scene
           </button>
+          <input
+            type="file"
+            id="modal-photo-upload"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = ev => {
+                const dataUrl = ev.target?.result as string;
+                if (dataUrl) {
+                  setCapturedSnapshot(dataUrl);
+                  VisionAiService.setLatestFrame(dataUrl);
+                  onDescribeScene(dataUrl);
+                }
+              };
+              reader.readAsDataURL(file);
+              e.target.value = '';
+            }}
+          />
+          <label
+            htmlFor="modal-photo-upload"
+            className="badge clickable"
+            style={{ flex: 1, minWidth: 160, justifyContent: 'center', background: '#1e293b', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)', fontWeight: 600, cursor: 'pointer', textAlign: 'center' }}
+          >
+            <Upload size={18} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+            <span>Upload Photo File</span>
+          </label>
         </div>
 
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>

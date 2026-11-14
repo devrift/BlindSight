@@ -1,37 +1,79 @@
-import { defineConfig } from 'vite';
+import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
+import path from 'path';
 
-// The edge server binds 0.0.0.0 so the ESP32 and phones can reach it over any
-// exhibit hotspot/router. The Vite dev/preview server also binds 0.0.0.0 and
-// proxies API calls to the edge server.
-//
-// By default the edge server is assumed to run on the SAME machine as Vite
-// (127.0.0.1:5000). If the edge server runs elsewhere (e.g. a Raspberry Pi),
-// set EDGE_SERVER_URL, e.g.:
-//   EDGE_SERVER_URL=http://192.168.1.42:5000 npm run dev
-// The browser always uses relative /api, /health, /analyse paths, so it never
-// hardcodes a host and works from any device on the LAN.
-const EDGE_SERVER_URL = process.env.EDGE_SERVER_URL || 'http://127.0.0.1:5000';
-
-const proxy = {
-  '/api': { target: EDGE_SERVER_URL, changeOrigin: true },
-  '/health': { target: EDGE_SERVER_URL, changeOrigin: true },
-  '/analyse': { target: EDGE_SERVER_URL, changeOrigin: true },
-  '/audio': { target: EDGE_SERVER_URL, changeOrigin: true }
-};
+function apkMimePlugin(): Plugin {
+  return {
+    name: 'apk-mime-type',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url && (req.url === '/BlindSight-testing.apk' || req.url.startsWith('/BlindSight-testing.apk?') || req.url.endsWith('.apk'))) {
+          const apkPath = path.resolve(process.cwd(), 'public', 'BlindSight-testing.apk');
+          if (fs.existsSync(apkPath)) {
+            const stat = fs.statSync(apkPath);
+            res.writeHead(200, {
+              'Content-Type': 'application/vnd.android.package-archive',
+              'Content-Disposition': 'attachment; filename="BlindSight-testing.apk"',
+              'Content-Length': stat.size,
+              'Cache-Control': 'no-cache'
+            });
+            if (req.method === 'HEAD') {
+              res.end();
+              return;
+            }
+            fs.createReadStream(apkPath).pipe(res);
+            return;
+          }
+        }
+        next();
+      });
+    }
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), apkMimePlugin()],
+  envPrefix: ['VITE_', 'GEMINI_'],
   server: {
     host: '0.0.0.0',
     port: 3000,
     strictPort: true,
-    proxy
+    watch: {
+      ignored: ['**/build/**', '**/.gradle/**', '**/app/build/**', '**/*.apk', '**/edge_server/**', '**/*.log']
+    },
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      },
+      '/health': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      },
+      '/analyse': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      }
+    }
   },
   preview: {
     host: '0.0.0.0',
     port: 3000,
     strictPort: true,
-    proxy
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      },
+      '/health': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      },
+      '/analyse': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      }
+    }
   }
 });
