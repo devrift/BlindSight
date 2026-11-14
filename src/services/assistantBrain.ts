@@ -58,8 +58,19 @@ export class AssistantBrain {
         : 'System status: voice assistant ready, on-device speech synthesis active, ultrasonic reflex sensors monitoring path up to 2 meters ahead.';
     }
 
-    // 7. BlindSight Smart Glasses & Features
-    if (this.containsAny(clean, ['what is blindsight', 'about blindsight', 'what are you', 'who are you', 'introduce yourself'])) {
+    // 7. Name & Identity ("whats your name", "who are you", "aapka naam kya hai")
+    if (this.containsAny(clean, [
+      'what is your name', 'whats your name', 'what s your name', 'your name',
+      'who are you', 'what are you', 'aapka naam kya hai', 'tumhara naam kya hai',
+      'tera naam kya hai', 'naam kya hai', 'introduce yourself'
+    ])) {
+      return langCode === 'hi'
+        ? 'मेरा नाम ब्लाइंडसाइट जार्विस है! मैं आपका वॉयस असिस्टेंट और नेविगेशन साथी हूँ।'
+        : "My name is BlindSight JARVIS! I'm your AI assistant and navigation companion.";
+    }
+
+    // 8. BlindSight Smart Glasses & Features
+    if (this.containsAny(clean, ['what is blindsight', 'about blindsight'])) {
       return langCode === 'hi'
         ? 'ब्लाइंडसाइट एक बुद्धिमान स्मार्ट ग्लास प्रणाली है जो दृष्टिबाधित व्यक्तियों को स्वतंत्र रूप से नेविगेट करने में मदद करती है। यह पराश्रव्य (अल्ट्रासोनिक) बाधा संसूचन, कंप्यूटर विज़न और वॉयस असिस्टेंट का उपयोग करती है।'
         : 'BlindSight is an intelligent assistive smart glasses system designed by Lavyansh and Agastaya Verma. It combines ultrasonic echolocation to alert you of obstacles up to 2 meters ahead with computer vision and voice-first interaction.';

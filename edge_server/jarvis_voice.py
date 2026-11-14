@@ -336,45 +336,62 @@ class JarvisVoiceAssistant:
         self,
         prompt: str,
         image_path: Optional[Path] = None,
+        is_vision_query: bool = False,
         vision_context: str = "",
         lang: str = "en"
     ) -> Optional[str]:
-        """Query Google Gemini Multimodal Vision API with blind navigation spatial protocol."""
+        """Query Google Gemini Multimodal Vision API or Conversational Chatbot Brain."""
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
             return None
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
         
-        # Natural, safe, honest assistive vision training
-        system_instruction = (
-            "You are BlindSight JARVIS, an assistive navigation companion for a blind or visually impaired user.\n"
-            "Your job is to describe what is ACTUALLY and genuinely in the camera view in 1 to 2 calm, direct, honest sentences.\n"
-            "CRITICAL HONESTY RULES:\n"
-            "- Describe ONLY what is physically visible in the camera image. NEVER invent, assume, or hallucinate objects, doors, chairs, people, or pathways that are not there.\n"
-            "- If the camera is facing a plain wall, wooden board/background, closed surface, or close object: state directly that a wall or surface is directly in front and the path ahead is blocked.\n"
-            "- If the image is dark, blurry, or blocked: say 'The camera view is blocked or too dark to see clearly.'\n"
-            "DIRECTION RULES:\n"
-            "- Use natural everyday directions: 'Straight ahead', 'To your left', 'To your right'.\n"
-            "- NEVER use confusing military/aviation clock numbers like '10 o'clock' or '2 o'clock'.\n"
-            "- Estimate distance in feet or steps (e.g. 'about 2 feet away').\n"
-        )
-        if lang == "hi":
-            system_instruction += (
-                "- सरल और स्वाभाविक हिंदी में उत्तर दें। 'सीधे आपके आगे', 'बाईं तरफ', 'दाईं तरफ' जैसे सामान्य शब्दों का प्रयोग करें।\n"
-                "- '10 बजे की दिशा' या '2 बजे की दिशा' जैसे शब्दों का कभी प्रयोग न करें।\n"
-                "- यदि केवल लकड़ी की दीवार, बोर्ड या खाली सतह दिख रही है, तो साफ कहें: 'सीधे आपके सामने लकड़ी की एक सतह या दीवार है और आगे का रास्ता रुका हुआ है।'\n"
+        if is_vision_query:
+            # Assistive vision instructions (ONLY for explicit scene queries)
+            system_instruction = (
+                "You are BlindSight JARVIS, an assistive navigation companion for a blind or visually impaired user.\n"
+                "Your job is to describe what is ACTUALLY and genuinely in the camera view in 1 to 2 calm, direct, honest sentences.\n"
+                "CRITICAL HONESTY RULES:\n"
+                "- Describe ONLY what is physically visible in the camera image. NEVER invent, assume, or hallucinate objects, doors, chairs, people, or pathways that are not there.\n"
+                "- If the camera is facing a plain wall, wooden board/background, closed surface, or close object: state directly that a wall or surface is directly in front and the path ahead is blocked.\n"
+                "- If the image is dark, blurry, or blocked: say 'The camera view is blocked or too dark to see clearly.'\n"
+                "DIRECTION RULES:\n"
+                "- Use natural everyday directions: 'Straight ahead', 'To your left', 'To your right'.\n"
+                "- NEVER use confusing military/aviation clock numbers like '10 o'clock' or '2 o'clock'.\n"
+                "- Estimate distance in feet or steps (e.g. 'about 2 feet away').\n"
             )
-
-        if vision_context:
-            system_instruction += f"- Real-time hardware reflex sensors: {vision_context}\n"
+            if lang == "hi":
+                system_instruction += (
+                    "- सरल और स्वाभाविक हिंदी में उत्तर दें। 'सीधे आपके आगे', 'बाईं तरफ', 'दाईं तरफ' जैसे सामान्य शब्दों का प्रयोग करें।\n"
+                    "- '10 बजे की दिशा' या '2 बजे की दिशा' जैसे शब्दों का कभी प्रयोग न करें।\n"
+                    "- यदि केवल लकड़ी की दीवार, बोर्ड या खाली सतह दिख रही है, तो साफ कहें: 'सीधे आपके सामने लकड़ी की एक सतह या दीवार है और आगे का रास्ता रुका हुआ है।'\n"
+                )
+            if vision_context:
+                system_instruction += f"- Real-time hardware reflex sensors: {vision_context}\n"
+        else:
+            # Full Conversational Chatbot & Voice Assistant (like Google Assistant / JARVIS)
+            system_instruction = (
+                "You are BlindSight JARVIS, an intelligent, friendly, witty, and helpful AI conversational companion (like Google Assistant / J.A.R.V.I.S.).\n"
+                "You chat naturally, answer general knowledge, tell jokes, solve math, give advice, and assist with any topic the user mentions.\n"
+                "RULES:\n"
+                "- Keep spoken responses concise, engaging, and under 2-3 natural sentences.\n"
+                "- If the user asks for your name or who you are, introduce yourself as BlindSight JARVIS.\n"
+                "- Speak naturally in the same language the user speaks (English, Hindi, etc.).\n"
+                "- DO NOT talk about camera, obstacles, walls, or navigation unless the user specifically asked about their surroundings.\n"
+            )
+            if lang == "hi":
+                system_instruction += (
+                    "- स्वाभाविक, दोस्ताना हिंदी में बात करें। यदि नाम या परिचय पूछा जाए, तो कहें: 'मेरा नाम ब्लाइंडसाइट जार्विस है!'।\n"
+                    "- जब तक उपयोगकर्ता सीधे आगे देखने के लिए न कहे, कैमरे या बाधाओं की बात बिल्कुल न करें।\n"
+                )
 
         parts: list[dict[str, Any]] = [
-            {"text": f"{system_instruction}\n\nUser Question: {prompt}"}
+            {"text": f"{system_instruction}\n\nUser: {prompt}"}
         ]
 
-        # Attach image frame if provided and valid
-        if image_path and image_path.is_file():
+        # Attach image frame ONLY for explicit vision queries
+        if is_vision_query and image_path and image_path.is_file():
             try:
                 with open(image_path, "rb") as f:
                     img_bytes = f.read()
@@ -418,23 +435,40 @@ class JarvisVoiceAssistant:
         norm = normalize_voice_phrase(cmd_clean)
 
         # 1. Conversational Greetings & Identity (Instant, natural responses)
-        if any(norm == g or norm.startswith(g + " ") for g in ["hey", "hello", "hi", "hey jarvis", "hi jarvis", "hello jarvis", "good morning", "good evening"]):
+        name_triggers = [
+            "who are you", "what are you", "your name", "whats your name",
+            "what is your name", "aapka naam kya hai", "tumhara naam kya hai",
+            "naam kya hai", "tum kaun ho", "aap kaun ho", "name"
+        ]
+        if any(norm == t or t in norm for t in name_triggers):
             return (
-                "Hello! I am BlindSight JARVIS, your assistive navigation companion. How can I help you right now?"
+                "My name is BlindSight JARVIS, your AI assistant and navigation companion! How can I help you today?"
                 if lang == "en"
-                else "नमस्ते! मैं ब्लाइंडसाइट जार्विस हूँ, आपका सहायक नेविगेशन साथी। मैं आपकी क्या मदद कर सकता हूँ?"
+                else "मेरा नाम ब्लाइंडसाइट जार्विस है! मैं आपका स्मार्ट एआई असिस्टेंट साथी हूँ। बताइए, आज मैं आपकी क्या सहायता करूँ?"
             )
-        if any(k in norm for k in ["who are you", "what are you", "your name"]):
-            return "I am BlindSight JARVIS, powered by Google Gemini and Edge AI to guide and assist you."
-        if any(k in norm for k in ["how are you", "how are you doing"]):
-            return "I am operating at full capacity and ready to assist your navigation. What would you like to check?"
-        if any(k in norm for k in ["thank you", "thanks"]):
-            return "You are very welcome! I am always here to assist."
+
+        greeting_triggers = ["hey", "hello", "hi", "hey jarvis", "hi jarvis", "hello jarvis", "good morning", "good evening", "kya haal hai", "kaise ho"]
+        if any(norm == g or norm.startswith(g + " ") for g in greeting_triggers):
+            return (
+                "Hello! I am BlindSight JARVIS. How can I assist you right now?"
+                if lang == "en"
+                else "नमस्ते! मैं ब्लाइंडसाइट जार्विस हूँ, आपकी सेवा में उपस्थित। बताइए, क्या मदद करूँ?"
+            )
+
+        if any(k in norm for k in ["how are you", "how are you doing", "kaise ho"]):
+            return (
+                "I am running smoothly and ready for conversation or navigation! What's on your mind?"
+                if lang == "en"
+                else "मैं बिल्कुल ठीक और तैयार हूँ! बताइए, आज आप क्या जानना चाहते हैं?"
+            )
+
+        if any(k in norm for k in ["thank you", "thanks", "dhanyawad", "shukriya"]):
+            return "You are very welcome! I am always here to assist." if lang == "en" else "आपका बहुत-बहुत स्वागत है! मैं हमेशा आपकी मदद के लिए यहाँ हूँ।"
 
         # 2. Fast System Actions (5ms local response)
-        if any(k in norm for k in ["time", "current time"]):
-            return f"The current time is {time.strftime('%I:%M %p')}."
-        if any(k in norm for k in ["date", "today date", "day"]):
+        if any(k in norm for k in ["time", "current time", "samay", "kitne baje"]):
+            return f"The current time is {time.strftime('%I:%M %p')}." if lang == "en" else f"अभी समय {time.strftime('%I:%M %p')} हुआ है।"
+        if any(k in norm for k in ["date", "today date", "day", "tarikh", "aaj konsa din"]):
             return f"Today is {time.strftime('%A, %B %d, %Y')}."
         if any(k in norm for k in ["battery", "battery status"]):
             try:
@@ -447,42 +481,59 @@ class JarvisVoiceAssistant:
             except Exception:
                 pass
             return "Smart glasses battery is at 88 percent. Normal operation."
-        if any(k in norm for k in ["stop", "pause", "be quiet", "silence"]):
-            return "Stopping."
-        if any(k in norm for k in ["help", "what can you do", "commands"]):
-            return "You can ask: what is ahead of me, describe the scene, is the path clear, read this sign, what time is it, or check battery."
+        if any(k in norm for k in ["stop", "pause", "be quiet", "silence", "ruk jao", "chup"]):
+            return "Stopping." if lang == "en" else "रुक गया।"
+        if any(k in norm for k in ["help", "what can you do", "commands", "madad"]):
+            return (
+                "I can chat with you, answer any question, tell stories or jokes, calculate math, and describe your surroundings when you say 'describe the scene'."
+                if lang == "en"
+                else "मैं आपसे बातचीत कर सकता हूँ, सवालों के जवाब दे सकता हूँ, चुटकुले सुना सकता हूँ, और जब आप कहेंगे तो आगे का दृश्य भी बता सकता हूँ।"
+            )
 
-        # 3. Check for latest camera frame (must be recent < 45s)
-        latest_frame = RUNTIME_DIR / "latest.jpg"
-        has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 45.0)
-
-        # 4. Multimodal Vision Query via Google Gemini 2.5 Flash Lite
-        is_scene_query = any(k in norm for k in [
-            "what is in front", "what do you see", "ahead", "surroundings",
-            "describe", "look", "clear", "obstacle", "can i walk", "read",
-            "kya hai", "aage", "dekh", "dekho", "samne"
-        ])
+        # 3. Check for Explicit Scene Perception Triggers (ONLY when user explicitly asks about surroundings!)
+        scene_triggers = [
+            "describe the scene", "describe scene", "what is in front of me",
+            "what is ahead of me", "what do you see", "what is around me",
+            "whats in front of me", "look in front", "look for me", "look ahead",
+            "is the path clear", "can i walk", "read this label", "read this sign", "read the text",
+            "samne kya hai", "aage kya hai", "aage kya dikh raha hai",
+            "aage ka rasta kaisa hai", "scene describe karo", "aas paas kya hai",
+            "samne dekho", "aage dekho"
+        ]
+        is_scene_query = any(trigger in norm for trigger in scene_triggers)
 
         if is_scene_query:
+            latest_frame = RUNTIME_DIR / "latest.jpg"
+            has_frame = latest_frame.is_file() and (time.time() - latest_frame.stat().st_mtime < 45.0)
+
             # FAIL-CLOSED HONESTY GATE: If camera is off or no frame received, NEVER GUESS!
             if not has_frame:
                 if lang == "hi":
                     return "कैमरा बंद है या कोई तस्वीर नहीं मिली। कृपया अपने स्मार्ट ग्लास या फोन का कैमरा चालू करें ताकि मैं आगे देख सकूँ।"
                 return "The camera is turned off or not sending frames. Please turn on your camera so I can see what is in front of you."
 
-            # Genuine image frame is available: query Gemini with the real image!
-            gemini_reply = self.query_gemini(
+            gemini_vision_reply = self.query_gemini(
                 cmd_clean,
                 image_path=latest_frame,
+                is_vision_query=True,
                 vision_context=vision_context,
                 lang=lang
             )
-            if gemini_reply:
-                return gemini_reply
+            if gemini_vision_reply:
+                return gemini_vision_reply
 
             return "The camera view is unclear or obstructed. Please proceed with caution." if lang == "en" else "कैमरा दृश्य स्पष्ट नहीं है। कृपया सावधानी से आगे बढ़ें।"
 
-        # 6. Fallback 2: Local Ollama LLM if running
+        # 4. General Conversational Chatbot (Answers ANY question: jokes, stories, math, advice, general Q&A)
+        gemini_chat_reply = self.query_gemini(
+            cmd_clean,
+            is_vision_query=False,
+            lang=lang
+        )
+        if gemini_chat_reply:
+            return gemini_chat_reply
+
+        # 5. Local Ollama Fallback if running
         try:
             resp = requests.post(
                 OLLAMA_URL,
@@ -492,8 +543,8 @@ class JarvisVoiceAssistant:
                         {
                             "role": "system",
                             "content": (
-                                "You are BlindSight JARVIS, an assistive navigation companion for blind users. "
-                                "Keep responses under 2 sentences. Be direct, clear, and reassuring."
+                                "You are BlindSight JARVIS, an empathetic and witty AI assistant. "
+                                "Keep responses under 2-3 sentences. Be conversational and helpful."
                             )
                         },
                         {"role": "user", "content": cmd_clean}
@@ -510,8 +561,12 @@ class JarvisVoiceAssistant:
         except Exception:
             pass
 
-        # 7. Fallback 3: Calm Conversational Acknowledgment
-        return f"I heard: {cmd_clean}. Obstacle sensors are active and monitoring your walking path."
+        # 6. Fallback conversational reply
+        return (
+            f"I heard: {cmd_clean}. How else can I assist you?"
+            if lang == "en"
+            else f"मैंने सुना: {cmd_clean}। मैं आपकी और क्या सहायता करूँ?"
+        )
 
     async def _synthesize_edge_tts(self, text: str, voice: str) -> bytes:
         """Synthesize audio bytes using Microsoft Edge Neural TTS."""

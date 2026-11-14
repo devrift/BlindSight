@@ -212,7 +212,7 @@ export const App: React.FC = () => {
       AudioService.playEarcon('think');
 
       const isSceneQuery = SCENE_WORDS.some(p => cleaned === p || cleaned.startsWith(p + ' '));
-      const shouldAttachCamera = includeCamera || isSceneQuery;
+      const shouldAttachCamera = isSceneQuery && includeCamera;
 
       const result = await VisionAiService.askCompanion(prompt, {
         useCamera: shouldAttachCamera,
@@ -528,21 +528,27 @@ export const App: React.FC = () => {
       announce(turn.reply);
     } else {
       // Local fallback
-      const fallbackPrompt = turn.transcript || 'what is around me';
-      const fallbackResult = await VisionAiService.askCompanion(fallbackPrompt, {
-        useCamera: includeCamera,
-        langCode: language,
-        apiToken: token
-      });
       if (turn.transcript) {
         setHeardText(turn.transcript);
         const userMsg = CompanionStateService.addHistoryMessage('user', turn.transcript);
         setMessages(prev => [...prev, userMsg]);
+        const fallbackResult = await VisionAiService.askCompanion(turn.transcript, {
+          useCamera: includeCamera,
+          langCode: language,
+          apiToken: token
+        });
+        const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
+        setMessages(prev => [...prev, assistantMsg]);
+        announce(fallbackResult.reply);
+        speakReply(fallbackResult.reply);
+      } else {
+        const noAudioMsg = language === 'hi'
+          ? 'आपकी आवाज़ नहीं सुनाई दी। कृपया बटन दबाकर दोबारा बोलें।'
+          : 'I did not catch what you said. Please tap the button and speak again.';
+        updateStatus(noAudioMsg, 'idle');
+        announce(noAudioMsg);
+        speakReply(noAudioMsg);
       }
-      const assistantMsg = CompanionStateService.addHistoryMessage('assistant', fallbackResult.reply);
-      setMessages(prev => [...prev, assistantMsg]);
-      announce(fallbackResult.reply);
-      speakReply(fallbackResult.reply);
     }
   };
 

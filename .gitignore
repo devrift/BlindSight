@@ -41,6 +41,8 @@ edge_server/models/*.onnx
 # Runtime Uploads & Generated Audio
 runtime/*
 !runtime/.gitkeep
+edge_server/runtime/*
+!edge_server/runtime/.gitkeep
 uploads/*
 !uploads/.gitkeep
 
