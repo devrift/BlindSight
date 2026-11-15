@@ -214,21 +214,24 @@ class DirectAudioRecorder(
                 val lpFilter = BiquadFilter().apply { initLowPass(sampleRate.toDouble(), 3600.0) }
 
                 // Adaptive Noise Gate & Floor Tracker
-                var ambientNoiseFloor = 180f
+                var ambientNoiseFloor = 160f
                 var speechFrames = 0
                 var silenceFrames = 0
                 var totalFrames = 0
                 var hasConfirmedSpeech = false
                 var gateOpenness = 0.05f // 0.05 = -26dB attenuation (near silence)
 
-                val targetSilenceFrames = (650f / frameDurationMs).toInt().coerceIn(4, 6)
-                val maxTotalFrames = (5000f / frameDurationMs).toInt().coerceAtLeast(35)
-                val maxNoSpeechFrames = (4000f / frameDurationMs).toInt().coerceAtLeast(28)
+                // Natural trailing silence: 1500ms of sustained silence required after speech
+                val targetSilenceFrames = (1500f / frameDurationMs).toInt().coerceAtLeast(8)
+                // Generous safety limits: up to 15s total speech, 8s initial pause before speech
+                val maxTotalFrames = (15000f / frameDurationMs).toInt().coerceAtLeast(100)
+                val maxNoSpeechFrames = (8000f / frameDurationMs).toInt().coerceAtLeast(55)
 
                 while (isRecording) {
                     val read = audioRecord?.read(shortBuffer, 0, shortBuffer.size) ?: -1
                     if (read > 0) {
                         totalFrames++
+                        val elapsedMs = totalFrames * frameDurationMs
 
                         // Step 1: Calculate raw RMS for noise floor tracking & VAD
                         var sumSq = 0.0
@@ -239,18 +242,24 @@ class DirectAudioRecorder(
                         val rawRms = sqrt(sumSq / read).toFloat()
                         mainHandler.post { onRmsChanged?.invoke(rawRms) }
 
-                        // Step 2: Track ambient noise floor adaptively
-                        if (totalFrames <= 3) {
-                            ambientNoiseFloor = max(rawRms, 120f)
+                        // Step 2: Track ambient noise floor safely
+                        // During the first 450ms (button click, haptic vibration, earcon chime),
+                        // DO NOT let audio bursts corrupt the noise floor
+                        if (elapsedMs < 450f) {
+                            if (rawRms in 60f..350f) {
+                                ambientNoiseFloor = ambientNoiseFloor * 0.85f + rawRms * 0.15f
+                            }
                         } else if (!hasConfirmedSpeech) {
-                            // Smoothly track background noise floor before speech
-                            ambientNoiseFloor = ambientNoiseFloor * 0.85f + rawRms * 0.15f
+                            if (rawRms < ambientNoiseFloor * 1.8f) {
+                                ambientNoiseFloor = ambientNoiseFloor * 0.92f + rawRms * 0.08f
+                            }
                         }
 
-                        val speechThreshold = max(ambientNoiseFloor * 1.45f + 80f, 240f)
-                        val silenceThreshold = max(ambientNoiseFloor * 1.15f + 40f, 210f)
+                        val speechThreshold = max(ambientNoiseFloor * 1.35f + 50f, 200f)
+                        val silenceThreshold = max(ambientNoiseFloor * 1.10f + 25f, 160f)
 
-                        val isSpeechNow = rawRms >= speechThreshold
+                        // Do NOT trigger confirmed speech during the 450ms startup grace period
+                        val isSpeechNow = elapsedMs >= 450f && rawRms >= speechThreshold
 
                         if (isSpeechNow) {
                             speechFrames++
@@ -261,26 +270,26 @@ class DirectAudioRecorder(
                             // Smoothly open gate (fast attack)
                             gateOpenness = min(1.0f, gateOpenness + 0.35f)
                         } else if (rawRms <= silenceThreshold) {
-                            if (hasConfirmedSpeech) {
+                            if (hasConfirmedSpeech && elapsedMs >= 1200f) {
                                 silenceFrames++
                                 if (silenceFrames >= targetSilenceFrames) {
-                                    Log.d(tag, "Trailing silence reached after speech ($silenceFrames frames ~650ms). Auto-finishing capture.")
+                                    Log.d(tag, "Trailing silence reached after speech ($silenceFrames frames ~1500ms). Auto-finishing capture.")
                                     mainHandler.post { onSilenceDetected?.invoke() }
                                     break
                                 }
                             }
                             // Smoothly close gate (soft release to prevent audio clipping)
-                            gateOpenness = max(0.04f, gateOpenness - 0.2f)
+                            gateOpenness = max(0.04f, gateOpenness - 0.15f)
                         } else {
-                            if (hasConfirmedSpeech) {
+                            if (hasConfirmedSpeech && elapsedMs >= 1200f) {
                                 silenceFrames++
-                                if (silenceFrames >= targetSilenceFrames + 2) {
+                                if (silenceFrames >= targetSilenceFrames + 4) {
                                     Log.d(tag, "Post-speech breath pause reached. Auto-finishing capture.")
                                     mainHandler.post { onSilenceDetected?.invoke() }
                                     break
                                 }
                             }
-                            gateOpenness = max(0.15f, gateOpenness - 0.15f)
+                            gateOpenness = max(0.12f, gateOpenness - 0.12f)
                         }
 
                         // Step 3: Apply Bandpass Filtering + Noise Gate + Voice Enhancement to PCM samples
@@ -303,16 +312,16 @@ class DirectAudioRecorder(
                             pcmStream.write(bytes, 0, bytes.size)
                         }
 
-                        // Max timeout safety (5s)
+                        // Max timeout safety (15s)
                         if (totalFrames >= maxTotalFrames) {
-                            Log.d(tag, "Max capture duration reached (5s). Auto-finishing capture.")
+                            Log.d(tag, "Max capture duration reached (15s). Auto-finishing capture.")
                             mainHandler.post { onSilenceDetected?.invoke() }
                             break
                         }
 
-                        // No-speech timeout (4s)
+                        // No-speech timeout (8s)
                         if (!hasConfirmedSpeech && totalFrames >= maxNoSpeechFrames) {
-                            Log.d(tag, "No speech detected within 4s. Auto-finishing capture.")
+                            Log.d(tag, "No speech detected within 8s. Auto-finishing capture.")
                             mainHandler.post { onSilenceDetected?.invoke() }
                             break
                         }

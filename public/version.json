@@ -1,6 +1,6 @@
 {
-  "versionCode": 14,
-  "versionName": "1.7.7",
+  "versionCode": 15,
+  "versionName": "1.7.8",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Hardware & Camera Privacy Indicators: Explicitly announces 'Using your mobile back camera' whenever the phone back camera is used, real-time hardware status strip showing what is in use and what is disconnected, and camera privacy fallback toggle in Settings."
+  "releaseNotes": "Fixed microphone premature 1-second timeout: eliminated audio session collision between SpeechRecognizer and DirectAudioRecorder, added startup chime grace period, and increased speech trailing silence to 1500ms."
 }

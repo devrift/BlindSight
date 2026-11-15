@@ -110,7 +110,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 onSpeechResult(text)
             },
             onError = { err ->
-                if (_uiState.value.appState == AppState.COMMAND_LISTENING) {
+                if (_uiState.value.appState == AppState.COMMAND_LISTENING && directAudioRecorder?.recording != true) {
                     _uiState.value = _uiState.value.copy(
                         appState = AppState.IDLE,
                         statusText = err
@@ -121,17 +121,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 }
             },
             onListeningStateChanged = { listening ->
-                if (!listening && _uiState.value.appState == AppState.COMMAND_LISTENING) {
-                    viewModelScope.launch {
-                        delay(600)
-                        if (_uiState.value.appState == AppState.COMMAND_LISTENING) {
-                            _uiState.value = _uiState.value.copy(
-                                appState = AppState.IDLE,
-                                statusText = "Ready. Tap center button to speak."
-                            )
-                        }
-                    }
-                }
+                // Do not kill COMMAND_LISTENING here; DirectAudioRecorder and VAD manage recording duration
             }
         ).apply {
             isContinuousMode = true
@@ -290,11 +280,14 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             statusText = "Listening… Speak your question to BlindSight."
         )
 
-        // 100% In-App recording directly to Groq Whisper: Zero Google SpeechRecognizer oscillation!
+        // Pause on-device SpeechRecognizer so DirectAudioRecorder gets clean, exclusive mic access
+        speechRecognizerHelper?.pauseListening()
+
+        // 100% In-App recording directly to Groq Whisper
         val started = directAudioRecorder?.startRecording() ?: false
         if (!started) {
             val langTag = _uiState.value.language.code
-            speechRecognizerHelper?.startListening(langTag, forceRestart = true)
+            speechRecognizerHelper?.resumeListening(langTag)
         }
     }
 
@@ -341,15 +334,15 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             // 2. If nothing recognized from audio
             if (recognizedText.isBlank()) {
                 val noAudioMsg = if (_uiState.value.language == SupportedLanguage.HINDI) {
-                    "मुझे कोई आवाज़ सुनाई नहीं दी। कृपया बटन दबाकर अपना सवाल बोलें।"
+                    "मुझे कोई आवाज़ सुनाई नहीं दी। कृपया फिर से बोलें।"
                 } else {
-                    "I didn't hear anything. Please tap the center button and speak clearly."
+                    "I didn't hear anything. Tap to speak or say 'Hey BlindSight'."
                 }
                 _uiState.value = _uiState.value.copy(
                     appState = AppState.IDLE,
                     statusText = noAudioMsg
                 )
-                speak(noAudioMsg)
+                speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
                 return@launch
             }
 
@@ -396,6 +389,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 appState = AppState.COMMAND_LISTENING,
                 statusText = "I'm listening… Go ahead, say your question."
             )
+            // Pause on-device recognizer so DirectAudioRecorder gets clean mic access
+            speechRecognizerHelper?.pauseListening()
             // Automatically begin audio recording with silence auto-detection!
             directAudioRecorder?.startRecording()
             return
