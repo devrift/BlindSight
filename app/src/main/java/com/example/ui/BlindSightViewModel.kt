@@ -11,10 +11,13 @@ import com.example.data.model.ReflexAlert
 import com.example.data.model.ReflexTelemetry
 import com.example.data.model.SupportedLanguage
 import com.example.data.repository.CompanionRepository
+import com.example.service.AppUpdateHelper
 import com.example.service.DirectAudioRecorder
 import com.example.service.HapticHelper
 import com.example.service.SpeechRecognizerHelper
 import com.example.service.TtsHelper
+import com.example.service.UpdateDownloadState
+import com.example.service.UpdateInfo
 import com.example.service.VoicePersona
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -50,6 +53,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     private val repository = CompanionRepository(application)
     private val hapticHelper = HapticHelper(application)
+    private val updateHelper = AppUpdateHelper(application)
     private var ttsHelper: TtsHelper? = null
     private var speechRecognizerHelper: SpeechRecognizerHelper? = null
     private var directAudioRecorder: com.example.service.DirectAudioRecorder? = null
@@ -61,11 +65,15 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    private val _updateState = MutableStateFlow<UpdateDownloadState>(UpdateDownloadState.Idle)
+    val updateState: StateFlow<UpdateDownloadState> = _updateState.asStateFlow()
+
     private var autoSweepJob: Job? = null
 
     private var isUserCommandActive = false
 
     init {
+        checkForUpdates(silent = true)
         directAudioRecorder = com.example.service.DirectAudioRecorder(
             onSilenceDetected = {
                 finishListeningAndProcess()
@@ -161,6 +169,52 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         ttsHelper?.setVoicePersona(persona)
         hapticHelper.vibrateConfirm()
         speak("Voice set to ${persona.label}.")
+    }
+
+    fun checkForUpdates(silent: Boolean = false) {
+        if (!silent) {
+            _updateState.value = UpdateDownloadState.Checking
+        }
+        updateHelper.checkForUpdate(
+            onResult = { info ->
+                if (info != null) {
+                    _updateState.value = UpdateDownloadState.Available(info)
+                    hapticHelper.vibrateConfirm()
+                    if (!silent) {
+                        speak("Update version ${info.versionName} is ready to install.")
+                    }
+                } else if (!silent) {
+                    _updateState.value = UpdateDownloadState.Idle
+                    speak("Your BlindSight app is already on the newest version.")
+                }
+            },
+            onError = { err ->
+                if (!silent) {
+                    _updateState.value = UpdateDownloadState.Error(err)
+                    speak("Could not reach update server.")
+                }
+            }
+        )
+    }
+
+    fun startUpdateDownload(info: UpdateInfo) {
+        _updateState.value = UpdateDownloadState.Downloading(0)
+        hapticHelper.vibrateConfirm()
+        speak("Downloading BlindSight update...")
+        updateHelper.downloadAndInstall(
+            info = info,
+            onProgress = { percent ->
+                _updateState.value = UpdateDownloadState.Downloading(percent)
+            },
+            onError = { err ->
+                _updateState.value = UpdateDownloadState.Error(err)
+                speak("Update download failed: $err")
+            }
+        )
+    }
+
+    fun dismissUpdateDialog() {
+        _updateState.value = UpdateDownloadState.Idle
     }
 
     fun refreshLatestHardwareFrame() {

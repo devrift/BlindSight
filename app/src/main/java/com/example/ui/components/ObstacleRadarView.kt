@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,10 +25,9 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,33 +55,40 @@ import com.example.ui.theme.BlindSightTextPrimary
 fun ObstacleRadarView(
     telemetry: ReflexTelemetry,
     isAutoSweeping: Boolean,
-    onDistanceChange: (Int, Int, Int) -> Unit,
     onToggleAutoSweep: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val alertColor = when (telemetry.alert) {
-        ReflexAlert.STOP -> BlindSightBad
-        ReflexAlert.STEER_LEFT, ReflexAlert.STEER_RIGHT -> BlindSightAmber
-        ReflexAlert.CAREFUL -> Color(0xFF38BDF8)
-        ReflexAlert.CLEAR -> BlindSightOk
-    }
+    val alertColor by animateColorAsState(
+        targetValue = when (telemetry.alert) {
+            ReflexAlert.STOP -> BlindSightBad
+            ReflexAlert.STEER_LEFT, ReflexAlert.STEER_RIGHT -> BlindSightAmber
+            ReflexAlert.CAREFUL -> Color(0xFF38BDF8)
+            ReflexAlert.CLEAR -> BlindSightOk
+        },
+        animationSpec = tween(300),
+        label = "alertColor"
+    )
 
-    val alertBg = when (telemetry.alert) {
-        ReflexAlert.STOP -> BlindSightBadDark
-        ReflexAlert.STEER_LEFT, ReflexAlert.STEER_RIGHT -> BlindSightAmberDark
-        ReflexAlert.CAREFUL -> Color(0xFF0C4A6E)
-        ReflexAlert.CLEAR -> BlindSightOkDark
-    }
+    val alertBg by animateColorAsState(
+        targetValue = when (telemetry.alert) {
+            ReflexAlert.STOP -> BlindSightBadDark
+            ReflexAlert.STEER_LEFT, ReflexAlert.STEER_RIGHT -> BlindSightAmberDark
+            ReflexAlert.CAREFUL -> Color(0xFF0C4A6E)
+            ReflexAlert.CLEAR -> BlindSightOkDark
+        },
+        animationSpec = tween(300),
+        label = "alertBg"
+    )
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(BlindSightCard)
-            .border(1.dp, BlindSightCardEdge, RoundedCornerShape(18.dp))
-            .padding(16.dp)
+            .border(1.5.dp, BlindSightCardEdge, RoundedCornerShape(20.dp))
+            .padding(18.dp)
             .semantics {
-                contentDescription = "Obstacle radar. Status is ${telemetry.alert.title}. Closest obstacle is ${telemetry.minDistance} centimeters away. ${telemetry.alert.description}"
+                contentDescription = "Obstacle safety radar. Status is ${telemetry.alert.title}. Closest obstacle is ${telemetry.minDistance} centimeters away. Left beam is ${telemetry.leftCm} cm. Center beam is ${telemetry.centerCm} cm. Right beam is ${telemetry.rightCm} cm."
             }
     ) {
         // Header
@@ -94,12 +104,19 @@ fun ObstacleRadarView(
                     tint = BlindSightAmber,
                     modifier = Modifier.size(22.dp)
                 )
-                Text(
-                    text = "Tier 0: Ultrasonic Reflex",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BlindSightTextPrimary
-                )
+                Column {
+                    Text(
+                        text = "Ultrasonic Reflex Radar",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BlindSightTextPrimary
+                    )
+                    Text(
+                        text = "Real-time hardware obstacle telemetry",
+                        fontSize = 12.sp,
+                        color = BlindSightTextMuted
+                    )
+                }
             }
 
             Button(
@@ -117,22 +134,23 @@ fun ObstacleRadarView(
                 )
                 Spacer(modifier = Modifier.size(4.dp))
                 Text(
-                    text = if (isAutoSweeping) "Stop Demo" else "Test Demo",
+                    text = if (isAutoSweeping) "Stop Demo" else "Demo Walk",
                     fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
                     color = if (isAutoSweeping) Color.Black else BlindSightTextPrimary
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Big Alert Banner
+        // Big Primary Warning / Clearance Banner
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(alertBg)
-                .border(2.dp, alertColor, RoundedCornerShape(12.dp))
+                .border(2.dp, alertColor, RoundedCornerShape(14.dp))
                 .padding(vertical = 14.dp, horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -156,7 +174,7 @@ fun ObstacleRadarView(
                 Text(
                     text = telemetry.alert.description,
                     color = BlindSightTextPrimary,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     textAlign = TextAlign.Center
                 )
             }
@@ -164,27 +182,25 @@ fun ObstacleRadarView(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // 3 Sensor Columns (Left, Center, Right)
+        // 3 Live Distance Telemetry Gauges (Left, Center Forward, Right)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SensorColumn(
-                label = "Left Beam",
+            LiveBeamGauge(
+                label = "LEFT",
                 distanceCm = telemetry.leftCm,
-                onValueChange = { onDistanceChange(it, telemetry.centerCm, telemetry.rightCm) },
                 modifier = Modifier.weight(1f)
             )
-            SensorColumn(
-                label = "Center Beam",
+            LiveBeamGauge(
+                label = "FORWARD",
                 distanceCm = telemetry.centerCm,
-                onValueChange = { onDistanceChange(telemetry.leftCm, it, telemetry.rightCm) },
+                isPrimary = true,
                 modifier = Modifier.weight(1f)
             )
-            SensorColumn(
-                label = "Right Beam",
+            LiveBeamGauge(
+                label = "RIGHT",
                 distanceCm = telemetry.rightCm,
-                onValueChange = { onDistanceChange(telemetry.leftCm, telemetry.centerCm, it) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -192,55 +208,106 @@ fun ObstacleRadarView(
 }
 
 @Composable
-private fun SensorColumn(
+private fun LiveBeamGauge(
     label: String,
     distanceCm: Int,
-    onValueChange: (Int) -> Unit,
+    isPrimary: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val barColor = when {
-        distanceCm < 25 -> BlindSightBad
-        distanceCm <= 45 -> BlindSightAmber
-        distanceCm < 100 -> Color(0xFF38BDF8)
-        else -> BlindSightOk
+    val barColor by animateColorAsState(
+        targetValue = when {
+            distanceCm < 25 -> BlindSightBad
+            distanceCm <= 45 -> BlindSightAmber
+            distanceCm < 100 -> Color(0xFF38BDF8)
+            else -> BlindSightOk
+        },
+        label = "beamColor"
+    )
+
+    val zoneLabel = when {
+        distanceCm < 25 -> "STOP"
+        distanceCm <= 45 -> "CAREFUL"
+        distanceCm < 100 -> "NEAR"
+        else -> "CLEAR"
     }
+
+    // Normalized progress fill (0.0 to 1.0) for 0 to 200 cm
+    val fillPercent by animateFloatAsState(
+        targetValue = (distanceCm.coerceIn(10, 200) / 200f),
+        animationSpec = tween(250),
+        label = "fillPercent"
+    )
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF05070C))
-            .border(1.dp, BlindSightCardEdge, RoundedCornerShape(12.dp))
-            .padding(10.dp),
+            .border(
+                width = if (isPrimary) 1.5.dp else 1.dp,
+                color = if (isPrimary) BlindSightAmber.copy(alpha = 0.5f) else BlindSightCardEdge,
+                shape = RoundedCornerShape(14.dp)
+            )
+            .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = if (isPrimary) BlindSightAmber else BlindSightTextMuted,
+            letterSpacing = 0.5.sp
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = "$distanceCm",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Black,
+            color = barColor
+        )
+        Text(
+            text = "cm",
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = BlindSightTextMuted
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        Text(
-            text = "$distanceCm cm",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = barColor
-        )
+        // Visual proximity bar (filled bar, NO user sliders)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(BlindSightCardEdge)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fillPercent)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(barColor)
+            )
+        }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Slider(
-            value = distanceCm.toFloat(),
-            onValueChange = { onValueChange(it.toInt()) },
-            valueRange = 10f..250f,
-            colors = SliderDefaults.colors(
-                thumbColor = barColor,
-                activeTrackColor = barColor,
-                inactiveTrackColor = BlindSightCardEdge
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Status badge pill
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(barColor.copy(alpha = 0.15f))
+                .border(1.dp, barColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = zoneLabel,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = barColor
+            )
+        }
     }
 }

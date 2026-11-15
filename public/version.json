@@ -1,0 +1,6 @@
+{
+  "versionCode": 6,
+  "versionName": "1.6.0",
+  "apkUrl": "https://blindsightpage.vercel.app/BlindSight-testing.apk",
+  "releaseNotes": "In-app self-updater, direct on-screen language switcher, live obstacle distance radar, solid non-floppy mic button, and soothing earcons."
+}

@@ -1,0 +1,173 @@
+package com.example.service
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.util.Log
+import androidx.core.content.FileProvider
+import com.example.BuildConfig
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
+
+data class UpdateInfo(
+    val versionCode: Int,
+    val versionName: String,
+    val apkUrl: String,
+    val releaseNotes: String
+)
+
+sealed class UpdateDownloadState {
+    object Idle : UpdateDownloadState()
+    object Checking : UpdateDownloadState()
+    data class Available(val info: UpdateInfo) : UpdateDownloadState()
+    data class Downloading(val progressPercent: Int) : UpdateDownloadState()
+    data class ReadyToInstall(val apkFile: File) : UpdateDownloadState()
+    data class Error(val message: String) : UpdateDownloadState()
+}
+
+class AppUpdateHelper(private val context: Context) {
+
+    private val tag = "AppUpdateHelper"
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val versionUrl = "https://blindsightpage.vercel.app/version.json"
+
+    val currentVersionCode: Int = BuildConfig.VERSION_CODE
+    val currentVersionName: String = BuildConfig.VERSION_NAME
+
+    fun checkForUpdate(
+        onResult: (UpdateInfo?) -> Unit,
+        onError: ((String) -> Unit)? = null
+    ) {
+        thread(name = "BlindSightUpdateCheck") {
+            try {
+                val url = URL(versionUrl)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("User-Agent", "BlindSight-Android/${currentVersionName}")
+
+                if (conn.responseCode == 200) {
+                    val rawJson = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(rawJson)
+                    val remoteVersionCode = json.optInt("versionCode", currentVersionCode)
+                    val remoteVersionName = json.optString("versionName", currentVersionName)
+                    val apkUrl = json.optString("apkUrl", "https://blindsightpage.vercel.app/BlindSight-testing.apk")
+                    val releaseNotes = json.optString("releaseNotes", "Bug fixes and performance improvements.")
+
+                    if (remoteVersionCode > currentVersionCode) {
+                        val info = UpdateInfo(
+                            versionCode = remoteVersionCode,
+                            versionName = remoteVersionName,
+                            apkUrl = apkUrl,
+                            releaseNotes = releaseNotes
+                        )
+                        mainHandler.post { onResult(info) }
+                    } else {
+                        mainHandler.post { onResult(null) }
+                    }
+                } else {
+                    mainHandler.post { onError?.invoke("HTTP ${conn.responseCode}") ?: onResult(null) }
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Update check failed: ${e.message}")
+                mainHandler.post { onError?.invoke(e.message ?: "Network error") ?: onResult(null) }
+            }
+        }
+    }
+
+    fun downloadAndInstall(
+        info: UpdateInfo,
+        onProgress: (Int) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        thread(name = "BlindSightApkDownload") {
+            try {
+                val url = URL(info.apkUrl)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 30000
+                conn.requestMethod = "GET"
+
+                if (conn.responseCode != 200) {
+                    mainHandler.post { onError("Download failed with server code ${conn.responseCode}") }
+                    return@thread
+                }
+
+                val contentLength = conn.contentLength
+                val cacheDir = context.externalCacheDir ?: context.cacheDir
+                val apkFile = File(cacheDir, "BlindSight-update-${info.versionName}.apk")
+                if (apkFile.exists()) {
+                    apkFile.delete()
+                }
+
+                var downloadedBytes = 0
+                val buffer = ByteArray(8192)
+
+                conn.inputStream.use { input ->
+                    FileOutputStream(apkFile).use { output ->
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+                            if (contentLength > 0) {
+                                val percent = ((downloadedBytes * 100L) / contentLength).toInt()
+                                mainHandler.post { onProgress(percent) }
+                            }
+                        }
+                    }
+                }
+
+                if (apkFile.exists() && apkFile.length() > 500000) {
+                    mainHandler.post {
+                        triggerInstall(apkFile)
+                    }
+                } else {
+                    mainHandler.post { onError("Corrupted APK file downloaded.") }
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Failed downloading update: ${e.message}", e)
+                mainHandler.post { onError(e.message ?: "Failed downloading update") }
+            }
+        }
+    }
+
+    fun triggerInstall(apkFile: File) {
+        try {
+            // Check unknown apps install permission on Android 8+ (Oreo+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(settingsIntent)
+                    return
+                }
+            }
+
+            val apkUri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                apkFile
+            )
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(installIntent)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to launch package installer: ${e.message}", e)
+        }
+    }
+}

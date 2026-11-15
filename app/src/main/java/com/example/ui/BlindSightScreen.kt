@@ -49,12 +49,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.service.UpdateDownloadState
 import com.example.ui.components.BlindSightTopBar
 import com.example.ui.components.ConversationHistoryView
 import com.example.ui.components.GiantMicButton
+import com.example.ui.components.LanguageSelectorRow
 import com.example.ui.components.MemoryBankDialog
 import com.example.ui.components.ObstacleRadarView
 import com.example.ui.components.SettingsDialog
+import com.example.ui.components.UpdateDialog
 import com.example.ui.components.VisionHelperView
 import com.example.ui.theme.BlindSightAmber
 import com.example.ui.theme.BlindSightBackground
@@ -72,6 +75,7 @@ fun BlindSightScreen(
     val telemetry by viewModel.telemetry.collectAsState()
     val history by viewModel.history.collectAsState()
     val facts by viewModel.facts.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showMemoryDialog by remember { mutableStateOf(false) }
@@ -85,6 +89,8 @@ fun BlindSightScreen(
         topBar = {
             BlindSightTopBar(
                 language = uiState.language,
+                hasUpdateAvailable = updateState is UpdateDownloadState.Available,
+                onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
                 onStopClick = { viewModel.stopSpeaking() },
                 onSettingsClick = { showSettingsDialog = true }
             )
@@ -147,8 +153,16 @@ fun BlindSightScreen(
         ) {
             when (uiState.selectedTab) {
                 AppTab.COMPANION -> {
-                    // Giant Mic Button
-                    Spacer(modifier = Modifier.height(10.dp))
+                    // Direct On-Screen Language Switcher (1-Tap instant switch in the UI!)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LanguageSelectorRow(
+                        currentLanguage = uiState.language,
+                        onLanguageSelect = { viewModel.setLanguage(it) },
+                        activeColor = activePrimaryColor
+                    )
+
+                    // Giant Mic Button (Firm, non-floppy, stable touch bounds)
+                    Spacer(modifier = Modifier.height(6.dp))
                     GiantMicButton(
                         appState = uiState.appState,
                         statusText = uiState.statusText,
@@ -184,7 +198,6 @@ fun BlindSightScreen(
                     ObstacleRadarView(
                         telemetry = telemetry,
                         isAutoSweeping = uiState.isAutoSweeping,
-                        onDistanceChange = { l, c, r -> viewModel.updateSensorDistance(l, c, r) },
                         onToggleAutoSweep = { viewModel.toggleAutoSweep() }
                     )
                 }
@@ -253,6 +266,7 @@ fun BlindSightScreen(
             onToggleHighContrast = { viewModel.toggleHighContrastYellow() },
             currentGatewayUrl = viewModel.getGatewayUrl(),
             onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
+            onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
             onReadHelp = {
                 viewModel.onSpeechResult("help")
                 showSettingsDialog = false
@@ -268,6 +282,14 @@ fun BlindSightScreen(
             onForgetFact = { viewModel.removeMemoryFact(it) },
             onClearAll = { viewModel.clearAllMemories() },
             onDismiss = { showMemoryDialog = false }
+        )
+    }
+
+    if (updateState !is UpdateDownloadState.Idle) {
+        UpdateDialog(
+            updateState = updateState,
+            onStartDownload = { info -> viewModel.startUpdateDownload(info) },
+            onDismiss = { viewModel.dismissUpdateDialog() }
         )
     }
 }

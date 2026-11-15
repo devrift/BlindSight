@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -10,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -54,33 +56,37 @@ fun GiantMicButton(
 ) {
     val isListening = appState == AppState.COMMAND_LISTENING || appState == AppState.WAKE_LISTENING
     val isSpeaking = appState == AppState.SPEAKING
+    val isThinking = appState == AppState.THINKING
 
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Smooth decorative aura pulse (does NOT resize touch target)
     val infiniteTransition = rememberInfiniteTransition(label = "halo")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isListening) 1.15f else 1.04f,
+    val auraAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.20f,
+        targetValue = if (isListening) 0.55f else if (isThinking) 0.40f else 0.25f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
+            animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "pulse"
+        label = "aura"
     )
 
-    val borderColor = when {
-        isListening -> BlindSightOk
-        isSpeaking -> BlindSightAmberStrong
-        else -> BlindSightAmber
-    }
-
-    val iconColor = when {
-        isListening -> BlindSightOk
-        isSpeaking -> BlindSightAmberStrong
-        else -> BlindSightAmberStrong
-    }
+    val activeColor by animateColorAsState(
+        targetValue = when {
+            isListening -> BlindSightOk
+            isThinking -> Color(0xFF38BDF8)
+            isSpeaking -> BlindSightAmberStrong
+            else -> BlindSightAmber
+        },
+        label = "activeColor"
+    )
 
     val accessibilityLabel = when {
         isSpeaking -> "Assistant is speaking. Double tap to stop audio."
         isListening -> "Listening to your voice. Double tap to finish."
+        isThinking -> "Processing your question."
         else -> "Microphone button. Double tap to speak to BlindSight."
     }
 
@@ -88,40 +94,70 @@ fun GiantMicButton(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Outer Container: Fixed 156.dp touch box - zero floppy layout jumps!
         Box(
-            contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(140.dp)
-                .scale(if (isListening || isSpeaking) pulseScale else 1f)
+                .size(156.dp)
                 .semantics {
                     role = Role.Button
                     contentDescription = accessibilityLabel
                 }
                 .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            borderColor.copy(alpha = 0.25f),
-                            Color.Transparent
-                        )
-                    )
-                )
-                .border(4.dp, borderColor, CircleShape)
-                .clickable(onClick = onClick)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
         ) {
+            // 1. Soft decorative background aura
+            if (isListening || isThinking || isSpeaking) {
+                Box(
+                    modifier = Modifier
+                        .size(156.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    activeColor.copy(alpha = auraAlpha),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+            }
+
+            // 2. Solid Main Button Surface (firm, tactile, non-floppy)
             Box(
                 modifier = Modifier
-                    .size(118.dp)
+                    .size(136.dp)
+                    .scale(if (isPressed) 0.95f else 1.0f)
                     .clip(CircleShape)
-                    .background(Color(0xFF0B1220)),
+                    .background(Color(0xFF090E17))
+                    .border(
+                        width = if (isListening) 4.dp else 3.dp,
+                        color = activeColor,
+                        shape = CircleShape
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isSpeaking) Icons.Default.VolumeUp else Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = iconColor,
-                    modifier = Modifier.size(52.dp)
-                )
+                // Inner button ring
+                Box(
+                    modifier = Modifier
+                        .size(114.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isListening) activeColor.copy(alpha = 0.18f) else Color(0xFF05080E)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isSpeaking) Icons.Default.VolumeUp else Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = activeColor,
+                        modifier = Modifier.size(54.dp)
+                    )
+                }
             }
         }
 
@@ -135,18 +171,19 @@ fun GiantMicButton(
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
             text = when (appState) {
-                AppState.IDLE -> "Double-tap button or say \"Hey BlindSight\""
-                AppState.COMMAND_LISTENING -> "Listening… speak clearly"
-                AppState.WAKE_LISTENING -> "Waiting for wake word…"
+                AppState.IDLE -> "Say \"Hey BlindSight\" or tap button"
+                AppState.COMMAND_LISTENING -> "● Listening… Speak your question"
+                AppState.WAKE_LISTENING -> "Waiting for \"Hey BlindSight\"…"
                 AppState.THINKING -> "Thinking…"
-                AppState.SPEAKING -> "Tap button to silence"
+                AppState.SPEAKING -> "Tap to stop voice"
             },
-            color = BlindSightTextMuted,
+            color = if (isListening) BlindSightOk else BlindSightTextMuted,
             fontSize = 14.sp,
+            fontWeight = if (isListening) FontWeight.Bold else FontWeight.Normal,
             textAlign = TextAlign.Center
         )
     }

@@ -1,10 +1,13 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -14,9 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -35,12 +38,15 @@ import com.example.ui.theme.BlindSightAmber
 import com.example.ui.theme.BlindSightBad
 import com.example.ui.theme.BlindSightCard
 import com.example.ui.theme.BlindSightCardEdge
+import com.example.ui.theme.BlindSightOk
 import com.example.ui.theme.BlindSightTextMuted
 import com.example.ui.theme.BlindSightTextPrimary
 
 @Composable
 fun BlindSightTopBar(
     language: SupportedLanguage,
+    hasUpdateAvailable: Boolean = false,
+    onCheckUpdates: () -> Unit,
     onStopClick: () -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -85,29 +91,44 @@ fun BlindSightTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Language badge
+            // Self-updater button
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
-                    .background(BlindSightCard)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .background(if (hasUpdateAvailable) BlindSightOk.copy(alpha = 0.2f) else BlindSightCard)
+                    .border(
+                        1.dp,
+                        if (hasUpdateAvailable) BlindSightOk else BlindSightCardEdge,
+                        RoundedCornerShape(20.dp)
+                    )
+                    .clickable { onCheckUpdates() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
                     .semantics {
-                        contentDescription = "Current reply language is ${language.label}. Double tap to change in settings."
+                        role = Role.Button
+                        contentDescription = if (hasUpdateAvailable) "Update available! Double tap to install." else "Check for app updates."
                     }
             ) {
-                Text(
-                    text = language.code.uppercase(),
-                    color = BlindSightTextMuted,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = if (hasUpdateAvailable) BlindSightOk else BlindSightTextMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = if (hasUpdateAvailable) "Update!" else "v1.6",
+                        color = if (hasUpdateAvailable) BlindSightOk else BlindSightTextMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // Quick silence stop button
             IconButton(
                 onClick = onStopClick,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(BlindSightBad.copy(alpha = 0.2f))
                     .semantics {
@@ -119,7 +140,7 @@ fun BlindSightTopBar(
                     imageVector = Icons.Default.StopCircle,
                     contentDescription = null,
                     tint = BlindSightBad,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
@@ -127,19 +148,19 @@ fun BlindSightTopBar(
             IconButton(
                 onClick = onSettingsClick,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(BlindSightCard)
                     .semantics {
                         role = Role.Button
-                        contentDescription = "Open BlindSight settings and language options."
+                        contentDescription = "Open BlindSight settings."
                     }
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = null,
                     tint = BlindSightAmber,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

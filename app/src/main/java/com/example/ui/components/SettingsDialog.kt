@@ -65,6 +65,7 @@ fun SettingsDialog(
     onToggleHighContrast: () -> Unit,
     currentGatewayUrl: String = "",
     onGatewayUrlChange: (String) -> Unit = {},
+    onCheckUpdates: () -> Unit = {},
     onReadHelp: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -310,6 +311,28 @@ fun SettingsDialog(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Check for updates
+            Button(
+                onClick = {
+                    onDismiss()
+                    onCheckUpdates()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = BlindSightAmber.copy(alpha = 0.2f)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    tint = BlindSightAmber,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(text = "Check for App Updates", color = BlindSightAmber, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Read help commands out loud
             Button(
