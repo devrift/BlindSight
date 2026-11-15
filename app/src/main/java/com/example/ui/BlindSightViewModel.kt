@@ -735,14 +735,23 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             appState = AppState.SPEAKING,
             statusText = text
         )
+        // Hard mute mic inputs the millisecond speech begins
         speechRecognizerHelper?.pauseListening()
+        directAudioRecorder?.stopRecording()
+
         ttsHelper?.speak(text) {
             _uiState.value = _uiState.value.copy(
                 appState = AppState.IDLE,
                 statusText = "Listening for \"Hey BlindSight\" or tap the center button."
             )
             onDone?.invoke()
-            speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
+            // 450ms post-speech guard buffer prevents capturing assistant's room echo
+            viewModelScope.launch {
+                delay(450L)
+                if (_uiState.value.appState == AppState.IDLE) {
+                    speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
+                }
+            }
         }
     }
 
@@ -753,7 +762,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             appState = AppState.IDLE,
             statusText = "Stopped. Listening for \"Hey BlindSight\"."
         )
-        speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
+        viewModelScope.launch {
+            delay(450L)
+            if (_uiState.value.appState == AppState.IDLE) {
+                speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
+            }
+        }
     }
 
     override fun onCleared() {

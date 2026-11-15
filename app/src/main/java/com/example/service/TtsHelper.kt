@@ -43,6 +43,7 @@ class TtsHelper(
     private var gatewayUrl: String = ""
     private val isSpeakingActive = AtomicBoolean(false)
     private var playbackThread: Thread? = null
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
 
     init {
         // Try initializing with Google TTS engine first for neural human-quality speech
@@ -87,15 +88,11 @@ class TtsHelper(
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
-                    isSpeakingActive.set(false)
-                    currentOnDone?.invoke()
-                    currentOnDone = null
+                    onPlaybackFinished()
                 }
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    isSpeakingActive.set(false)
-                    currentOnDone?.invoke()
-                    currentOnDone = null
+                    onPlaybackFinished()
                 }
             })
             onInitComplete(true)
@@ -177,6 +174,15 @@ class TtsHelper(
         }
     }
 
+    private fun onPlaybackFinished() {
+        isSpeakingActive.set(false)
+        try {
+            audioManager?.mode = android.media.AudioManager.MODE_NORMAL
+        } catch (_: Exception) {}
+        currentOnDone?.invoke()
+        currentOnDone = null
+    }
+
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         stop()
         if (text.isBlank()) {
@@ -186,6 +192,9 @@ class TtsHelper(
 
         currentOnDone = onDone
         isSpeakingActive.set(true)
+        try {
+            audioManager?.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+        } catch (_: Exception) {}
 
         val cleanText = text
             .replace(Regex("[*#_`~\\[\\]()]"), " ")
@@ -227,7 +236,7 @@ class TtsHelper(
                 val fallbackRunnable = Runnable {
                     if (isSpeakingActive.get()) {
                         watchdogTriggered = true
-                        Log.d(tag, "Stream watchdog fired after 1200ms. Falling back to on-device TTS.")
+                        Log.d(tag, "Stream watchdog fired after 3800ms. Falling back to on-device TTS.")
                         try {
                             player.reset()
                             player.release()
@@ -236,7 +245,7 @@ class TtsHelper(
                         speakOnDevice(cleanText)
                     }
                 }
-                mainHandler.postDelayed(fallbackRunnable, 1200L)
+                mainHandler.postDelayed(fallbackRunnable, 3800L)
 
                 player.setOnPreparedListener { mp ->
                     mainHandler.removeCallbacks(fallbackRunnable)
@@ -255,13 +264,11 @@ class TtsHelper(
                 }
 
                 player.setOnCompletionListener { mp ->
-                    isSpeakingActive.set(false)
-                    currentOnDone?.invoke()
-                    currentOnDone = null
                     try {
                         mp.release()
                     } catch (_: Exception) {}
                     if (mediaPlayer == mp) mediaPlayer = null
+                    onPlaybackFinished()
                 }
 
                 player.setOnErrorListener { mp, what, extra ->
@@ -273,6 +280,8 @@ class TtsHelper(
                     if (mediaPlayer == mp) mediaPlayer = null
                     if (isSpeakingActive.get() && !watchdogTriggered) {
                         speakOnDevice(cleanText)
+                    } else {
+                        onPlaybackFinished()
                     }
                     true
                 }
@@ -288,9 +297,7 @@ class TtsHelper(
 
     private fun speakOnDevice(text: String) {
         if (!isInitialized || text.isBlank() || !isSpeakingActive.get()) {
-            isSpeakingActive.set(false)
-            currentOnDone?.invoke()
-            currentOnDone = null
+            onPlaybackFinished()
             return
         }
         val uId = "blindsight_${System.currentTimeMillis()}"
@@ -300,6 +307,10 @@ class TtsHelper(
 
     fun stop() {
         isSpeakingActive.set(false)
+        try {
+            audioManager?.mode = android.media.AudioManager.MODE_NORMAL
+        } catch (_: Exception) {}
+
         try {
             playbackThread?.interrupt()
             playbackThread = null

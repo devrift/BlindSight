@@ -1,6 +1,6 @@
 {
-  "versionCode": 15,
-  "versionName": "1.7.8",
+  "versionCode": 16,
+  "versionName": "1.7.9",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Fixed microphone premature 1-second timeout: eliminated audio session collision between SpeechRecognizer and DirectAudioRecorder, added startup chime grace period, and increased speech trailing silence to 1500ms."
+  "releaseNotes": "Complete Architecture Upgrade: Gemini 3.8 Flash & Groq 120B reasoning brain, lifelike natural neural voice streaming, acoustic echo cancellation with 450ms guard buffer, and full directional clock-position spatial awareness."
 }
