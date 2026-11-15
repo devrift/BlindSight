@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.7.1",
+  "versionCode": 9,
+  "versionName": "1.7.2",
   "apkUrl": "https://blindsightpage.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Studio human neural voices via Edge Neural speech, direct Google Maps live connection with street-level address and walking navigation, top bar dynamic version badge, and real-time GPS tracking."
+  "releaseNotes": "Instant streaming TTS speech (<350ms) with zero dead air, adaptive mic silence auto-detection without double-tap, live camera scene analysis using smart glasses or phone camera fallback, and camera permissions prompt."
 }

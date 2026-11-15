@@ -88,7 +88,7 @@ fun VisionHelperView(
 
             if (latestFrameBytes != null && latestFrameBytes.isNotEmpty()) {
                 Text(
-                    text = "● Glasses Cam Active",
+                    text = "● Live Camera Active",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF10B981)

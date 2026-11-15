@@ -3,6 +3,8 @@ package com.example.service
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -190,237 +192,103 @@ class TtsHelper(
             .replace(Regex("\\s+"), " ")
             .trim()
 
-        playbackThread = thread(name = "BlindSightVoicePlayback") {
-            // 1. Primary: Cloud Neural Human Voice (Edge Neural - Crystal clear human actors)
-            val gatewayToUse = if (gatewayUrl.isNotBlank() && !gatewayUrl.contains("192.168.29.173")) gatewayUrl else "https://blindsightpage.vercel.app"
-            val cloudOk = tryStreamGatewayTts(cleanText, gatewayToUse)
-            if (cloudOk) return@thread
-
-            // 2. High-Fidelity Online Neural Voice fallback
-            val onlineOk = tryPlayNaturalOnlineTts(cleanText)
-            if (onlineOk) return@thread
-
-            // 3. Fallback: On-Device Natural Engine
-            speakOnDevice(cleanText)
-        }
-    }
-
-    /**
-     * Streams natural human voice audio via Google Neural Translate TTS.
-     * Chunks sentences so playback is ultra-fast (<200ms latency) and never truncates.
-     */
-    private fun tryPlayNaturalOnlineTts(text: String): Boolean {
-        try {
-            val langParam = when (currentLanguage) {
-                SupportedLanguage.HINDI -> "hi"
-                SupportedLanguage.BENGALI -> "bn"
-                SupportedLanguage.TAMIL -> "ta"
-                SupportedLanguage.TELUGU -> "te"
-                SupportedLanguage.SPANISH -> "es"
-                SupportedLanguage.FRENCH -> "fr"
-                else -> "en"
+        val voiceParam = when (currentPersona) {
+            VoicePersona.JARVIS -> "en-GB-RyanNeural"
+            VoicePersona.ARIA -> "en-US-AriaNeural"
+            VoicePersona.GUY -> "en-US-GuyNeural"
+            VoicePersona.SWARA -> "hi-IN-SwaraNeural"
+            VoicePersona.AUTO -> when (currentLanguage) {
+                SupportedLanguage.HINDI -> "hi-IN-SwaraNeural"
+                SupportedLanguage.BENGALI -> "bn-IN-TanishaaNeural"
+                SupportedLanguage.TAMIL -> "ta-IN-PallaviNeural"
+                SupportedLanguage.TELUGU -> "te-IN-ShrutiNeural"
+                SupportedLanguage.SPANISH -> "es-ES-AlvaroNeural"
+                SupportedLanguage.FRENCH -> "fr-FR-HenriNeural"
+                else -> "en-GB-RyanNeural"
             }
+        }
+        val langParam = currentLanguage.code.split("-").first().lowercase()
 
-            // Split into manageable spoken sentences or clauses (max 140 chars)
-            val chunks = splitTextIntoSpokenChunks(text, 140)
-            if (chunks.isEmpty()) return false
+        val textToStream = cleanText.take(400)
+        val streamUrl = "https://blindsightpage.vercel.app/api/tts?text=${URLEncoder.encode(textToStream, "UTF-8")}&voice=$voiceParam&lang=$langParam"
 
-            val tempDir = File(context.cacheDir, "tts_cache").apply { mkdirs() }
-            val downloadedFiles = mutableListOf<File>()
+        val mainHandler = Handler(Looper.getMainLooper())
+        var watchdogTriggered = false
 
-            for ((index, chunk) in chunks.withIndex()) {
-                if (!isSpeakingActive.get()) {
-                    downloadedFiles.forEach { runCatching { it.delete() } }
-                    return true
+        mainHandler.post {
+            try {
+                mediaPlayer?.release()
+                val player = MediaPlayer().apply {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .build()
+                    )
+                    setDataSource(streamUrl)
                 }
+                mediaPlayer = player
 
-                val encoded = URLEncoder.encode(chunk, "UTF-8")
-                val url = URL("https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=$langParam&q=$encoded")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.connectTimeout = 3000
-                conn.readTimeout = 4000
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+                val fallbackRunnable = Runnable {
+                    if (isSpeakingActive.get()) {
+                        watchdogTriggered = true
+                        Log.d(tag, "Stream watchdog fired after 1200ms. Falling back to on-device TTS.")
+                        try {
+                            player.reset()
+                            player.release()
+                        } catch (_: Exception) {}
+                        if (mediaPlayer == player) mediaPlayer = null
+                        speakOnDevice(cleanText)
+                    }
+                }
+                mainHandler.postDelayed(fallbackRunnable, 1200L)
 
-                if (conn.responseCode == 200) {
-                    val file = File(tempDir, "chunk_${System.currentTimeMillis()}_$index.mp3")
-                    conn.inputStream.use { input ->
-                        FileOutputStream(file).use { output ->
-                            input.copyTo(output)
+                player.setOnPreparedListener { mp ->
+                    mainHandler.removeCallbacks(fallbackRunnable)
+                    if (isSpeakingActive.get() && !watchdogTriggered) {
+                        try {
+                            mp.start()
+                        } catch (e: Exception) {
+                            speakOnDevice(cleanText)
                         }
-                    }
-                    if (file.length() > 200) {
-                        downloadedFiles.add(file)
-                    }
-                }
-            }
-
-            if (downloadedFiles.isEmpty()) return false
-
-            // Play files sequentially
-            for (file in downloadedFiles) {
-                if (!isSpeakingActive.get()) {
-                    runCatching { file.delete() }
-                    continue
-                }
-
-                playSingleAudioFileSync(file)
-                runCatching { file.delete() }
-            }
-
-            if (isSpeakingActive.get()) {
-                isSpeakingActive.set(false)
-                currentOnDone?.invoke()
-                currentOnDone = null
-            }
-            return true
-
-        } catch (e: Exception) {
-            Log.w(tag, "Online natural TTS streaming failed: ${e.message}")
-        }
-        return false
-    }
-
-    private fun splitTextIntoSpokenChunks(text: String, maxLen: Int): List<String> {
-        val list = mutableListOf<String>()
-        val sentences = text.split(Regex("(?<=[.!?,\n])\\s+"))
-        var current = StringBuilder()
-
-        for (s in sentences) {
-            val part = s.trim()
-            if (part.isBlank()) continue
-
-            if (current.length + part.length + 1 > maxLen) {
-                if (current.isNotBlank()) {
-                    list.add(current.toString().trim())
-                    current = StringBuilder()
-                }
-                if (part.length > maxLen) {
-                    // Split long sentence by comma or words
-                    val words = part.split(" ")
-                    for (w in words) {
-                        if (current.length + w.length + 1 > maxLen) {
-                            list.add(current.toString().trim())
-                            current = StringBuilder()
-                        }
-                        current.append(w).append(" ")
-                    }
-                } else {
-                    current.append(part).append(" ")
-                }
-            } else {
-                current.append(part).append(" ")
-            }
-        }
-        if (current.isNotBlank()) {
-            list.add(current.toString().trim())
-        }
-        return list
-    }
-
-    private fun playSingleAudioFileSync(file: File) {
-        val lock = Object()
-        var completed = false
-
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .build()
-                )
-                setDataSource(file.absolutePath)
-                setOnCompletionListener {
-                    synchronized(lock) {
-                        completed = true
-                        lock.notifyAll()
+                    } else {
+                        try {
+                            mp.release()
+                        } catch (_: Exception) {}
+                        if (mediaPlayer == mp) mediaPlayer = null
                     }
                 }
-                setOnErrorListener { _, _, _ ->
-                    synchronized(lock) {
-                        completed = true
-                        lock.notifyAll()
+
+                player.setOnCompletionListener { mp ->
+                    isSpeakingActive.set(false)
+                    currentOnDone?.invoke()
+                    currentOnDone = null
+                    try {
+                        mp.release()
+                    } catch (_: Exception) {}
+                    if (mediaPlayer == mp) mediaPlayer = null
+                }
+
+                player.setOnErrorListener { mp, what, extra ->
+                    mainHandler.removeCallbacks(fallbackRunnable)
+                    Log.w(tag, "MediaPlayer stream error: what=$what, extra=$extra. Falling back to on-device.")
+                    try {
+                        mp.release()
+                    } catch (_: Exception) {}
+                    if (mediaPlayer == mp) mediaPlayer = null
+                    if (isSpeakingActive.get() && !watchdogTriggered) {
+                        speakOnDevice(cleanText)
                     }
                     true
                 }
-                prepare()
-                start()
-            }
 
-            synchronized(lock) {
-                while (!completed && isSpeakingActive.get()) {
-                    try {
-                        lock.wait(100)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
-                }
+                player.prepareAsync()
+
+            } catch (e: Exception) {
+                Log.w(tag, "MediaPlayer setup error: ${e.message}. Using on-device voice.")
+                speakOnDevice(cleanText)
             }
-        } catch (e: Exception) {
-            Log.w(tag, "Error playing audio file: ${e.message}")
-        } finally {
-            try {
-                mediaPlayer?.release()
-                mediaPlayer = null
-            } catch (_: Exception) {}
         }
-    }
-
-    private fun tryStreamGatewayTts(text: String, serverUrl: String): Boolean {
-        try {
-            val voiceParam = when (currentPersona) {
-                VoicePersona.JARVIS -> "en-GB-RyanNeural"
-                VoicePersona.ARIA -> "en-US-AriaNeural"
-                VoicePersona.GUY -> "en-US-GuyNeural"
-                VoicePersona.SWARA -> "hi-IN-SwaraNeural"
-                VoicePersona.AUTO -> when (currentLanguage) {
-                    SupportedLanguage.HINDI -> "hi-IN-SwaraNeural"
-                    SupportedLanguage.BENGALI -> "bn-IN-TanishaaNeural"
-                    SupportedLanguage.TAMIL -> "ta-IN-PallaviNeural"
-                    SupportedLanguage.TELUGU -> "te-IN-ShrutiNeural"
-                    SupportedLanguage.SPANISH -> "es-ES-AlvaroNeural"
-                    SupportedLanguage.FRENCH -> "fr-FR-HenriNeural"
-                    else -> "en-GB-RyanNeural"
-                }
-            }
-            val langParam = currentLanguage.code.split("-").first().lowercase()
-
-            val cleanBase = serverUrl.trimEnd('/')
-            val endpoint = if (cleanBase.endsWith("/api/tts")) cleanBase else "$cleanBase/api/tts"
-            val url = URL(endpoint)
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 3000
-            conn.readTimeout = 8000
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.setRequestProperty("User-Agent", "BlindSight-Android/1.7")
-
-            val jsonBody = """{"text":${org.json.JSONObject.quote(text)},"lang":"$langParam","voice":"$voiceParam"}"""
-            conn.outputStream.use { os ->
-                os.write(jsonBody.toByteArray(Charsets.UTF_8))
-            }
-
-            if (conn.responseCode == 200) {
-                val tempMp3 = File(context.cacheDir, "streamed_tts_${System.currentTimeMillis()}.mp3")
-                conn.inputStream.use { input ->
-                    FileOutputStream(tempMp3).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                if (tempMp3.length() > 500) {
-                    playSingleAudioFileSync(tempMp3)
-                    runCatching { tempMp3.delete() }
-                    return true
-                }
-            }
-        } catch (e: Exception) {
-            Log.d(tag, "Cloud neural TTS stream unavailable (${e.message}).")
-        }
-        return false
     }
 
     private fun speakOnDevice(text: String) {

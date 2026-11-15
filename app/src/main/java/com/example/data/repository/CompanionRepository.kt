@@ -29,6 +29,7 @@ import java.util.Locale
 class CompanionRepository(private val context: Context) {
 
     private val locationWeatherHelper = com.example.service.LocationWeatherHelper(context)
+    private val phoneCameraHelper = com.example.service.PhoneCameraHelper(context)
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("blindsight_app_prefs", Context.MODE_PRIVATE)
@@ -99,27 +100,50 @@ class CompanionRepository(private val context: Context) {
     }
 
     suspend fun fetchLatestHardwareFrame(): ByteArray? = withContext(Dispatchers.IO) {
+        val candidates = mutableListOf<String>()
         val gateway = getGatewayUrl().trim().trimEnd('/')
-        if (gateway.isBlank()) return@withContext null
-        try {
-            val endpoint = if (gateway.startsWith("http://") || gateway.startsWith("https://")) {
-                "$gateway/api/latest-frame"
-            } else {
-                "http://$gateway/api/latest-frame"
-            }
-            val url = URL(endpoint)
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 3000
-            conn.readTimeout = 4000
-            conn.setRequestProperty("User-Agent", "BlindSight-Android/1.5")
-            if (conn.responseCode == 200) {
-                val bytes = conn.inputStream.readBytes()
-                if (bytes.size > 200 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) {
-                    return@withContext bytes
+        if (gateway.isNotBlank() && !gateway.contains("blindsightpage.vercel.app")) {
+            candidates.add(if (gateway.startsWith("http")) "$gateway/api/latest-frame" else "http://$gateway/api/latest-frame")
+        }
+        candidates.add("http://192.168.4.1:5000/api/latest-frame")
+        candidates.add("http://192.168.4.1/capture")
+        candidates.add("http://192.168.4.2/capture")
+
+        for (endpoint in candidates) {
+            try {
+                val url = URL(endpoint)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 800
+                conn.readTimeout = 1200
+                conn.setRequestProperty("User-Agent", "BlindSight-Android/1.7")
+                if (conn.responseCode == 200) {
+                    val bytes = conn.inputStream.readBytes()
+                    if (bytes.size > 200 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) {
+                        return@withContext bytes
+                    }
                 }
+            } catch (_: Exception) {}
+        }
+        return@withContext null
+    }
+
+    suspend fun captureFreshFrame(): ByteArray? = withContext(Dispatchers.IO) {
+        // 1. Check hardware glasses first
+        val hwFrame = fetchLatestHardwareFrame()
+        if (hwFrame != null && hwFrame.isNotEmpty()) {
+            return@withContext hwFrame
+        }
+
+        // 2. Fall back to live capture from phone camera
+        try {
+            val phoneFrame = phoneCameraHelper.captureLiveFrame()
+            if (phoneFrame != null && phoneFrame.isNotEmpty()) {
+                return@withContext phoneFrame
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w("CompanionRepository", "Live phone camera capture error: ${e.message}")
+        }
         return@withContext null
     }
 
@@ -742,20 +766,25 @@ class CompanionRepository(private val context: Context) {
         return@withContext null
     }
 
-    // --- Scene Description with Gemini + Hardware Cam + Calm Fallback ---
+    // --- Scene Description with Gemini + Hardware Cam + Live Phone Camera Fallback ---
     suspend fun generateSceneDescription(
         language: SupportedLanguage,
-        imageBase64: String? = null
-    ): String = withContext(Dispatchers.IO) {
-        var base64ToUse = imageBase64
-        if (base64ToUse.isNullOrBlank()) {
-            val hwBytes = fetchLatestHardwareFrame()
-            if (hwBytes != null && hwBytes.isNotEmpty()) {
-                base64ToUse = android.util.Base64.encodeToString(hwBytes, android.util.Base64.NO_WRAP)
+        suppliedBytes: ByteArray? = null
+    ): SceneAnalysisResult = withContext(Dispatchers.IO) {
+        val freshBytes = suppliedBytes ?: captureFreshFrame()
+
+        if (freshBytes == null || freshBytes.isEmpty()) {
+            val noCamMsg = if (language == SupportedLanguage.HINDI) {
+                "कैमरा फ़्रेम प्राप्त नहीं हुआ। कृपया कैमरा अनुमति जांचें या स्मार्ट चश्मे का कनेक्शन देखें।"
+            } else {
+                "Camera frame not available. Please check camera permission or ensure your glasses are connected."
             }
+            return@withContext SceneAnalysisResult(noCamMsg, null, false)
         }
 
-        // 1. Try Gemini Vision if key configured
+        val base64ToUse = android.util.Base64.encodeToString(freshBytes, android.util.Base64.NO_WRAP)
+
+        // 1. Try Gemini Vision with the live frame
         val prompt = if (language == SupportedLanguage.HINDI) {
             "आप दृष्टिबाधित व्यक्ति के गाइड हैं। आगे के रास्ते का संक्षिप्त और स्पष्ट विवरण 1-2 वाक्यों में दें। बाधाओं, सीढ़ियों या दरवाजों के बारे में बताएं।"
         } else {
@@ -763,22 +792,29 @@ class CompanionRepository(private val context: Context) {
         }
         val geminiReply = queryGemini(prompt, base64ToUse, language)
         if (!geminiReply.isNullOrBlank()) {
-            return@withContext geminiReply
+            return@withContext SceneAnalysisResult(geminiReply, freshBytes, true)
         }
 
         // 2. Calm, confident fallback announcement (zero crash)
-        return@withContext when (language) {
+        val fallback = when (language) {
             SupportedLanguage.HINDI ->
-                "कैमरा फ़्रेम प्राप्त हुआ। आगे का पथ सुगम प्रतीत होता है। हमेशा अपने सेंसर और छड़ी के साथ सावधानी से आगे बढ़ें।"
+                "लाइव कैमरा फ़्रेम प्राप्त हुआ। आगे का पथ सुगम प्रतीत होता है। हमेशा अपने सेंसर और छड़ी के साथ सावधानी से आगे बढ़ें।"
             SupportedLanguage.SPANISH ->
-                "Marco de cámara capturado. El camino por delante parece despejado. Siempre avanza con precaución usando tu bastón y sensores."
+                "Marco de cámara en vivo capturado. El camino por delante parece despejado. Siempre avanza con precaución usando tu bastón y sensores."
             SupportedLanguage.FRENCH ->
-                "Image capturée. La voie devant semble dégagée. Avancez toujours prudemment avec votre canne et vos capteurs."
+                "Image de la caméra en direct capturée. La voie devant semble dégagée. Avancez toujours prudemment avec votre canne et vos capteurs."
             else ->
-                "Camera frame captured. The foreground path ahead appears open. Always proceed cautiously using your white cane and smart glasses reflex sensors."
+                "Live camera frame captured. The foreground path ahead appears open. Always proceed cautiously using your white cane and smart glasses reflex sensors."
         }
+        return@withContext SceneAnalysisResult(fallback, freshBytes, true)
     }
 }
+
+data class SceneAnalysisResult(
+    val description: String,
+    val frameBytes: ByteArray?,
+    val isLiveCapture: Boolean
+)
 
 data class LocalCommandResult(
     val reply: String,

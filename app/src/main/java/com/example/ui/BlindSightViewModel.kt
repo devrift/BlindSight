@@ -219,7 +219,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refreshLatestHardwareFrame() {
         viewModelScope.launch {
-            val bytes = repository.fetchLatestHardwareFrame()
+            val bytes = repository.captureFreshFrame()
             if (bytes != null && bytes.isNotEmpty()) {
                 _uiState.value = _uiState.value.copy(latestFrameBytes = bytes)
             }
@@ -516,24 +516,19 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         ttsHelper?.playEarcon(TtsHelper.EarconType.WAKE)
         _uiState.value = _uiState.value.copy(
             isCameraScanning = true,
-            statusText = "Analyzing camera scene…"
+            statusText = "Capturing and analyzing live camera frame…"
         )
 
         viewModelScope.launch {
-            // Check for fresh frame from hardware glasses
-            val hwBytes = repository.fetchLatestHardwareFrame()
-            if (hwBytes != null && hwBytes.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(latestFrameBytes = hwBytes)
-            }
-
-            val description = repository.generateSceneDescription(_uiState.value.language)
+            val result = repository.generateSceneDescription(_uiState.value.language)
             _uiState.value = _uiState.value.copy(
                 isCameraScanning = false,
+                latestFrameBytes = result.frameBytes,
                 appState = AppState.SPEAKING,
-                statusText = description
+                statusText = result.description
             )
-            repository.addMessage(isUser = false, text = description)
-            speak(description)
+            repository.addMessage(isUser = false, text = result.description)
+            speak(result.description)
         }
     }
 

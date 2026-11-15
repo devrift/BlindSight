@@ -2,7 +2,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 import asyncio
 import urllib.parse
-import io
+import os
 
 try:
     import edge_tts
@@ -11,76 +11,60 @@ except Exception:
     HAS_EDGE = False
 
 class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            body = json.loads(post_data.decode('utf-8'))
-            text = body.get('text', '').strip()
-            voice = body.get('voice', 'en-GB-RyanNeural')
-            lang = body.get('lang', 'en').lower()
+    def _send_audio(self, audio_bytes):
+        self.send_response(200)
+        self.send_header('Content-Type', 'audio/mpeg')
+        self.send_header('Content-Length', str(len(audio_bytes)))
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'public, max-age=86400')
+        self.end_headers()
+        self.wfile.write(audio_bytes)
 
-            if not text:
-                self.send_response(400)
-                self.end_headers()
-                return
+    def _send_error(self, code, msg):
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps({'error': msg}).encode('utf-8'))
 
-            # Persona voice mapping
-            voice_map = {
-                'en': 'en-GB-RyanNeural',
-                'hi': 'hi-IN-SwaraNeural',
-                'bn': 'bn-IN-TanishaaNeural',
-                'ta': 'ta-IN-PallaviNeural',
-                'te': 'te-IN-ShrutiNeural',
-                'es': 'es-ES-AlvaroNeural',
-                'fr': 'fr-FR-HenriNeural',
-                'jarvis': 'en-GB-RyanNeural',
-                'aria': 'en-US-AriaNeural',
-                'guy': 'en-US-GuyNeural',
-                'swara': 'hi-IN-SwaraNeural'
-            }
+    def _resolve_voice(self, voice, lang):
+        voice_map = {
+            'en': 'en-GB-RyanNeural',
+            'hi': 'hi-IN-SwaraNeural',
+            'bn': 'bn-IN-TanishaaNeural',
+            'ta': 'ta-IN-PallaviNeural',
+            'te': 'te-IN-ShrutiNeural',
+            'es': 'es-ES-AlvaroNeural',
+            'fr': 'fr-FR-HenriNeural',
+            'jarvis': 'en-GB-RyanNeural',
+            'aria': 'en-US-AriaNeural',
+            'guy': 'en-US-GuyNeural',
+            'swara': 'hi-IN-SwaraNeural'
+        }
+        if voice and 'Neural' in voice:
+            return voice
+        return voice_map.get((lang or 'en').lower(), 'en-GB-RyanNeural')
 
-            selected_voice = voice if voice and 'Neural' in voice else voice_map.get(lang, 'en-GB-RyanNeural')
+    async def _generate_audio(self, text, voice):
+        comm = edge_tts.Communicate(text, voice)
+        audio_buf = bytearray()
+        async for chunk in comm.stream():
+            if chunk['type'] == 'audio':
+                audio_buf.extend(chunk['data'])
+        return bytes(audio_buf)
 
-            async def generate_speech():
-                comm = edge_tts.Communicate(text, selected_voice)
-                audio_buf = bytearray()
-                async for chunk in comm.stream():
-                    if chunk['type'] == 'audio':
-                        audio_buf.extend(chunk['data'])
-                return bytes(audio_buf)
-
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            audio_bytes = loop.run_until_complete(generate_speech())
-            loop.close()
-
-            if not audio_bytes:
-                self.send_response(500)
-                self.end_headers()
-                return
-
-            self.send_response(200)
-            self.send_header('Content-Type', 'audio/mpeg')
-            self.send_header('Content-Length', str(len(audio_bytes)))
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Cache-Control', 'public, max-age=86400')
-            self.end_headers()
-            self.wfile.write(audio_bytes)
-
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'audio/mpeg')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
 
     def do_GET(self):
         try:
             parsed = urllib.parse.urlparse(self.path)
             params = urllib.parse.parse_qs(parsed.query)
             text = params.get('text', [''])[0].strip()
-            voice = params.get('voice', ['en-GB-RyanNeural'])[0]
+            voice = params.get('voice', [''])[0]
             lang = params.get('lang', ['en'])[0].lower()
 
             if not text:
@@ -91,36 +75,72 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'status': 'BlindSight Edge-TTS active'}).encode('utf-8'))
                 return
 
-            async def generate_speech():
-                comm = edge_tts.Communicate(text, voice)
-                audio_buf = bytearray()
-                async for chunk in comm.stream():
-                    if chunk['type'] == 'audio':
-                        audio_buf.extend(chunk['data'])
-                return bytes(audio_buf)
-
+            selected_voice = self._resolve_voice(voice, lang)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            audio_bytes = loop.run_until_complete(generate_speech())
+            audio = loop.run_until_complete(self._generate_audio(text, selected_voice))
             loop.close()
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'audio/mpeg')
-            self.send_header('Content-Length', str(len(audio_bytes)))
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(audio_bytes)
-
+            if audio:
+                self._send_audio(audio)
+            else:
+                self._send_error(500, "Empty audio generated")
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            self._send_error(500, str(e))
+
+    def do_POST(self):
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            raw_body = self.rfile.read(content_length).decode('utf-8', errors='ignore') if content_length > 0 else ""
+
+            text = ""
+            voice = ""
+            lang = "en"
+
+            # Parse JSON or fallback
+            if raw_body.startswith('{'):
+                try:
+                    data = json.loads(raw_body)
+                    text = str(data.get('text', '')).strip()
+                    voice = str(data.get('voice', '')).strip()
+                    lang = str(data.get('lang', 'en')).strip().lower()
+                except Exception:
+                    pass
+
+            if not text and '=' in raw_body:
+                params = urllib.parse.parse_qs(raw_body)
+                text = params.get('text', [''])[0].strip()
+                voice = params.get('voice', [''])[0]
+                lang = params.get('lang', ['en'])[0].lower()
+
+            if not text:
+                # Also check URL query params
+                parsed = urllib.parse.urlparse(self.path)
+                params = urllib.parse.parse_qs(parsed.query)
+                text = params.get('text', [''])[0].strip()
+                if not voice:
+                    voice = params.get('voice', [''])[0]
+
+            if not text:
+                self._send_error(400, "Missing 'text' parameter")
+                return
+
+            selected_voice = self._resolve_voice(voice, lang)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            audio = loop.run_until_complete(self._generate_audio(text, selected_voice))
+            loop.close()
+
+            if audio:
+                self._send_audio(audio)
+            else:
+                self._send_error(500, "Empty audio generated")
+        except Exception as e:
+            self._send_error(500, str(e))
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, User-Agent')
         self.end_headers()
