@@ -226,6 +226,11 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun onTripleTapTriggered() {
+        hapticHelper.vibrateAlert()
+        onGiantMicClick()
+    }
+
     fun onGiantMicClick() {
         hapticHelper.vibrateTap()
         val currentState = _uiState.value.appState
@@ -559,8 +564,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         speak(status)
     }
 
-    fun updateSensorDistance(leftCm: Int, centerCm: Int, rightCm: Int) {
-        val tel = repository.updateSensors(leftCm, centerCm, rightCm)
+    fun updateSensorDistance(leftCm: Int, centerCm: Int, rightCm: Int, isHardware: Boolean = true) {
+        val tel = repository.updateSensors(leftCm, centerCm, rightCm, isHardware = isHardware)
         when (tel.alert) {
             ReflexAlert.STOP -> {
                 hapticHelper.vibrateAlert()
@@ -582,11 +587,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         hapticHelper.vibrateConfirm()
 
         if (next) {
-            speak("Auto reflex sweep enabled. Simulating sensor distance variations.")
+            speak("Demo walk enabled. Simulating sensor distance variations.")
             startAutoSweepLoop()
         } else {
             autoSweepJob?.cancel()
-            speak("Auto sweep disabled.")
+            repository.setHardwareDisconnected()
+            speak("Demo walk stopped. Hardware radar is not connected.")
         }
     }
 

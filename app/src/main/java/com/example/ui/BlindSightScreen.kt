@@ -42,6 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -83,8 +86,36 @@ fun BlindSightScreen(
 
     val activePrimaryColor = if (uiState.highContrastYellow) BlindSightYellow else BlindSightAmber
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                var tapCount = 0
+                var lastTapTime = 0L
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val isDown = event.changes.any { it.changedToDown() }
+                        if (isDown) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastTapTime < 450) {
+                                tapCount++
+                            } else {
+                                tapCount = 1
+                            }
+                            lastTapTime = now
+
+                            if (tapCount >= 3) {
+                                tapCount = 0
+                                viewModel.onTripleTapTriggered()
+                            }
+                        }
+                    }
+                }
+            }
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
         containerColor = BlindSightBackground,
         topBar = {
             BlindSightTopBar(
@@ -293,6 +324,7 @@ fun BlindSightScreen(
         )
     }
 }
+}
 
 @Composable
 private fun QuickCommandRow(
@@ -310,7 +342,12 @@ private fun QuickCommandRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val commands = listOf("describe" to "Describe Scene", "read status" to "Read Status", "help" to "Help")
+            val commands = listOf(
+                "what is the weather" to "Weather",
+                "where am i" to "Location",
+                "describe" to "Look Ahead",
+                "help" to "Help"
+            )
             commands.forEach { (cmd, label) ->
                 Box(
                     modifier = Modifier

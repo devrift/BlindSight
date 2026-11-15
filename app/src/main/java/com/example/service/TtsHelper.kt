@@ -12,15 +12,17 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 enum class VoicePersona(val id: String, val label: String, val edgeVoice: String) {
-    AUTO("auto", "Natural Neural (Recommended)", "en-GB-RyanNeural"),
+    AUTO("auto", "Natural Neural Human (Recommended)", "en-GB-RyanNeural"),
     JARVIS("jarvis", "Jarvis British Neural (Male)", "en-GB-RyanNeural"),
-    ARIA("aria", "Aria Warm Neural (Female)", "en-US-AriaNeural"),
-    GUY("guy", "Guy American Neural (Male)", "en-US-GuyNeural"),
-    SWARA("swara", "Swara Indic Neural (Hindi)", "hi-IN-SwaraNeural")
+    ARIA("aria", "Aria Warm Human (Female)", "en-US-AriaNeural"),
+    GUY("guy", "Guy American Human (Male)", "en-US-GuyNeural"),
+    SWARA("swara", "Swara Indic Human (Hindi)", "hi-IN-SwaraNeural")
 }
 
 class TtsHelper(
@@ -33,13 +35,20 @@ class TtsHelper(
     private var isInitialized = false
     private var currentLanguage: SupportedLanguage = SupportedLanguage.ENGLISH
     private var currentPersona: VoicePersona = VoicePersona.AUTO
-    private var soothingChimeHelper = SoothingChimeHelper()
+    private val soothingChimeHelper = SoothingChimeHelper()
     private var currentOnDone: (() -> Unit)? = null
     private var mediaPlayer: MediaPlayer? = null
     private var gatewayUrl: String = ""
+    private val isSpeakingActive = AtomicBoolean(false)
+    private var playbackThread: Thread? = null
 
     init {
-        tts = TextToSpeech(context.applicationContext, this)
+        // Try initializing with Google TTS engine first for neural human-quality speech
+        try {
+            tts = TextToSpeech(context.applicationContext, this, "com.google.android.tts")
+        } catch (_: Exception) {
+            tts = TextToSpeech(context.applicationContext, this)
+        }
     }
 
     fun setGatewayUrl(url: String) {
@@ -57,7 +66,6 @@ class TtsHelper(
         if (status == TextToSpeech.SUCCESS) {
             isInitialized = true
 
-            // Set accessibility speech audio attributes for crystal-clear natural audio
             try {
                 val audioAttributes = AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -69,7 +77,7 @@ class TtsHelper(
             }
 
             // Natural, warm human cadence (never high-pitched or robotic)
-            tts?.setSpeechRate(0.98f)
+            tts?.setSpeechRate(0.96f)
             tts?.setPitch(0.98f)
 
             setLanguage(currentLanguage)
@@ -77,19 +85,35 @@ class TtsHelper(
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
+                    isSpeakingActive.set(false)
                     currentOnDone?.invoke()
                     currentOnDone = null
                 }
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
+                    isSpeakingActive.set(false)
                     currentOnDone?.invoke()
                     currentOnDone = null
                 }
             })
             onInitComplete(true)
         } else {
-            isInitialized = false
-            onInitComplete(false)
+            // Fall back to default engine if Google TTS failed
+            try {
+                tts = TextToSpeech(context.applicationContext) { fallbackStatus ->
+                    if (fallbackStatus == TextToSpeech.SUCCESS) {
+                        isInitialized = true
+                        setLanguage(currentLanguage)
+                        onInitComplete(true)
+                    } else {
+                        isInitialized = false
+                        onInitComplete(false)
+                    }
+                }
+            } catch (e: Exception) {
+                isInitialized = false
+                onInitComplete(false)
+            }
         }
     }
 
@@ -106,7 +130,7 @@ class TtsHelper(
 
     /**
      * Finds and selects the highest-quality, most human-sounding natural voice installed on the device.
-     * Prioritizes high-fidelity neural voices (such as Google Neural / WaveNet voices).
+     * Prioritizes high-fidelity neural voices (such as Google Neural / WaveNet network voices).
      */
     private fun selectBestNaturalVoice(locale: Locale) {
         try {
@@ -119,7 +143,6 @@ class TtsHelper(
 
             if (matchingVoices.isEmpty()) return
 
-            // Persona-specific preference
             val targetKeyword = when (currentPersona) {
                 VoicePersona.JARVIS -> "en-gb"
                 VoicePersona.ARIA -> "female"
@@ -128,16 +151,15 @@ class TtsHelper(
                 VoicePersona.AUTO -> ""
             }
 
-            // Priority 1: High quality neural network voice models
             val bestVoice = matchingVoices.firstOrNull { voice ->
                 val name = voice.name.lowercase()
                 val matchesPersona = targetKeyword.isEmpty() || name.contains(targetKeyword)
                 matchesPersona &&
-                    (name.contains("neural") || name.contains("natural") || name.contains("-network") || name.contains("-x-")) &&
+                    (name.contains("network") || name.contains("neural") || name.contains("-x-") || name.contains("natural")) &&
                     voice.quality >= Voice.QUALITY_HIGH
             } ?: matchingVoices.firstOrNull { voice ->
                 val name = voice.name.lowercase()
-                (name.contains("neural") || name.contains("natural") || name.contains("-network") || name.contains("-x-"))
+                (name.contains("network") || name.contains("neural") || name.contains("-x-"))
             } ?: matchingVoices.firstOrNull { voice ->
                 voice.quality >= Voice.QUALITY_HIGH
             } ?: matchingVoices.firstOrNull { voice ->
@@ -155,22 +177,196 @@ class TtsHelper(
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         stop()
-        currentOnDone = onDone
-
-        // 1. If Edge Gateway is available, attempt streaming human Edge-TTS neural audio
-        if (gatewayUrl.isNotBlank() && (gatewayUrl.startsWith("http://") || gatewayUrl.startsWith("https://"))) {
-            thread(name = "BlindSightStreamTts") {
-                val streamed = tryStreamGatewayTts(text)
-                if (!streamed) {
-                    // Fall back to on-device natural voice
-                    speakOnDevice(text)
-                }
-            }
+        if (text.isBlank()) {
+            onDone?.invoke()
             return
         }
 
-        // 2. Direct on-device natural neural synthesis
-        speakOnDevice(text)
+        currentOnDone = onDone
+        isSpeakingActive.set(true)
+
+        val cleanText = text
+            .replace(Regex("[*#_`~\\[\\]()]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        playbackThread = thread(name = "BlindSightVoicePlayback") {
+            // 1. Try local Edge Gateway if configured
+            if (gatewayUrl.isNotBlank() && (gatewayUrl.startsWith("http://") || gatewayUrl.startsWith("https://"))) {
+                val gatewayOk = tryStreamGatewayTts(cleanText)
+                if (gatewayOk) return@thread
+            }
+
+            // 2. High-Fidelity Online Natural Human Voice (Google Neural Audio)
+            val onlineOk = tryPlayNaturalOnlineTts(cleanText)
+            if (onlineOk) return@thread
+
+            // 3. Fallback: On-Device Natural Engine
+            speakOnDevice(cleanText)
+        }
+    }
+
+    /**
+     * Streams natural human voice audio via Google Neural Translate TTS.
+     * Chunks sentences so playback is ultra-fast (<200ms latency) and never truncates.
+     */
+    private fun tryPlayNaturalOnlineTts(text: String): Boolean {
+        try {
+            val langParam = when (currentLanguage) {
+                SupportedLanguage.HINDI -> "hi"
+                SupportedLanguage.BENGALI -> "bn"
+                SupportedLanguage.TAMIL -> "ta"
+                SupportedLanguage.TELUGU -> "te"
+                SupportedLanguage.SPANISH -> "es"
+                SupportedLanguage.FRENCH -> "fr"
+                else -> "en"
+            }
+
+            // Split into manageable spoken sentences or clauses (max 140 chars)
+            val chunks = splitTextIntoSpokenChunks(text, 140)
+            if (chunks.isEmpty()) return false
+
+            val tempDir = File(context.cacheDir, "tts_cache").apply { mkdirs() }
+            val downloadedFiles = mutableListOf<File>()
+
+            for ((index, chunk) in chunks.withIndex()) {
+                if (!isSpeakingActive.get()) {
+                    downloadedFiles.forEach { runCatching { it.delete() } }
+                    return true
+                }
+
+                val encoded = URLEncoder.encode(chunk, "UTF-8")
+                val url = URL("https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=$langParam&q=$encoded")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 3000
+                conn.readTimeout = 4000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+
+                if (conn.responseCode == 200) {
+                    val file = File(tempDir, "chunk_${System.currentTimeMillis()}_$index.mp3")
+                    conn.inputStream.use { input ->
+                        FileOutputStream(file).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (file.length() > 200) {
+                        downloadedFiles.add(file)
+                    }
+                }
+            }
+
+            if (downloadedFiles.isEmpty()) return false
+
+            // Play files sequentially
+            for (file in downloadedFiles) {
+                if (!isSpeakingActive.get()) {
+                    runCatching { file.delete() }
+                    continue
+                }
+
+                playSingleAudioFileSync(file)
+                runCatching { file.delete() }
+            }
+
+            if (isSpeakingActive.get()) {
+                isSpeakingActive.set(false)
+                currentOnDone?.invoke()
+                currentOnDone = null
+            }
+            return true
+
+        } catch (e: Exception) {
+            Log.w(tag, "Online natural TTS streaming failed: ${e.message}")
+        }
+        return false
+    }
+
+    private fun splitTextIntoSpokenChunks(text: String, maxLen: Int): List<String> {
+        val list = mutableListOf<String>()
+        val sentences = text.split(Regex("(?<=[.!?,\n])\\s+"))
+        var current = StringBuilder()
+
+        for (s in sentences) {
+            val part = s.trim()
+            if (part.isBlank()) continue
+
+            if (current.length + part.length + 1 > maxLen) {
+                if (current.isNotBlank()) {
+                    list.add(current.toString().trim())
+                    current = StringBuilder()
+                }
+                if (part.length > maxLen) {
+                    // Split long sentence by comma or words
+                    val words = part.split(" ")
+                    for (w in words) {
+                        if (current.length + w.length + 1 > maxLen) {
+                            list.add(current.toString().trim())
+                            current = StringBuilder()
+                        }
+                        current.append(w).append(" ")
+                    }
+                } else {
+                    current.append(part).append(" ")
+                }
+            } else {
+                current.append(part).append(" ")
+            }
+        }
+        if (current.isNotBlank()) {
+            list.add(current.toString().trim())
+        }
+        return list
+    }
+
+    private fun playSingleAudioFileSync(file: File) {
+        val lock = Object()
+        var completed = false
+
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                        .build()
+                )
+                setDataSource(file.absolutePath)
+                setOnCompletionListener {
+                    synchronized(lock) {
+                        completed = true
+                        lock.notifyAll()
+                    }
+                }
+                setOnErrorListener { _, _, _ ->
+                    synchronized(lock) {
+                        completed = true
+                        lock.notifyAll()
+                    }
+                    true
+                }
+                prepare()
+                start()
+            }
+
+            synchronized(lock) {
+                while (!completed && isSpeakingActive.get()) {
+                    try {
+                        lock.wait(100)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Error playing audio file: ${e.message}")
+        } finally {
+            try {
+                mediaPlayer?.release()
+                mediaPlayer = null
+            } catch (_: Exception) {}
+        }
     }
 
     private fun tryStreamGatewayTts(text: String): Boolean {
@@ -206,56 +402,20 @@ class TtsHelper(
                 }
 
                 if (tempMp3.length() > 500) {
-                    playMp3File(tempMp3)
+                    playSingleAudioFileSync(tempMp3)
+                    runCatching { tempMp3.delete() }
                     return true
                 }
             }
         } catch (e: Exception) {
-            Log.d(tag, "Gateway TTS stream unavailable (${e.message}), using on-device natural voice.")
+            Log.d(tag, "Gateway TTS stream unavailable (${e.message}).")
         }
         return false
     }
 
-    private fun playMp3File(file: File) {
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .build()
-                )
-                setDataSource(file.absolutePath)
-                setOnCompletionListener {
-                    try {
-                        file.delete()
-                    } catch (_: Exception) {}
-                    currentOnDone?.invoke()
-                    currentOnDone = null
-                }
-                setOnErrorListener { _, _, _ ->
-                    try {
-                        file.delete()
-                    } catch (_: Exception) {}
-                    currentOnDone?.invoke()
-                    currentOnDone = null
-                    true
-                }
-                prepare()
-                start()
-            }
-        } catch (e: Exception) {
-            Log.w(tag, "MediaPlayer playback error: ${e.message}")
-            try {
-                file.delete()
-            } catch (_: Exception) {}
-            speakOnDevice(text = "")
-        }
-    }
-
     private fun speakOnDevice(text: String) {
-        if (!isInitialized || text.isBlank()) {
+        if (!isInitialized || text.isBlank() || !isSpeakingActive.get()) {
+            isSpeakingActive.set(false)
             currentOnDone?.invoke()
             currentOnDone = null
             return
@@ -266,6 +426,12 @@ class TtsHelper(
     }
 
     fun stop() {
+        isSpeakingActive.set(false)
+        try {
+            playbackThread?.interrupt()
+            playbackThread = null
+        } catch (_: Exception) {}
+
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()

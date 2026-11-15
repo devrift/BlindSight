@@ -25,13 +25,14 @@ enum class ReflexAlert(val title: String, val description: String) {
 }
 
 data class ReflexTelemetry(
-    val leftCm: Int = 150,
-    val centerCm: Int = 180,
-    val rightCm: Int = 160,
+    val isHardwareConnected: Boolean = false,
+    val leftCm: Int = 0,
+    val centerCm: Int = 0,
+    val rightCm: Int = 0,
     val alert: ReflexAlert = ReflexAlert.CLEAR,
     val timestamp: Long = System.currentTimeMillis()
 ) {
-    val minDistance: Int get() = minOf(leftCm, centerCm, rightCm)
+    val minDistance: Int get() = if (isHardwareConnected) minOf(leftCm, centerCm, rightCm) else 0
 }
 
 enum class SupportedLanguage(

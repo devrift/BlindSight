@@ -28,6 +28,8 @@ import java.util.Locale
 
 class CompanionRepository(private val context: Context) {
 
+    private val locationWeatherHelper = com.example.service.LocationWeatherHelper(context)
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences("blindsight_app_prefs", Context.MODE_PRIVATE)
 
@@ -238,7 +240,7 @@ class CompanionRepository(private val context: Context) {
     }
 
     // --- Ultrasonic Reflex Subsystem ---
-    fun updateSensors(leftCm: Int, centerCm: Int, rightCm: Int): ReflexTelemetry {
+    fun updateSensors(leftCm: Int, centerCm: Int, rightCm: Int, isHardware: Boolean = true): ReflexTelemetry {
         val min = minOf(leftCm, centerCm, rightCm)
         val alert = when {
             min < 25 -> ReflexAlert.STOP
@@ -247,11 +249,18 @@ class CompanionRepository(private val context: Context) {
             else -> ReflexAlert.CLEAR
         }
         val tel = ReflexTelemetry(
+            isHardwareConnected = isHardware,
             leftCm = leftCm,
             centerCm = centerCm,
             rightCm = rightCm,
             alert = alert
         )
+        _telemetry.value = tel
+        return tel
+    }
+
+    fun setHardwareDisconnected(): ReflexTelemetry {
+        val tel = ReflexTelemetry(isHardwareConnected = false)
         _telemetry.value = tel
         return tel
     }
@@ -294,8 +303,8 @@ class CompanionRepository(private val context: Context) {
         }
     }
 
-    // --- Offline Google Assistant Command Evaluation ---
-    fun evaluateLocalCommand(
+    // --- Offline & Instant Local Command Evaluation ---
+    suspend fun evaluateLocalCommand(
         prompt: String,
         currentLang: SupportedLanguage
     ): LocalCommandResult? {
@@ -315,12 +324,42 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(reply)
         }
 
-        // 2. Battery
+        // 2. Weather & Temperature (Real GPS / Network Weather - Never ask for zip code!)
+        val isWeatherQuery = clean in listOf(
+            "what is the weather", "what's the weather", "whats the weather", "weather today",
+            "weather", "how is the weather", "how's the weather", "how is the weather today",
+            "tell me the weather", "temperature", "what is the temperature", "current temperature",
+            "is it raining", "mausam", "mausam kaisa hai", "aaj ka mausam", "aaj mausam kaisa hai"
+        ) || Regex("\\b(?:weather|temperature|forecast|mausam)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+
+        if (isWeatherQuery) {
+            val weatherReply = locationWeatherHelper.getFormattedWeatherSummary(currentLang)
+            return LocalCommandResult(weatherReply)
+        }
+
+        // 3. Location / Where am I
+        val isLocationQuery = clean in listOf(
+            "where am i", "what is my location", "what city am i in", "current location",
+            "my location", "kahan hoon", "meri location kya hai", "main kahan hoon"
+        ) || Regex("\\b(?:where am i|my location|what city)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+
+        if (isLocationQuery) {
+            val (lat, lon) = locationWeatherHelper.getCoordinates()
+            val (city, country) = locationWeatherHelper.resolveCityAndCountry(lat, lon)
+            val reply = if (currentLang == SupportedLanguage.HINDI) {
+                "आप वर्तमान में $city, $country में हैं।"
+            } else {
+                "You are currently in $city, $country."
+            }
+            return LocalCommandResult(reply)
+        }
+
+        // 4. Battery
         if (clean in listOf("battery", "battery status", "battery level", "how much battery", "check battery", "what is my battery")) {
             return LocalCommandResult(getBatteryStatus())
         }
 
-        // 3. Flashlight / Torch
+        // 5. Flashlight / Torch
         if (clean in listOf("turn on flashlight", "turn on torch", "flashlight on", "torch on", "light on")) {
             return LocalCommandResult(toggleTorch(true))
         }
@@ -328,7 +367,7 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(toggleTorch(false))
         }
 
-        // 4. Memory Commands
+        // 6. Memory Commands
         if (low.startsWith("remember ")) {
             val fact = prompt.trim().substring("remember ".length)
             return LocalCommandResult(addFact(fact))
@@ -352,7 +391,7 @@ class CompanionRepository(private val context: Context) {
             }
         }
 
-        // 5. Memory item lookups ("where is my keys", "where did i put my wallet")
+        // 7. Memory item lookups ("where is my keys", "where did i put my wallet")
         val whereMatch = Regex("(?:where is my|where are my|where did i put my|where did i leave my|find my)\\s+(.+)").find(clean)
         if (whereMatch != null) {
             val target = whereMatch.groupValues[1].trim()
@@ -364,19 +403,23 @@ class CompanionRepository(private val context: Context) {
             }
         }
 
-        // 6. Navigation cues & Advice
+        // 8. Navigation cues & Advice
         if (clean in listOf("can i walk", "is it safe", "guide me", "navigation tips", "how do i walk", "is path clear")) {
             val tel = _telemetry.value
-            val advice = "Sensors report: ${tel.alert.description}. Keep your white cane sweeping low to feel drop-offs and stairs. I will vibrate if an obstacle is within 2 meters."
+            val advice = if (tel.isHardwareConnected) {
+                "Sensors report: ${tel.alert.description}. Keep your white cane sweeping low to feel drop-offs and stairs."
+            } else {
+                "Smart glasses radar is currently disconnected. Please rely on your white cane and exercise standard walking caution."
+            }
             return LocalCommandResult(advice)
         }
 
-        // 7. Reset / Clear chat
+        // 9. Reset / Clear chat
         if (clean in listOf("clear chat", "start over", "new chat", "reset")) {
             return LocalCommandResult(clearHistory())
         }
 
-        // 8. Language switch
+        // 10. Language switch
         var targetLang: String? = null
         if (low.startsWith("switch language to ")) {
             targetLang = low.substring("switch language to ".length).replace(Regex("[.!?]"), "").trim()
@@ -397,19 +440,20 @@ class CompanionRepository(private val context: Context) {
             }
         }
 
-        // 9. Status report
+        // 11. Status report
         if (clean in listOf("read status", "status", "system status", "status report", "device status")) {
             val tel = _telemetry.value
-            val statusText = "System Status: Speech recognition active. On-device TTS ready. Reflex sensors report: ${tel.alert.description}. Battery check normal. Memory has ${_facts.value.size} facts stored."
+            val hwStatus = if (tel.isHardwareConnected) "Hardware sensors connected: ${tel.alert.description}" else "Hardware radar: Disconnected"
+            val statusText = "System Status: Voice recognition active. $hwStatus. Battery check normal. Memory has ${_facts.value.size} facts stored."
             return LocalCommandResult(statusText)
         }
 
-        // 10. Help & Commands
+        // 12. Help & Commands
         if (clean in listOf("help", "commands", "what can i say", "instructions", "what can you do", "features", "kya kar sakte ho", "help me")) {
             val help = if (currentLang == SupportedLanguage.HINDI) {
-                "मैं ब्लाइंडसाइट हूँ! आप मुझसे समय, बैटरी, टॉर्च चालू करने, सामने का दृश्य देखने, या कोई भी सामान्य बातचीत और चुटकुले पूछ सकते हैं।"
+                "मैं ब्लाइंडसाइट हूँ! आप मुझसे मौसम, समय, अपनी लोकेशन, बैटरी, टॉर्च चालू करने, सामने देखने, या कोई भी सवाल पूछ सकते हैं।"
             } else {
-                "I am BlindSight, your voice assistant. You can ask: what time is it, battery level, turn on flashlight, tell me a joke, is the path safe, remember my keys, or say describe to look ahead."
+                "I am BlindSight, your voice assistant. You can ask: what is the weather, where am I, what time is it, battery level, turn on flashlight, tell a joke, remember my keys, or say describe to look ahead."
             }
             return LocalCommandResult(help)
         }
@@ -425,11 +469,21 @@ class CompanionRepository(private val context: Context) {
         val apiKey = getGroqApiKey()
         if (apiKey.isBlank()) return@withContext null
 
-        val sysInstruction = if (lang == SupportedLanguage.HINDI) {
+        val baseSys = if (lang == SupportedLanguage.HINDI) {
             "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक बुद्धिमान, चौकस और अत्यंत आत्मीय वॉयस साथी। हर उत्तर स्वाभाविक, सम्मानजनक और आत्मीय हिंदी में 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है।"
         } else {
             "You are BlindSight — the dedicated AI visual guide and caring voice companion walking beside a blind user. Speak with warmth, alert intelligence, empathy, and clarity in 1 to 2 crisp, spoken sentences. Chat naturally, answer questions, solve tasks, or tell jokes. Your name is BlindSight."
         }
+
+        val envContext = locationWeatherHelper.getEnvironmentalContext()
+        val factsList = _facts.value
+        val factsBlock = if (factsList.isNotEmpty()) {
+            "\n[USER PERSONAL SAVED FACTS / MEMORY BANK]\n" +
+            factsList.joinToString("\n") { "- ${it.text}" } +
+            "\n[INSTRUCTION: Refer to these facts whenever the user asks about their personal belongings, rooms, keys, or preferences.]\n"
+        } else ""
+
+        val sysInstruction = "$baseSys\n\n$envContext\n$factsBlock"
 
         val models = listOf("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b")
         for (m in models) {
@@ -448,6 +502,15 @@ class CompanionRepository(private val context: Context) {
                         put("role", "system")
                         put("content", sysInstruction)
                     })
+                    // Multi-turn context: inject recent conversation history so context is never lost!
+                    val recent = _history.value.takeLast(8)
+                    for (chat in recent) {
+                        if (chat.text.equals(prompt, ignoreCase = true) && chat.isUser) continue
+                        put(JSONObject().apply {
+                            put("role", if (chat.isUser) "user" else "assistant")
+                            put("content", chat.text)
+                        })
+                    }
                     put(JSONObject().apply {
                         put("role", "user")
                         put("content", prompt)
@@ -572,23 +635,37 @@ class CompanionRepository(private val context: Context) {
             "gemini-1.5-pro"
         )
 
+        val envContext = locationWeatherHelper.getEnvironmentalContext()
+        val factsList = _facts.value
+        val factsBlock = if (factsList.isNotEmpty()) {
+            "\n[USER PERSONAL SAVED FACTS / MEMORY BANK]\n" +
+            factsList.joinToString("\n") { "- ${it.text}" } +
+            "\n[INSTRUCTION: Refer to these facts whenever the user asks about their personal belongings or preferences.]\n"
+        } else ""
+
         val sysInstruction = if (!imageBase64.isNullOrBlank()) {
             if (lang == SupportedLanguage.HINDI) {
-                "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए समर्पित पर्सनल विज़न गाइड और आँखें। दृश्य को भौतिक और स्थानिक स्पष्टता के साथ 1-2 सीधे, सरल वाक्यों में समझाएं। बाधाएं, रास्ता खुला है या बंद, और मुख्य वस्तुएं स्पष्ट बताएं। कभी भी '10 बजे की दिशा' जैसे काल्पनिक घड़ी के कोड न बोलें।"
+                "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए समर्पित पर्सनल विज़न गाइड और आँखें। दृश्य को भौतिक और स्थानिक स्पष्टता के साथ 1-2 सीधे, सरल वाक्यों में समझाएं। बाधाएं, रास्ता खुला है या बंद, और मुख्य वस्तुएं स्पष्ट बताएं। कभी भी '10 बजे की दिशा' जैसे काल्पनिक घड़ी के कोड न बोलें।\n\n$envContext\n$factsBlock"
             } else {
-                "You are BlindSight — the dedicated AI visual guide and eyes for a blind user. Describe what is genuinely in front of the user with immediate physical and spatial clarity in 1 to 2 concise sentences. Mention whether the path is open or blocked, key objects, distances, and hazards. Never hallucinate or use clock-face coordinates."
+                "You are BlindSight — the dedicated AI visual guide and eyes for a blind user. Describe what is genuinely in front of the user with immediate physical and spatial clarity in 1 to 2 concise sentences. Mention whether the path is open or blocked, key objects, distances, and hazards. Never hallucinate or use clock-face coordinates.\n\n$envContext\n$factsBlock"
             }
         } else {
             if (lang == SupportedLanguage.HINDI) {
-                "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक गर्मजोशी भरा, संवेदनशील, चौकस और मददगार पर्सनल वॉयस साथी। आप हमेशा उनके साथ रहने वाले एक सच्चे दोस्त की तरह बात करते हैं जो उनकी सुरक्षा और दुनिया को समझने में मदद करता है। किसी भी सवाल का स्वाभाविक, गर्मजोशी भरा और सटीक उत्तर 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है।"
+                "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक गर्मजोशी भरा, संवेदनशील, चौकस और मददगार पर्सनल वॉयस साथी। आप हमेशा उनके साथ रहने वाले एक सच्चे दोस्त की तरह बात करते हैं जो उनकी सुरक्षा और दुनिया को समझने में मदद करता है। किसी भी सवाल का स्वाभाविक, गर्मजोशी भरा और सटीक उत्तर 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है।\n\n$envContext\n$factsBlock"
             } else {
-                "You are BlindSight — a warm, empathetic, alert, and protective AI voice companion and visual guide walking beside a blind user. You act as their trusted personal companion, keeping their safety and daily ease in mind. Chat naturally, answer questions, solve tasks, or tell jokes with warmth and clarity in 1 to 2 crisp, spoken sentences. Your name is BlindSight."
+                "You are BlindSight — a warm, empathetic, alert, and protective AI voice companion and visual guide walking beside a blind user. You act as their trusted personal companion, keeping their safety and daily ease in mind. Chat naturally, answer questions, solve tasks, or tell jokes with warmth and clarity in 1 to 2 crisp, spoken sentences. Your name is BlindSight.\n\n$envContext\n$factsBlock"
             }
         }
 
+        // Include recent conversation turns for context
+        val historyTurns = _history.value.takeLast(4)
+        val historyText = if (historyTurns.isNotEmpty()) {
+            "\nRecent Conversation History:\n" + historyTurns.joinToString("\n") { (if (it.isUser) "User: " else "BlindSight: ") + it.text } + "\n"
+        } else ""
+
         val partsArr = JSONArray().apply {
             put(JSONObject().apply {
-                put("text", "$sysInstruction\n\nUser Question: $prompt")
+                put("text", "$sysInstruction$historyText\nUser Question: $prompt")
             })
             if (!imageBase64.isNullOrBlank()) {
                 put(JSONObject().apply {
