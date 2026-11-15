@@ -397,14 +397,15 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // 2. Scene description check (Robust regex so variations like "please describe the scene" work)
-        val isSceneQuery = Regex(
-            "\\b(describe|look ahead|look around|what('?s| is) in front|what do you see|what is around|सामने क्या है|आगे क्या है|दृश्य बताओ|देखो)\\b",
+        // 2. Vision / Camera query check: If user asks what they are looking at, what's in front, what they're holding,
+        // or if they are currently on the Vision / Camera tab:
+        val isVisualQuery = Regex(
+            "\\b(describe|look|see|holding|in front|ahead|around|what is this|what's this|what are these|what is that|what's that|read|sign|color|colour|door|obstacle|camera|view|सामने|आगे|देखो|दिख|पढ़ो|पहचानो|क्या है)\\b",
             RegexOption.IGNORE_CASE
-        ).containsMatchIn(low)
+        ).containsMatchIn(low) || (_uiState.value.selectedTab == AppTab.VISION)
 
-        if (isSceneQuery) {
-            describeScene()
+        if (isVisualQuery) {
+            describeScene(customPrompt = prompt)
             return
         }
 
@@ -511,16 +512,19 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun describeScene() {
+    fun describeScene(customPrompt: String? = null) {
         hapticHelper.vibrateConfirm()
         ttsHelper?.playEarcon(TtsHelper.EarconType.WAKE)
         _uiState.value = _uiState.value.copy(
             isCameraScanning = true,
-            statusText = "Capturing and analyzing live camera frame…"
+            statusText = if (customPrompt.isNullOrBlank()) "Capturing and analyzing live camera frame…" else "Analyzing camera view: \"$customPrompt\"…"
         )
 
         viewModelScope.launch {
-            val result = repository.generateSceneDescription(_uiState.value.language)
+            val result = repository.generateSceneDescription(
+                language = _uiState.value.language,
+                customPrompt = customPrompt
+            )
             _uiState.value = _uiState.value.copy(
                 isCameraScanning = false,
                 latestFrameBytes = result.frameBytes,
