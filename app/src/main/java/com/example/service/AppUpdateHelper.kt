@@ -37,7 +37,7 @@ class AppUpdateHelper(private val context: Context) {
 
     private val tag = "AppUpdateHelper"
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val versionUrl = "https://blindsightpage.vercel.app/version.json"
+    private val versionUrl = "https://blindsightai.vercel.app/version.json"
 
     val currentVersionCode: Int = BuildConfig.VERSION_CODE
     val currentVersionName: String = BuildConfig.VERSION_NAME
@@ -60,7 +60,7 @@ class AppUpdateHelper(private val context: Context) {
                     val json = JSONObject(rawJson)
                     val remoteVersionCode = json.optInt("versionCode", currentVersionCode)
                     val remoteVersionName = json.optString("versionName", currentVersionName)
-                    val apkUrl = json.optString("apkUrl", "https://blindsightpage.vercel.app/BlindSight-testing.apk")
+                    val apkUrl = json.optString("apkUrl", "https://blindsightai.vercel.app/BlindSight-testing.apk")
                     val releaseNotes = json.optString("releaseNotes", "Bug fixes and performance improvements.")
 
                     if (remoteVersionCode > currentVersionCode) {

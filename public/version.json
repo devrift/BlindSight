@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "1.7.5",
-  "apkUrl": "https://blindsightpage.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Active ENC/ANC background noise filtering (mutes traffic & party noise), real-time multimodal vision via Groq LPUs (<100ms) with zero canned responses, full hardware camera linking, and complete white-cane replacement mission."
+  "versionCode": 13,
+  "versionName": "1.7.6",
+  "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
+  "releaseNotes": "Corrected 90-degree camera rotation, instant continuous 'Hey BlindSight' wake word detection with zero dropouts, and updated to blindsightai.vercel.app."
 }

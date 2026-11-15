@@ -95,8 +95,8 @@ class CompanionRepository(private val context: Context) {
     // --- Hardware Gateway & Cloud Neural Voice URL ---
     fun getGatewayUrl(): String {
         val saved = prefs.getString("gateway_url", "") ?: ""
-        if (saved.isNotBlank() && !saved.contains("192.168.29.173")) return saved
-        return "https://blindsightpage.vercel.app"
+        if (saved.isNotBlank() && !saved.contains("192.168.29.173") && !saved.contains("blindsightpage.vercel.app")) return saved
+        return "https://blindsightai.vercel.app"
     }
 
     fun setGatewayUrl(url: String) {
@@ -107,7 +107,7 @@ class CompanionRepository(private val context: Context) {
     suspend fun fetchLatestHardwareFrame(): ByteArray? = withContext(Dispatchers.IO) {
         val candidates = mutableListOf<String>()
         val gateway = getGatewayUrl().trim().trimEnd('/')
-        if (gateway.isNotBlank() && !gateway.contains("blindsightpage.vercel.app")) {
+        if (gateway.isNotBlank() && !gateway.contains("blindsightai.vercel.app") && !gateway.contains("blindsightpage.vercel.app")) {
             candidates.add(if (gateway.startsWith("http")) "$gateway/api/latest-frame" else "http://$gateway/api/latest-frame")
         }
         candidates.add("http://192.168.4.1:5000/api/latest-frame")
@@ -867,9 +867,9 @@ class CompanionRepository(private val context: Context) {
             }
         } else {
             if (language == SupportedLanguage.HINDI) {
-                "आप दृष्टिबाधित व्यक्ति के गाइड हैं। आगे के रास्ते का संक्षिप्त और स्पष्ट विवरण 1-2 वाक्यों में दें। बाधाओं, सीढ़ियों या दरवाजों के बारे में बताएं।"
+                "आप दृष्टिबाधित व्यक्ति के गाइड हैं। आगे के रास्ते का भौतिक रूप से सटीक विवरण 1-2 संक्षिप्त वाक्यों में दें। स्पष्ट बताएं कि रास्ता खुला (CLEAR) है या बंद (BLOCKED)। यदि बाधा, सीढ़ी या दरवाजा है तो सीधे बताएं।"
             } else {
-                "You are an assistive vision guide for a blind pedestrian. In 1 to 2 concise sentences, describe the path directly ahead, noting obstacles, doors, steps, or people, and confirm whether it is clear to step forward."
+                "You are an assistive vision guide for a blind pedestrian. In 1 to 2 concise sentences, state clearly whether the forward path is BLOCKED or CLEAR. Note specific obstacles, doors, steps, or open space, and confirm if it is safe to walk forward."
             }
         }
 

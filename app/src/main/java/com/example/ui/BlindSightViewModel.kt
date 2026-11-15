@@ -44,7 +44,7 @@ data class UiState(
     val isCameraScanning: Boolean = false,
     val textSizeMultiplier: Float = 1.0f,
     val highContrastYellow: Boolean = false,
-    val gatewayUrl: String = "https://blindsightpage.vercel.app",
+    val gatewayUrl: String = "https://blindsightai.vercel.app",
     val latestFrameBytes: ByteArray? = null,
     val voicePersona: VoicePersona = VoicePersona.AUTO
 )
@@ -83,7 +83,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         ttsHelper = TtsHelper(application) { ready ->
             if (ready) {
                 ttsHelper?.setGatewayUrl(repository.getGatewayUrl())
-                speak("BlindSight assistant active. Tap the center button to speak.")
+                speak("BlindSight assistant active. Say \"Hey BlindSight\" or tap the center button.")
             }
         }
 
@@ -93,10 +93,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 onSpeechResult(text)
             },
             onError = { err ->
-                _uiState.value = _uiState.value.copy(
-                    appState = AppState.IDLE,
-                    statusText = err
-                )
+                if (_uiState.value.appState == AppState.COMMAND_LISTENING) {
+                    _uiState.value = _uiState.value.copy(
+                        appState = AppState.IDLE,
+                        statusText = err
+                    )
+                }
                 if (err.contains("permission", ignoreCase = true) || err.contains("Audio recording", ignoreCase = true)) {
                     ttsHelper?.playEarcon(TtsHelper.EarconType.ERROR)
                 }
@@ -114,7 +116,14 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
             }
-        )
+        ).apply {
+            isContinuousMode = true
+        }
+
+        // Automatically start listening for "Hey BlindSight" wake word on app launch!
+        if (hasMicrophonePermission()) {
+            speechRecognizerHelper?.startListening(_uiState.value.language.code)
+        }
     }
 
     fun hasMicrophonePermission(): Boolean {
@@ -126,6 +135,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun onMicrophonePermissionGranted() {
         speechRecognizerHelper?.onPermissionGranted(_uiState.value.language.code)
+        speechRecognizerHelper?.startListening(_uiState.value.language.code, forceRestart = true)
     }
 
     fun getGeminiApiKey(): String = repository.getGeminiApiKey()

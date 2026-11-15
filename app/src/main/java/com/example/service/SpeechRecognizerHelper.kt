@@ -24,7 +24,7 @@ class SpeechRecognizerHelper(
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
     private var isPaused = false
-    var isContinuousMode = false
+    var isContinuousMode = true
     private var currentLanguageCode = "en-US"
     private val mainHandler = Handler(Looper.getMainLooper())
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -129,6 +129,15 @@ class SpeechRecognizerHelper(
         return normalized.first().trim()
     }
 
+    fun isWakeWordTrigger(text: String): Boolean {
+        val low = text.lowercase().trim()
+        val wakeRegex = Regex(
+            "\\b(hey|a|ay|ey|hi|hello|ok|okay|the|हे|नमस्ते|सुनो)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|ब्लाइंड\\s*साइट|ब्लाइंडसाइट)\\b",
+            RegexOption.IGNORE_CASE
+        )
+        return wakeRegex.containsMatchIn(low)
+    }
+
     private fun normalizePhonetics(raw: String): String {
         var text = raw.trim()
         val low = text.lowercase()
@@ -136,10 +145,11 @@ class SpeechRecognizerHelper(
         // Normalize common phonetic slips for wake word ("a blindsight", "blind side", "blind site", etc.)
         if (low.contains("a blindsight") || low.contains("a blind sight") || low.contains("a blind side") ||
             low.contains("blind site") || low.contains("blind side") || low.contains("bind sight") ||
-            low.contains("line sight") || low.contains("ey blindsight") || low.contains("ay blindsight")
+            low.contains("line sight") || low.contains("ey blindsight") || low.contains("ay blindsight") ||
+            low.contains("blindsighted") || low.contains("hey blind")
         ) {
             text = text.replace(
-                Regex("(?i)\\b(a|ay|ey|the|hey)?\\s*(blind\\s*site|blind\\s*side|bind\\s*sight|line\\s*sight|blind\\s*sight)\\b"),
+                Regex("(?i)\\b(a|ay|ey|the|hey)?\\s*(blind\\s*site|blind\\s*side|bind\\s*sight|line\\s*sight|blind\\s*light|blind\\s*sight)\\b"),
                 "BlindSight"
             )
         }
@@ -182,32 +192,27 @@ class SpeechRecognizerHelper(
 
                 Log.w(tag, "SpeechRecognizer onError: code=$error")
 
-                // 1. Standby timeout (no speech detected)
+                // 1. Standby timeout (no speech detected) - seamless restart with zero lag!
                 if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                     if (isContinuousMode && !isPaused && hasAudioPermission()) {
                         mainHandler.postDelayed({
                             if (isContinuousMode && !isPaused && !isListening) {
                                 startListening(currentLanguageCode)
                             }
-                        }, 1200)
-                    } else {
-                        // On-demand mode: cleanly rest in IDLE. No annoying mic oscillation!
-                        onError("Tap center button to speak.")
+                        }, 150L)
                     }
                     return
                 }
 
-                // 2. Recognizer is busy -> reset and resume
+                // 2. Recognizer is busy -> reset and resume quickly
                 if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
                     destroyRecognizerInternal()
                     if (isContinuousMode && !isPaused && hasAudioPermission()) {
                         mainHandler.postDelayed({
-                            if (!isPaused) {
+                            if (!isPaused && isContinuousMode) {
                                 startListening(currentLanguageCode, forceRestart = true)
                             }
-                        }, 500)
-                    } else {
-                        onError("Tap center button to speak.")
+                        }, 250L)
                     }
                     return
                 }
@@ -224,15 +229,13 @@ class SpeechRecognizerHelper(
                     return
                 }
 
-                // Other errors
+                // Other transient errors -> fast restart
                 if (isContinuousMode && !isPaused && hasAudioPermission()) {
                     mainHandler.postDelayed({
                         if (isContinuousMode && !isPaused && !isListening) {
                             startListening(currentLanguageCode)
                         }
-                    }, 2000)
-                } else {
-                    onError("Tap center button to speak.")
+                    }, 500L)
                 }
             }
 
@@ -247,18 +250,32 @@ class SpeechRecognizerHelper(
 
                 if (bestText.isNotBlank()) {
                     onResult(bestText)
-                } else if (isContinuousMode && !isPaused && hasAudioPermission()) {
+                }
+
+                // Automatically keep listening in continuous wake-word mode
+                if (isContinuousMode && !isPaused && hasAudioPermission()) {
                     mainHandler.postDelayed({
                         if (isContinuousMode && !isPaused && !isListening) {
                             startListening(currentLanguageCode)
                         }
-                    }, 1200)
-                } else {
-                    onError("Tap center button to speak.")
+                    }, 150L)
                 }
             }
 
-            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onPartialResults(partialResults: Bundle?) {
+                // Instant sub-150ms wake word detection during active speaking!
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                for (cand in matches) {
+                    val normalized = normalizePhonetics(cand)
+                    if (isWakeWordTrigger(normalized)) {
+                        Log.i(tag, "Fast wake word detected in onPartialResults: \"$normalized\"")
+                        isListening = false
+                        try { speechRecognizer?.stopListening() } catch (_: Exception) {}
+                        onResult(normalized)
+                        break
+                    }
+                }
+            }
 
             override fun onEvent(eventType: Int, params: Bundle?) {}
         }

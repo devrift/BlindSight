@@ -205,7 +205,7 @@ class TtsHelper(
         val langParam = currentLanguage.code.split("-").first().lowercase()
 
         val textToStream = cleanText.take(400)
-        val streamUrl = "https://blindsightpage.vercel.app/api/tts?text=${URLEncoder.encode(textToStream, "UTF-8")}&voice=$voiceParam&lang=$langParam"
+        val streamUrl = "https://blindsightai.vercel.app/api/tts?text=${URLEncoder.encode(textToStream, "UTF-8")}&voice=$voiceParam&lang=$langParam"
 
         val mainHandler = Handler(Looper.getMainLooper())
         var watchdogTriggered = false
