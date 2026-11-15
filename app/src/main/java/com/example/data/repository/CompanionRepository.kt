@@ -86,9 +86,11 @@ class CompanionRepository(private val context: Context) {
         prefs.edit().putString("groq_api_key", key.trim()).apply()
     }
 
-    // --- Hardware Gateway URL for ESP32 Glasses Camera Frame Stream ---
+    // --- Hardware Gateway & Cloud Neural Voice URL ---
     fun getGatewayUrl(): String {
-        return prefs.getString("gateway_url", "http://192.168.29.173:5000") ?: "http://192.168.29.173:5000"
+        val saved = prefs.getString("gateway_url", "") ?: ""
+        if (saved.isNotBlank() && !saved.contains("192.168.29.173")) return saved
+        return "https://blindsightpage.vercel.app"
     }
 
     fun setGatewayUrl(url: String) {
@@ -337,24 +339,35 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(weatherReply)
         }
 
-        // 3. Location / Where am I
+        // 3. Location / Where am I (Full Street-Level Google Maps Location)
         val isLocationQuery = clean in listOf(
             "where am i", "what is my location", "what city am i in", "current location",
-            "my location", "kahan hoon", "meri location kya hai", "main kahan hoon"
-        ) || Regex("\\b(?:where am i|my location|what city)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+            "my location", "kahan hoon", "meri location kya hai", "main kahan hoon",
+            "what is my address", "my address", "what street is this", "what road is this",
+            "where are we", "address"
+        ) || Regex("\\b(?:where am i|my location|my address|what street)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
 
         if (isLocationQuery) {
-            val (lat, lon) = locationWeatherHelper.getCoordinates()
-            val (city, country) = locationWeatherHelper.resolveCityAndCountry(lat, lon)
-            val reply = if (currentLang == SupportedLanguage.HINDI) {
-                "आप वर्तमान में $city, $country में हैं।"
-            } else {
-                "You are currently in $city, $country."
-            }
+            val reply = locationWeatherHelper.getFormattedLocationSummary(currentLang)
             return LocalCommandResult(reply)
         }
 
-        // 4. Battery
+        // 4. Google Maps Launch & Walking Navigation
+        if (clean in listOf("open google maps", "open maps", "google maps", "show on map", "show map", "map", "maps", "map kholo")) {
+            locationWeatherHelper.openGoogleMaps()
+            val reply = if (currentLang == SupportedLanguage.HINDI) "आपकी लाइव लोकेशन के साथ गूगल मैप्स खोला जा रहा है।" else "Opening Google Maps with your current live coordinates."
+            return LocalCommandResult(reply)
+        }
+
+        val navMatch = Regex("^(?:navigate to|directions to|take me to|walk to|route to|chalo|rasta dikhao)\\s+(.+)", RegexOption.IGNORE_CASE).find(clean)
+        if (navMatch != null) {
+            val destination = navMatch.groupValues[1].trim()
+            locationWeatherHelper.openGoogleMaps(destination)
+            val reply = if (currentLang == SupportedLanguage.HINDI) "$destination के लिए गूगल मैप्स पर पैदल नेविगेशन शुरू हो रहा है।" else "Starting Google Maps walking navigation to $destination."
+            return LocalCommandResult(reply)
+        }
+
+        // 5. Battery
         if (clean in listOf("battery", "battery status", "battery level", "how much battery", "check battery", "what is my battery")) {
             return LocalCommandResult(getBatteryStatus())
         }

@@ -116,7 +116,7 @@ fun BlindSightTopBar(
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        text = if (hasUpdateAvailable) "Update!" else "v1.6",
+                        text = if (hasUpdateAvailable) "Update!" else "v${com.example.BuildConfig.VERSION_NAME}",
                         color = if (hasUpdateAvailable) BlindSightOk else BlindSightTextMuted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold

@@ -2,10 +2,14 @@ package com.example.service
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
+import android.os.Bundle
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.data.model.SupportedLanguage
@@ -18,6 +22,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class DetailedAddress(
+    val fullAddress: String,
+    val street: String,
+    val neighborhood: String,
+    val city: String,
+    val state: String,
+    val postalCode: String,
+    val country: String,
+    val googleMapsUrl: String
+)
+
 data class WeatherData(
     val temperatureC: Double,
     val weatherCode: Int,
@@ -27,95 +42,258 @@ data class WeatherData(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-class LocationWeatherHelper(private val context: Context) {
+class LocationWeatherHelper(private val context: Context) : LocationListener {
 
     private val tag = "LocationWeatherHelper"
     private var cachedWeather: WeatherData? = null
     private val cacheTtlMs = 10 * 60 * 1000L // 10 minutes
 
+    companion object {
+        @Volatile
+        var latestLiveLocation: Location? = null
+    }
+
+    init {
+        startActiveLocationTracking()
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        val hasFine = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        return hasFine || hasCoarse
+    }
+
     /**
-     * Retrieves current coordinates using Android LocationManager,
-     * or IP-based geolocation fallback if GPS is not yet acquired.
+     * Actively subscribes to real GPS / Network updates so the device
+     * has real, fresh coordinates rather than null or stale ones.
+     */
+    @SuppressLint("MissingPermission")
+    fun startActiveLocationTracking() {
+        if (!hasLocationPermission()) return
+        try {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+
+            // Seed with last known if available
+            val lastGps = try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: Exception) { null }
+            val lastNet = try { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: Exception) { null }
+            val lastPass = try { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (_: Exception) { null }
+
+            val best = listOfNotNull(lastGps, lastNet, lastPass).maxByOrNull { it.time }
+            if (best != null) {
+                latestLiveLocation = best
+            }
+
+            // Register continuous live updates
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000L, 5f, this)
+            }
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10000L, 5f, this)
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to start active GPS location tracking: ${e.message}")
+        }
+    }
+
+    override fun onLocationChanged(location: Location) {
+        if (location.latitude != 0.0 && location.longitude != 0.0) {
+            latestLiveLocation = location
+            Log.d(tag, "Live GPS updated: lat=${location.latitude}, lon=${location.longitude}, acc=${location.accuracy}m")
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    override fun onProviderEnabled(provider: String) {}
+    override fun onProviderDisabled(provider: String) {}
+
+    /**
+     * Retrieves current coordinates using active GPS, cached GPS, or high-accuracy IP fallback.
      */
     suspend fun getCoordinates(): Pair<Double, Double> = withContext(Dispatchers.IO) {
-        // 1. Try Android LocationManager
-        try {
-            val hasFine = ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-            val hasCoarse = ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
+        // 1. Check live GPS location
+        val live = latestLiveLocation
+        if (live != null && live.latitude != 0.0 && live.longitude != 0.0) {
+            return@withContext Pair(live.latitude, live.longitude)
+        }
 
-            if (hasFine || hasCoarse) {
+        // 2. Poll LocationManager for immediate last known
+        if (hasLocationPermission()) {
+            try {
                 val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
                 if (lm != null) {
                     @SuppressLint("MissingPermission")
                     val locGps = try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: Exception) { null }
                     @SuppressLint("MissingPermission")
                     val locNet = try { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: Exception) { null }
-                    @SuppressLint("MissingPermission")
-                    val locPassive = try { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (_: Exception) { null }
 
-                    val bestLoc = listOfNotNull(locGps, locNet, locPassive)
-                        .maxByOrNull { it.time }
-
-                    if (bestLoc != null && bestLoc.latitude != 0.0 && bestLoc.longitude != 0.0) {
-                        return@withContext Pair(bestLoc.latitude, bestLoc.longitude)
+                    val best = listOfNotNull(locGps, locNet).maxByOrNull { it.time }
+                    if (best != null && best.latitude != 0.0 && best.longitude != 0.0) {
+                        latestLiveLocation = best
+                        return@withContext Pair(best.latitude, best.longitude)
                     }
                 }
+            } catch (e: Exception) {
+                Log.w(tag, "Device location check error: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.w(tag, "Device location check error: ${e.message}")
         }
 
-        // 2. IP-based location fallback (Zero permission, always works!)
+        // 3. High-Accuracy Primary IP Fallback (ipwho.is - extremely reliable, no strict rate limit)
         try {
-            val url = URL("https://ipapi.co/json/")
+            val url = URL("https://ipwho.is/")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 3000
             conn.readTimeout = 3000
-            conn.setRequestProperty("User-Agent", "BlindSight-App/1.7")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 BlindSight-Android")
             if (conn.responseCode == 200) {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(body)
-                val lat = json.optDouble("latitude", Double.NaN)
-                val lon = json.optDouble("longitude", Double.NaN)
+                if (json.optBoolean("success", true)) {
+                    val lat = json.optDouble("latitude", Double.NaN)
+                    val lon = json.optDouble("longitude", Double.NaN)
+                    if (!lat.isNaN() && !lon.isNaN() && lat != 0.0) {
+                        return@withContext Pair(lat, lon)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "ipwho.is fallback unavailable: ${e.message}")
+        }
+
+        // 4. Secondary IP Fallback (ip-api.com)
+        try {
+            val url = URL("http://ip-api.com/json")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(body)
+                val lat = json.optDouble("lat", Double.NaN)
+                val lon = json.optDouble("lon", Double.NaN)
                 if (!lat.isNaN() && !lon.isNaN()) {
                     return@withContext Pair(lat, lon)
                 }
             }
-        } catch (e: Exception) {
-            Log.w(tag, "IP location fallback unavailable: ${e.message}")
-        }
+        } catch (_: Exception) {}
 
-        // Default fallback: New Delhi (Standard default)
+        // 5. Default fallback: New Delhi
         return@withContext Pair(28.6139, 77.2090)
     }
 
     /**
-     * Resolves human city and country name for coordinates.
+     * Resolves complete street-level address using Android/Google Geocoder.
      */
-    suspend fun resolveCityAndCountry(lat: Double, lon: Double): Pair<String, String> = withContext(Dispatchers.IO) {
+    suspend fun resolveDetailedAddress(lat: Double, lon: Double): DetailedAddress = withContext(Dispatchers.IO) {
+        val gmapsUrl = "https://www.google.com/maps/search/?api=1&query=$lat,$lon"
         try {
             if (Geocoder.isPresent()) {
                 val geocoder = Geocoder(context, Locale.getDefault())
                 @Suppress("DEPRECATION")
                 val addresses = geocoder.getFromLocation(lat, lon, 1)
                 if (!addresses.isNullOrEmpty()) {
-                    val addr = addresses[0]
-                    val city = addr.locality ?: addr.subAdminArea ?: addr.adminArea ?: "Local Area"
-                    val country = addr.countryName ?: "India"
-                    return@withContext Pair(city, country)
+                    val a = addresses[0]
+                    val fullLine = a.getAddressLine(0) ?: ""
+                    val street = a.thoroughfare ?: a.featureName ?: ""
+                    val neighborhood = a.subLocality ?: ""
+                    val city = a.locality ?: a.subAdminArea ?: a.adminArea ?: "Local Area"
+                    val state = a.adminArea ?: ""
+                    val postal = a.postalCode ?: ""
+                    val country = a.countryName ?: "India"
+
+                    val full = if (fullLine.isNotBlank()) fullLine else listOfNotNull(street.takeIf { it.isNotBlank() }, neighborhood.takeIf { it.isNotBlank() }, city, state, country).joinToString(", ")
+
+                    return@withContext DetailedAddress(
+                        fullAddress = full,
+                        street = street,
+                        neighborhood = neighborhood,
+                        city = city,
+                        state = state,
+                        postalCode = postal,
+                        country = country,
+                        googleMapsUrl = gmapsUrl
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.w(tag, "Geocoder failed: ${e.message}")
         }
-        return@withContext Pair("Current Location", "Local Region")
+
+        return@withContext DetailedAddress(
+            fullAddress = "Coordinates: $lat, $lon",
+            street = "",
+            neighborhood = "",
+            city = "Current Location",
+            state = "",
+            postalCode = "",
+            country = "",
+            googleMapsUrl = gmapsUrl
+        )
+    }
+
+    /**
+     * Opens Google Maps walking navigation or pin view on the device.
+     */
+    fun openGoogleMaps(query: String? = null): Boolean {
+        return try {
+            val live = latestLiveLocation
+            val lat = live?.latitude ?: 28.6139
+            val lon = live?.longitude ?: 77.2090
+
+            val uri = if (!query.isNullOrBlank()) {
+                // Walking mode navigation for blind pedestrians
+                Uri.parse("google.navigation:q=" + Uri.encode(query) + "&mode=w")
+            } else {
+                Uri.parse("geo:$lat,$lon?q=$lat,$lon(Current+Location)")
+            }
+
+            val mapIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage("com.google.android.apps.maps")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            try {
+                context.startActivity(mapIntent)
+                true
+            } catch (e: Exception) {
+                // Fallback to browser Google Maps
+                val webUri = if (!query.isNullOrBlank()) {
+                    Uri.parse("https://www.google.com/maps/dir/?api=1&destination=" + Uri.encode(query) + "&travelmode=walking")
+                } else {
+                    Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon")
+                }
+                val webIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(webIntent)
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to launch Google Maps: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Formats location query response with full street and Google Maps link.
+     */
+    suspend fun getFormattedLocationSummary(lang: SupportedLanguage): String {
+        val (lat, lon) = getCoordinates()
+        val addr = resolveDetailedAddress(lat, lon)
+
+        return if (lang == SupportedLanguage.HINDI) {
+            "आप वर्तमान में ${addr.fullAddress} पर हैं। आपकी लोकेशन गूगल मैप्स से जुड़ी हुई है।"
+        } else {
+            "You are at ${addr.fullAddress}. Your exact location is linked with Google Maps."
+        }
     }
 
     /**
@@ -128,7 +306,7 @@ class LocationWeatherHelper(private val context: Context) {
         }
 
         val (lat, lon) = getCoordinates()
-        val (city, country) = resolveCityAndCountry(lat, lon)
+        val addr = resolveDetailedAddress(lat, lon)
 
         try {
             val endpoint = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true"
@@ -152,8 +330,8 @@ class LocationWeatherHelper(private val context: Context) {
                         temperatureC = temp,
                         weatherCode = code,
                         windSpeed = wind,
-                        cityName = city,
-                        countryName = country,
+                        cityName = addr.city,
+                        countryName = addr.country,
                         timestamp = now
                     )
                     cachedWeather = data
@@ -213,20 +391,24 @@ class LocationWeatherHelper(private val context: Context) {
      */
     suspend fun getEnvironmentalContext(): String {
         val (lat, lon) = getCoordinates()
+        val addr = resolveDetailedAddress(lat, lon)
         val weather = fetchCurrentWeather()
         val timeStr = SimpleDateFormat("h:mm a, EEEE, MMMM d, yyyy", Locale.ENGLISH).format(Date())
 
-        val cityStr = weather?.cityName ?: "Local Area"
-        val countryStr = weather?.countryName ?: "India"
         val tempStr = if (weather != null) "${Math.round(weather.temperatureC)}°C (${decodeWeatherCode(weather.weatherCode, SupportedLanguage.ENGLISH)})" else "22°C (Fair)"
         val windStr = if (weather != null) "${Math.round(weather.windSpeed)} km/h" else "5 km/h"
 
         return """
-[REAL-TIME ENVIRONMENTAL CONTEXT (DO NOT ASK USER FOR ZIP CODE OR CITY)]
-- Current Location: $cityStr, $countryStr (Approx coordinates: $lat, $lon)
-- Current Real-Time Weather: $tempStr, Wind: $windStr
-- Current Local Date & Time: $timeStr
-[CRITICAL INSTRUCTION: If user asks about the weather, temperature, location, or time, IMMEDIATELY provide this exact real-time information. NEVER ask the user for their zip code or city.]
+[REAL-TIME USER LOCATION & GOOGLE MAPS CONTEXT (DO NOT ASK USER FOR ZIP CODE OR CITY)]
+- Full Street Address: ${addr.fullAddress}
+- Street / Road: ${addr.street}
+- Neighborhood / Sector: ${addr.neighborhood}
+- City: ${addr.city}, State: ${addr.state}, Postal Code: ${addr.postalCode}, Country: ${addr.country}
+- Google Maps Coordinates: $lat, $lon
+- Google Maps Pin Link: ${addr.googleMapsUrl}
+- Real-Time Weather: $tempStr, Wind: $windStr
+- Current Local Time: $timeStr
+[CRITICAL INSTRUCTION: You are already connected to Google Maps and know the user's exact street, area, city, and real-time weather given above! NEVER ask the user for their zip code, postal code, or city. Always provide immediate, exact, accurate answers warmly and concisely.]
 """.trimIndent()
     }
 }

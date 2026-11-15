@@ -44,7 +44,7 @@ data class UiState(
     val isCameraScanning: Boolean = false,
     val textSizeMultiplier: Float = 1.0f,
     val highContrastYellow: Boolean = false,
-    val gatewayUrl: String = "http://192.168.29.173:5000",
+    val gatewayUrl: String = "https://blindsightpage.vercel.app",
     val latestFrameBytes: ByteArray? = null,
     val voicePersona: VoicePersona = VoicePersona.AUTO
 )

@@ -343,10 +343,10 @@ private fun QuickCommandRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val commands = listOf(
+                "where am i" to "Where Am I",
+                "open google maps" to "Google Maps",
                 "what is the weather" to "Weather",
-                "where am i" to "Location",
-                "describe" to "Look Ahead",
-                "help" to "Help"
+                "describe" to "Look Ahead"
             )
             commands.forEach { (cmd, label) ->
                 Box(

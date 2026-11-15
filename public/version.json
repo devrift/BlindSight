@@ -1,6 +1,6 @@
 {
-  "versionCode": 7,
-  "versionName": "1.7.0",
+  "versionCode": 8,
+  "versionName": "1.7.1",
   "apkUrl": "https://blindsightpage.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Human neural voice streaming, real GPS location & weather without asking for zip codes, continuous conversation context & personal memory recall, hardware disconnect detection on ultrasonic radar, large ChatGPT-style reactive voice orb, and screen triple-tap activation."
+  "releaseNotes": "Studio human neural voices via Edge Neural speech, direct Google Maps live connection with street-level address and walking navigation, top bar dynamic version badge, and real-time GPS tracking."
 }

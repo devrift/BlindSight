@@ -191,13 +191,12 @@ class TtsHelper(
             .trim()
 
         playbackThread = thread(name = "BlindSightVoicePlayback") {
-            // 1. Try local Edge Gateway if configured
-            if (gatewayUrl.isNotBlank() && (gatewayUrl.startsWith("http://") || gatewayUrl.startsWith("https://"))) {
-                val gatewayOk = tryStreamGatewayTts(cleanText)
-                if (gatewayOk) return@thread
-            }
+            // 1. Primary: Cloud Neural Human Voice (Edge Neural - Crystal clear human actors)
+            val gatewayToUse = if (gatewayUrl.isNotBlank() && !gatewayUrl.contains("192.168.29.173")) gatewayUrl else "https://blindsightpage.vercel.app"
+            val cloudOk = tryStreamGatewayTts(cleanText, gatewayToUse)
+            if (cloudOk) return@thread
 
-            // 2. High-Fidelity Online Natural Human Voice (Google Neural Audio)
+            // 2. High-Fidelity Online Neural Voice fallback
             val onlineOk = tryPlayNaturalOnlineTts(cleanText)
             if (onlineOk) return@thread
 
@@ -369,24 +368,35 @@ class TtsHelper(
         }
     }
 
-    private fun tryStreamGatewayTts(text: String): Boolean {
+    private fun tryStreamGatewayTts(text: String, serverUrl: String): Boolean {
         try {
             val voiceParam = when (currentPersona) {
                 VoicePersona.JARVIS -> "en-GB-RyanNeural"
                 VoicePersona.ARIA -> "en-US-AriaNeural"
                 VoicePersona.GUY -> "en-US-GuyNeural"
                 VoicePersona.SWARA -> "hi-IN-SwaraNeural"
-                VoicePersona.AUTO -> if (currentLanguage == SupportedLanguage.HINDI) "hi-IN-SwaraNeural" else "en-GB-RyanNeural"
+                VoicePersona.AUTO -> when (currentLanguage) {
+                    SupportedLanguage.HINDI -> "hi-IN-SwaraNeural"
+                    SupportedLanguage.BENGALI -> "bn-IN-TanishaaNeural"
+                    SupportedLanguage.TAMIL -> "ta-IN-PallaviNeural"
+                    SupportedLanguage.TELUGU -> "te-IN-ShrutiNeural"
+                    SupportedLanguage.SPANISH -> "es-ES-AlvaroNeural"
+                    SupportedLanguage.FRENCH -> "fr-FR-HenriNeural"
+                    else -> "en-GB-RyanNeural"
+                }
             }
             val langParam = currentLanguage.code.split("-").first().lowercase()
 
-            val url = URL("$gatewayUrl/api/tts")
+            val cleanBase = serverUrl.trimEnd('/')
+            val endpoint = if (cleanBase.endsWith("/api/tts")) cleanBase else "$cleanBase/api/tts"
+            val url = URL(endpoint)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
-            conn.connectTimeout = 1800
-            conn.readTimeout = 4000
+            conn.connectTimeout = 3000
+            conn.readTimeout = 8000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            conn.setRequestProperty("User-Agent", "BlindSight-Android/1.7")
 
             val jsonBody = """{"text":${org.json.JSONObject.quote(text)},"lang":"$langParam","voice":"$voiceParam"}"""
             conn.outputStream.use { os ->
@@ -408,7 +418,7 @@ class TtsHelper(
                 }
             }
         } catch (e: Exception) {
-            Log.d(tag, "Gateway TTS stream unavailable (${e.message}).")
+            Log.d(tag, "Cloud neural TTS stream unavailable (${e.message}).")
         }
         return false
     }
