@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -118,77 +119,40 @@ fun SettingsDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Language Selection
-            Text(
-                text = "Spoken Language",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            SupportedLanguage.entries.forEach { lang ->
-                val isSelected = currentLanguage == lang
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color.Transparent)
-                        .clickable { onLanguageChange(lang) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = lang.label,
-                        fontSize = 14.sp,
-                        color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
-                    if (isSelected) {
-                        Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
+            // Automatic Language & Voice Card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF0F172A))
+                    .border(1.dp, BlindSightCardEdge, RoundedCornerShape(12.dp))
+                    .padding(14.dp)
+            ) {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF10B981))
+                        )
+                        Text(
+                            text = "Auto Language & Voice Active",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BlindSightTextPrimary
+                        )
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // AI Voice Persona Selection
-            Text(
-                text = "Human AI Voice Model",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Select neural human voice (replaces robotic Google Assistant)",
-                fontSize = 12.sp,
-                color = BlindSightTextMuted
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            VoicePersona.entries.forEach { persona ->
-                val isSelected = currentVoicePersona == persona
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color.Transparent)
-                        .clickable { onVoicePersonaChange(persona) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = persona.label,
-                        fontSize = 13.sp,
-                        color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        text = "BlindSight automatically detects whether you speak in English or Hindi, and responds using clear, professional human speech.",
+                        fontSize = 12.sp,
+                        color = BlindSightTextMuted,
+                        lineHeight = 16.sp
                     )
-                    if (isSelected) {
-                        Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
-                    }
                 }
             }
 

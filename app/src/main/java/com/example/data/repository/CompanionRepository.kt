@@ -368,16 +368,21 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(weatherReply)
         }
 
-        // 3. Location / Where am I (Full Street-Level Google Maps Location)
+        // 3. Location / Where am I (Spoken Natural Area & City)
+        val isFullAddressQuery = clean in listOf("what is my full address", "exact address", "full address", "what is my address", "my address", "pura address")
+        if (isFullAddressQuery) {
+            val reply = locationWeatherHelper.getFullAddressSummary(currentLang)
+            return LocalCommandResult(reply)
+        }
+
         val isLocationQuery = clean in listOf(
             "where am i", "what is my location", "what city am i in", "current location",
             "my location", "kahan hoon", "meri location kya hai", "main kahan hoon",
-            "what is my address", "my address", "what street is this", "what road is this",
-            "where are we", "address"
-        ) || Regex("\\b(?:where am i|my location|my address|what street)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+            "where are we", "what place is this", "kahan par hoon", "location"
+        ) || Regex("\\b(?:where am i|where are we|kahan hoon|my location|which city)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
 
         if (isLocationQuery) {
-            val reply = locationWeatherHelper.getFormattedLocationSummary(currentLang)
+            val reply = locationWeatherHelper.getSpokenAreaSummary(currentLang)
             return LocalCommandResult(reply)
         }
 
@@ -617,13 +622,7 @@ class CompanionRepository(private val context: Context) {
                 writer.append("Content-Disposition: form-data; name=\"model\"").append(lineEnd).append(lineEnd)
                 writer.append("whisper-large-v3-turbo").append(lineEnd)
 
-                // Part 2: language
-                val langCode = if (lang == SupportedLanguage.HINDI) "hi" else "en"
-                writer.append(twoHyphens).append(boundary).append(lineEnd)
-                writer.append("Content-Disposition: form-data; name=\"language\"").append(lineEnd).append(lineEnd)
-                writer.append(langCode).append(lineEnd)
-
-                // Part 3: response_format
+                // Part 2: response_format (Language auto-detected by Whisper)
                 writer.append(twoHyphens).append(boundary).append(lineEnd)
                 writer.append("Content-Disposition: form-data; name=\"response_format\"").append(lineEnd).append(lineEnd)
                 writer.append("json").append(lineEnd)

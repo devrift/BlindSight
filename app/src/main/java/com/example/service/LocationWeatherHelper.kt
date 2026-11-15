@@ -283,18 +283,45 @@ class LocationWeatherHelper(private val context: Context) : LocationListener {
     }
 
     /**
-     * Formats location query response with full street and Google Maps link.
+     * Formats natural, privacy-preserving spoken area summary (Area/Neighborhood + City).
+     * Never recites private house numbers or postal codes unless specifically requested.
      */
-    suspend fun getFormattedLocationSummary(lang: SupportedLanguage): String {
+    suspend fun getSpokenAreaSummary(lang: SupportedLanguage): String {
         val (lat, lon) = getCoordinates()
         val addr = resolveDetailedAddress(lat, lon)
 
+        val areaParts = mutableListOf<String>()
+        if (addr.neighborhood.isNotBlank()) areaParts.add(addr.neighborhood)
+        if (addr.street.isNotBlank() && !addr.neighborhood.contains(addr.street, ignoreCase = true)) {
+            areaParts.add(addr.street)
+        }
+        if (addr.city.isNotBlank() && !addr.neighborhood.contains(addr.city, ignoreCase = true)) {
+            areaParts.add(addr.city)
+        }
+
+        val areaName = if (areaParts.isNotEmpty()) areaParts.joinToString(", ") else addr.city
+
         return if (lang == SupportedLanguage.HINDI) {
-            "आप वर्तमान में ${addr.fullAddress} पर हैं। आपकी लोकेशन गूगल मैप्स से जुड़ी हुई है।"
+            "आप इस समय $areaName में हैं।"
         } else {
-            "You are at ${addr.fullAddress}. Your exact location is linked with Google Maps."
+            "You are currently in $areaName."
         }
     }
+
+    /**
+     * Full postal address (only if user explicitly asks for 'full address').
+     */
+    suspend fun getFullAddressSummary(lang: SupportedLanguage): String {
+        val (lat, lon) = getCoordinates()
+        val addr = resolveDetailedAddress(lat, lon)
+        return if (lang == SupportedLanguage.HINDI) {
+            "आपका पूरा पता है: ${addr.fullAddress}।"
+        } else {
+            "Your full registered address is: ${addr.fullAddress}."
+        }
+    }
+
+    suspend fun getFormattedLocationSummary(lang: SupportedLanguage): String = getSpokenAreaSummary(lang)
 
     /**
      * Fetches real-time weather from Open-Meteo REST API (free, zero API key).

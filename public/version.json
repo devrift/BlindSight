@@ -1,6 +1,6 @@
 {
-  "versionCode": 10,
-  "versionName": "1.7.3",
+  "versionCode": 11,
+  "versionName": "1.7.4",
   "apkUrl": "https://blindsightpage.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Full Multimodal AI Vision integration powered by Gemini 3 Flash Preview: AI now analyzes live camera frames for scene description, reading text, identifying held objects, and spatial obstacles with zero hallucination."
+  "releaseNotes": "Zero manual language options with seamless automatic language detection, single clear professional neural voice per language, and natural privacy-preserving location spoken summaries."
 }

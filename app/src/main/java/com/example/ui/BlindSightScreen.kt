@@ -56,7 +56,6 @@ import com.example.service.UpdateDownloadState
 import com.example.ui.components.BlindSightTopBar
 import com.example.ui.components.ConversationHistoryView
 import com.example.ui.components.GiantMicButton
-import com.example.ui.components.LanguageSelectorRow
 import com.example.ui.components.MemoryBankDialog
 import com.example.ui.components.ObstacleRadarView
 import com.example.ui.components.SettingsDialog
@@ -184,16 +183,8 @@ fun BlindSightScreen(
         ) {
             when (uiState.selectedTab) {
                 AppTab.COMPANION -> {
-                    // Direct On-Screen Language Switcher (1-Tap instant switch in the UI!)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LanguageSelectorRow(
-                        currentLanguage = uiState.language,
-                        onLanguageSelect = { viewModel.setLanguage(it) },
-                        activeColor = activePrimaryColor
-                    )
-
                     // Giant Mic Button (Firm, non-floppy, stable touch bounds)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     GiantMicButton(
                         appState = uiState.appState,
                         statusText = uiState.statusText,

@@ -29,21 +29,21 @@ class handler(BaseHTTPRequestHandler):
 
     def _resolve_voice(self, voice, lang):
         voice_map = {
-            'en': 'en-GB-RyanNeural',
+            'en': 'en-US-AriaNeural',
             'hi': 'hi-IN-SwaraNeural',
             'bn': 'bn-IN-TanishaaNeural',
             'ta': 'ta-IN-PallaviNeural',
             'te': 'te-IN-ShrutiNeural',
             'es': 'es-ES-AlvaroNeural',
             'fr': 'fr-FR-HenriNeural',
-            'jarvis': 'en-GB-RyanNeural',
+            'jarvis': 'en-US-AriaNeural',
             'aria': 'en-US-AriaNeural',
             'guy': 'en-US-GuyNeural',
             'swara': 'hi-IN-SwaraNeural'
         }
         if voice and 'Neural' in voice:
             return voice
-        return voice_map.get((lang or 'en').lower(), 'en-GB-RyanNeural')
+        return voice_map.get((lang or 'en').lower(), 'en-US-AriaNeural')
 
     async def _generate_audio(self, text, voice):
         comm = edge_tts.Communicate(text, voice)

@@ -268,6 +268,23 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun detectSpokenLanguage(text: String): SupportedLanguage {
+        // 1. Devanagari script: Unicode range \u0900 to \u097F
+        if (text.any { it in '\u0900'..'\u097F' }) {
+            return SupportedLanguage.HINDI
+        }
+        // 2. Common Hindi phonetic / Hinglish words
+        val low = text.lowercase()
+        val hindiKeywords = Regex(
+            "\\b(kya|kaise|kahan|kidhar|batao|dekho|mera|meri|mere|mujhe|aage|samne|hai|hain|ho|nahi|mat|chalo|rasta|kripya|namaste|shukriya|kaun|kab|kyun|chahiye|aur|pe|par|yeh|woh|karo|bataiye|dikhaye|ruko|bhai)\\b",
+            RegexOption.IGNORE_CASE
+        )
+        if (hindiKeywords.containsMatchIn(low)) {
+            return SupportedLanguage.HINDI
+        }
+        return SupportedLanguage.ENGLISH
+    }
+
     fun finishListeningAndProcess() {
         if (_uiState.value.appState != AppState.COMMAND_LISTENING) return
 
@@ -283,7 +300,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             var recognizedText = ""
 
-            // 1. Primary: Groq Whisper Turbo (Ultra-fast ~200ms, understands Indian accents & Hindi)
+            // 1. Primary: Groq Whisper Turbo (Language auto-detected by Whisper)
             if (wavBytes.isNotEmpty() && wavBytes.size > 800) {
                 val whisperResult = repository.transcribeGroqWhisper(wavBytes, _uiState.value.language)
                 if (!whisperResult.isNullOrBlank()) {
@@ -304,6 +321,13 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 )
                 speak(noAudioMsg)
                 return@launch
+            }
+
+            // Automatically detect spoken language (Hindi / English) and adapt immediately!
+            val detected = detectSpokenLanguage(recognizedText)
+            if (detected != _uiState.value.language) {
+                _uiState.value = _uiState.value.copy(language = detected)
+                ttsHelper?.setLanguage(detected)
             }
 
             _uiState.value = _uiState.value.copy(
@@ -356,6 +380,13 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         isUserCommandActive = false
+
+        // Automatically detect spoken language
+        val detected = detectSpokenLanguage(promptToProcess)
+        if (detected != _uiState.value.language) {
+            _uiState.value = _uiState.value.copy(language = detected)
+            ttsHelper?.setLanguage(detected)
+        }
 
         hapticHelper.vibrateConfirm()
         _uiState.value = _uiState.value.copy(
