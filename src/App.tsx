@@ -90,7 +90,7 @@ export const App: React.FC = () => {
           </svg>
           <div>
             <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text)' }}>
-              BlindSight <span style={{ fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 600, verticalAlign: 'middle', background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 12 }}>v1.7.6</span>
+              BlindSight <span style={{ fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 600, verticalAlign: 'middle', background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 12 }}>v1.7.7</span>
             </h1>
           </div>
         </div>
@@ -177,7 +177,7 @@ export const App: React.FC = () => {
             }}
           >
             <Download size={24} />
-            <span>Download BlindSight APK (v1.7.6)</span>
+            <span>Download BlindSight APK (v1.7.7)</span>
           </a>
 
           <button

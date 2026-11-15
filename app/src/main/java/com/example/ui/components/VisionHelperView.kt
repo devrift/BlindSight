@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.CameraSource
 import com.example.ui.theme.BlindSightAmber
 import com.example.ui.theme.BlindSightCard
 import com.example.ui.theme.BlindSightCardEdge
@@ -49,6 +50,7 @@ import com.example.ui.theme.BlindSightTextPrimary
 fun VisionHelperView(
     isScanning: Boolean,
     latestFrameBytes: ByteArray? = null,
+    latestFrameSource: CameraSource = CameraSource.NONE,
     onDescribeScene: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -87,16 +89,27 @@ fun VisionHelperView(
             }
 
             if (latestFrameBytes != null && latestFrameBytes.isNotEmpty()) {
+                val sourceLabel = when (latestFrameSource) {
+                    CameraSource.PHONE_BACK_CAMERA -> "● Mobile Back Cam (In Use)"
+                    CameraSource.HARDWARE_GLASSES -> "● Glasses Cam Active"
+                    CameraSource.NONE -> "● Live Camera Active"
+                }
                 Text(
-                    text = "● Live Camera Active",
+                    text = sourceLabel,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF10B981)
                 )
+            } else {
+                Text(
+                    text = "○ Glasses Disconnected",
+                    fontSize = 12.sp,
+                    color = BlindSightAmber
+                )
             }
         }
 
-        // Live Hardware Glasses Snapshot Preview (for sighted helpers)
+        // Live Snapshot Preview
         if (latestFrameBytes != null && latestFrameBytes.isNotEmpty()) {
             val bitmap = remember(latestFrameBytes) {
                 try {
@@ -109,14 +122,41 @@ fun VisionHelperView(
                 Spacer(modifier = Modifier.height(12.dp))
                 Image(
                     bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Live snapshot received from BlindSight glasses camera",
+                    contentDescription = if (latestFrameSource == CameraSource.PHONE_BACK_CAMERA) "Live snapshot captured using mobile back camera" else "Live snapshot received from BlindSight glasses camera",
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, BlindSightAmber.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
+                        .border(1.dp, if (latestFrameSource == CameraSource.PHONE_BACK_CAMERA) Color(0xFF10B981).copy(alpha = 0.5f) else BlindSightAmber.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
                     contentScale = ContentScale.Crop
                 )
+
+                if (latestFrameSource == CameraSource.PHONE_BACK_CAMERA) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF064E3B).copy(alpha = 0.3f))
+                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF10B981))
+                        )
+                        Text(
+                            text = "Privacy Notice: Captured via your mobile back camera (Smart glasses not connected).",
+                            fontSize = 11.sp,
+                            color = Color(0xFF34D399),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
 

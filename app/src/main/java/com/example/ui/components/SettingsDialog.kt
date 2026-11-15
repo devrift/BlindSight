@@ -64,6 +64,8 @@ fun SettingsDialog(
     onTextSizeChange: (Float) -> Unit,
     highContrastYellow: Boolean,
     onToggleHighContrast: () -> Unit,
+    isPhoneCameraFallbackEnabled: Boolean = true,
+    onTogglePhoneCameraFallback: () -> Unit = {},
     currentGatewayUrl: String = "",
     onGatewayUrlChange: (String) -> Unit = {},
     onCheckUpdates: () -> Unit = {},
@@ -223,6 +225,43 @@ fun SettingsDialog(
                 Switch(
                     checked = highContrastYellow,
                     onCheckedChange = { onToggleHighContrast() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = BlindSightAmber,
+                        checkedTrackColor = BlindSightAmber.copy(alpha = 0.5f)
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Mobile Back Camera Fallback & Privacy Setting
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF05070C))
+                    .border(1.dp, BlindSightCardEdge, RoundedCornerShape(10.dp))
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Mobile Camera Fallback",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BlindSightTextPrimary
+                    )
+                    Text(
+                        text = "Uses phone's back camera when glasses are disconnected, announcing 'Using your mobile back camera'.",
+                        fontSize = 12.sp,
+                        color = BlindSightTextMuted
+                    )
+                }
+
+                Switch(
+                    checked = isPhoneCameraFallbackEnabled,
+                    onCheckedChange = { onTogglePhoneCameraFallback() },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = BlindSightAmber,
                         checkedTrackColor = BlindSightAmber.copy(alpha = 0.5f)

@@ -1,6 +1,6 @@
 {
-  "versionCode": 13,
-  "versionName": "1.7.6",
+  "versionCode": 14,
+  "versionName": "1.7.7",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Corrected 90-degree camera rotation, instant continuous 'Hey BlindSight' wake word detection with zero dropouts, and updated to blindsightai.vercel.app."
+  "releaseNotes": "Hardware & Camera Privacy Indicators: Explicitly announces 'Using your mobile back camera' whenever the phone back camera is used, real-time hardware status strip showing what is in use and what is disconnected, and camera privacy fallback toggle in Settings."
 }

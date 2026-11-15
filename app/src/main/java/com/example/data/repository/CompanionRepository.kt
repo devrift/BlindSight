@@ -9,6 +9,8 @@ import android.hardware.camera2.CameraManager
 import android.os.BatteryManager
 import android.util.Log
 import com.example.data.model.ChatMessage
+import com.example.data.model.CameraFrameData
+import com.example.data.model.CameraSource
 import com.example.data.model.MemoryFact
 import com.example.data.model.ReflexAlert
 import com.example.data.model.ReflexTelemetry
@@ -133,23 +135,37 @@ class CompanionRepository(private val context: Context) {
         return@withContext null
     }
 
-    suspend fun captureFreshFrame(): ByteArray? = withContext(Dispatchers.IO) {
+    fun isPhoneCameraFallbackEnabled(): Boolean {
+        return prefs.getBoolean("phone_camera_fallback_enabled", true)
+    }
+
+    fun setPhoneCameraFallbackEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("phone_camera_fallback_enabled", enabled).apply()
+    }
+
+    suspend fun captureFreshFrameWithSource(): CameraFrameData = withContext(Dispatchers.IO) {
         // 1. Check hardware glasses first
         val hwFrame = fetchLatestHardwareFrame()
         if (hwFrame != null && hwFrame.isNotEmpty()) {
-            return@withContext hwFrame
+            return@withContext CameraFrameData(hwFrame, CameraSource.HARDWARE_GLASSES)
         }
 
-        // 2. Fall back to live capture from phone camera
-        try {
-            val phoneFrame = phoneCameraHelper.captureLiveFrame()
-            if (phoneFrame != null && phoneFrame.isNotEmpty()) {
-                return@withContext phoneFrame
+        // 2. Fall back to live capture from mobile back camera if enabled
+        if (isPhoneCameraFallbackEnabled()) {
+            try {
+                val phoneFrame = phoneCameraHelper.captureLiveFrame()
+                if (phoneFrame != null && phoneFrame.isNotEmpty()) {
+                    return@withContext CameraFrameData(phoneFrame, CameraSource.PHONE_BACK_CAMERA)
+                }
+            } catch (e: Exception) {
+                Log.w("CompanionRepository", "Live mobile back camera capture error: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.w("CompanionRepository", "Live phone camera capture error: ${e.message}")
         }
-        return@withContext null
+        return@withContext CameraFrameData(null, CameraSource.NONE)
+    }
+
+    suspend fun captureFreshFrame(): ByteArray? = withContext(Dispatchers.IO) {
+        return@withContext captureFreshFrameWithSource().bytes
     }
 
     // --- Memory Facts ---
@@ -404,6 +420,29 @@ class CompanionRepository(private val context: Context) {
         // 5. Battery
         if (clean in listOf("battery", "battery status", "battery level", "how much battery", "check battery", "what is my battery")) {
             return LocalCommandResult(getBatteryStatus())
+        }
+
+        // Hardware & Sensor Status Check / Privacy ("what is in use", "what is connected", "hardware status", "are you using my camera")
+        val isHardwareOrPrivacyQuery = clean in listOf(
+            "hardware status", "what is connected", "what's connected", "is hardware connected",
+            "what is in use", "what's in use", "what hardware is connected", "sensor status",
+            "are you using my camera", "is my camera in use", "is camera on", "why did you use my camera",
+            "camera privacy", "privacy", "kya connected hai", "camera on hai kya", "hardware check"
+        ) || Regex("\\b(?:what is in use|what's in use|hardware status|what is connected|what's connected|are you using my camera|camera privacy|kya connected hai)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+
+        if (isHardwareOrPrivacyQuery) {
+            val isGlasses = _telemetry.value.isHardwareConnected
+            val isFallback = isPhoneCameraFallbackEnabled()
+            val reply = if (currentLang == SupportedLanguage.HINDI) {
+                val glassesStr = if (isGlasses) "स्मार्ट चश्मा कनेक्टेड है।" else "स्मार्ट चश्मा कनेक्ट नहीं है।"
+                val camStr = if (isGlasses) "स्मार्ट चश्मे का कैमरा सक्रिय है।" else if (isFallback) "जब आप विज़न पूछेंगे, तो आपके मोबाइल के बैक कैमरे का उपयोग घोषणा के साथ किया जाता है।" else "मोबाइल कैमरा फॉलबैक बंद है।"
+                "हार्डवेयर स्थिति: $glassesStr $camStr अल्ट्रासोनिक रडार ${if (isGlasses) "सक्रिय है।" else "हार्डवेयर कनेक्ट नहीं है।"} माइक्रोफोन एक्टिव है। आपकी अनुमति के बिना कोई भी बैकग्राउंड कैमरा रिकॉर्डिंग नहीं होती।"
+            } else {
+                val glassesStr = if (isGlasses) "Smart glasses are connected." else "Smart glasses are disconnected."
+                val camStr = if (isGlasses) "Using smart glasses camera for vision." else if (isFallback) "When vision is requested, BlindSight uses your mobile back camera and explicitly announces 'Using your mobile back camera'." else "Mobile camera fallback is disabled."
+                "Hardware status: $glassesStr $camStr Ultrasonic hardware is ${if (isGlasses) "active." else "disconnected."} Microphone is active. BlindSight never streams or records in the background."
+            }
+            return LocalCommandResult(reply)
         }
 
         // 5. Flashlight / Torch
@@ -844,17 +883,33 @@ class CompanionRepository(private val context: Context) {
     suspend fun generateSceneDescription(
         language: SupportedLanguage,
         customPrompt: String? = null,
-        suppliedBytes: ByteArray? = null
+        suppliedBytes: ByteArray? = null,
+        suppliedSource: CameraSource? = null
     ): SceneAnalysisResult = withContext(Dispatchers.IO) {
-        val freshBytes = suppliedBytes ?: captureFreshFrame()
+        val frameData = if (suppliedBytes != null) {
+            CameraFrameData(suppliedBytes, suppliedSource ?: CameraSource.PHONE_BACK_CAMERA)
+        } else {
+            captureFreshFrameWithSource()
+        }
 
-        if (freshBytes == null || freshBytes.isEmpty()) {
-            val noCamMsg = if (language == SupportedLanguage.HINDI) {
-                "कैमरा या स्मार्ट चश्मा कनेक्ट नहीं है। कृपया आगे देखने के लिए कैमरा या हार्डवेयर कनेक्ट करें।"
+        val freshBytes = frameData.bytes
+        val cameraSource = frameData.source
+
+        if (freshBytes == null || freshBytes.isEmpty() || cameraSource == CameraSource.NONE) {
+            val noCamMsg = if (!isPhoneCameraFallbackEnabled()) {
+                if (language == SupportedLanguage.HINDI) {
+                    "स्मार्ट चश्मा कनेक्ट नहीं है। गोपनीयता के लिए मोबाइल कैमरा फॉलबैक बंद है। सेटिंग्स में इसे चालू करें।"
+                } else {
+                    "Smart glasses are not connected. Mobile camera fallback is disabled in Settings for privacy."
+                }
             } else {
-                "Camera or smart glasses are not connected. Please connect your glasses or enable camera permissions to look ahead."
+                if (language == SupportedLanguage.HINDI) {
+                    "कैमरा या स्मार्ट चश्मा कनेक्ट नहीं है। कृपया आगे देखने के लिए कैमरा या हार्डवेयर कनेक्ट करें।"
+                } else {
+                    "Smart glasses and mobile camera are not connected. Please connect your glasses or grant camera permissions to look ahead."
+                }
             }
-            return@withContext SceneAnalysisResult(noCamMsg, null, false)
+            return@withContext SceneAnalysisResult(noCamMsg, null, false, CameraSource.NONE)
         }
 
         val base64ToUse = android.util.Base64.encodeToString(freshBytes, android.util.Base64.NO_WRAP)
@@ -873,32 +928,52 @@ class CompanionRepository(private val context: Context) {
             }
         }
 
+        // Explicit announcement of source so user always knows what is in use
+        val sourceAnnouncement = when (cameraSource) {
+            CameraSource.PHONE_BACK_CAMERA -> {
+                if (language == SupportedLanguage.HINDI) {
+                    "आपके मोबाइल के बैक कैमरे का उपयोग करते हुए: "
+                } else {
+                    "Using your mobile back camera: "
+                }
+            }
+            CameraSource.HARDWARE_GLASSES -> {
+                if (language == SupportedLanguage.HINDI) {
+                    "स्मार्ट चश्मे के कैमरे का उपयोग करते हुए: "
+                } else {
+                    "Using smart glasses camera: "
+                }
+            }
+            CameraSource.NONE -> ""
+        }
+
         // 1. Primary: Groq LPU Multimodal Vision (tested, <100ms ultra-fast response)
         val groqVisionReply = queryVisionGroq(prompt, base64ToUse, language)
         if (!groqVisionReply.isNullOrBlank()) {
-            return@withContext SceneAnalysisResult(groqVisionReply, freshBytes, true)
+            return@withContext SceneAnalysisResult("$sourceAnnouncement$groqVisionReply", freshBytes, true, cameraSource)
         }
 
         // 2. Secondary: Gemini Multimodal Vision if key is available
         val geminiReply = queryGemini(prompt, base64ToUse, language)
         if (!geminiReply.isNullOrBlank()) {
-            return@withContext SceneAnalysisResult(geminiReply, freshBytes, true)
+            return@withContext SceneAnalysisResult("$sourceAnnouncement$geminiReply", freshBytes, true, cameraSource)
         }
 
         // 3. Truthful failure announcement - NEVER return a canned fake description or mention a cane!
         val failureMsg = if (language == SupportedLanguage.HINDI) {
-            "कैमरा दृश्य का विश्लेषण नहीं हो सका। कृपया अपना नेटवर्क कनेक्शन जांचें।"
+            "${sourceAnnouncement}कैमरा दृश्य का विश्लेषण नहीं हो सका। कृपया अपना नेटवर्क कनेक्शन जांचें।"
         } else {
-            "Could not analyze the camera view right now. Please check your network connection."
+            "${sourceAnnouncement}Could not analyze the camera view right now. Please check your network connection."
         }
-        return@withContext SceneAnalysisResult(failureMsg, freshBytes, false)
+        return@withContext SceneAnalysisResult(failureMsg, freshBytes, false, cameraSource)
     }
 }
 
 data class SceneAnalysisResult(
     val description: String,
     val frameBytes: ByteArray?,
-    val isLiveCapture: Boolean
+    val isLiveCapture: Boolean,
+    val cameraSource: CameraSource = CameraSource.NONE
 )
 
 data class LocalCommandResult(

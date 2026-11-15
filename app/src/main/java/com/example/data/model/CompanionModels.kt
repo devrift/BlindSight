@@ -24,6 +24,18 @@ enum class ReflexAlert(val title: String, val description: String) {
     CLEAR("CLEAR", "Path ahead is clear.")
 }
 
+enum class CameraSource(val label: String, val spokenAnnouncementEn: String, val spokenAnnouncementHi: String) {
+    NONE("No Camera", "No camera connected", "कोई कैमरा कनेक्ट नहीं है"),
+    HARDWARE_GLASSES("Smart Glasses Camera", "Using smart glasses camera", "स्मार्ट चश्मे के कैमरे का उपयोग करते हुए"),
+    PHONE_BACK_CAMERA("Mobile Back Camera", "Using your mobile back camera", "आपके मोबाइल के बैक कैमरे का उपयोग करते हुए")
+}
+
+data class CameraFrameData(
+    val bytes: ByteArray?,
+    val source: CameraSource,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class ReflexTelemetry(
     val isHardwareConnected: Boolean = false,
     val leftCm: Int = 0,

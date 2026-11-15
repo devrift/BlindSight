@@ -56,6 +56,7 @@ import com.example.service.UpdateDownloadState
 import com.example.ui.components.BlindSightTopBar
 import com.example.ui.components.ConversationHistoryView
 import com.example.ui.components.GiantMicButton
+import com.example.ui.components.HardwareStatusStrip
 import com.example.ui.components.MemoryBankDialog
 import com.example.ui.components.ObstacleRadarView
 import com.example.ui.components.SettingsDialog
@@ -181,6 +182,16 @@ fun BlindSightScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // High-Visibility Hardware & Sensor Status Strip (Indicates what's in use & what's not)
+            Spacer(modifier = Modifier.height(2.dp))
+            HardwareStatusStrip(
+                isHardwareGlassesConnected = uiState.isHardwareGlassesConnected,
+                latestFrameSource = uiState.latestFrameSource,
+                isCameraScanning = uiState.isCameraScanning,
+                isPhoneCameraFallbackEnabled = uiState.isPhoneCameraFallbackEnabled,
+                onStatusClick = { viewModel.speakHardwareStatus() }
+            )
+
             when (uiState.selectedTab) {
                 AppTab.COMPANION -> {
                     // Giant Mic Button (Firm, non-floppy, stable touch bounds)
@@ -229,6 +240,7 @@ fun BlindSightScreen(
                     VisionHelperView(
                         isScanning = uiState.isCameraScanning,
                         latestFrameBytes = uiState.latestFrameBytes,
+                        latestFrameSource = uiState.latestFrameSource,
                         onDescribeScene = { viewModel.describeScene() }
                     )
                 }
@@ -286,6 +298,8 @@ fun BlindSightScreen(
             onTextSizeChange = { viewModel.setTextSize(it) },
             highContrastYellow = uiState.highContrastYellow,
             onToggleHighContrast = { viewModel.toggleHighContrastYellow() },
+            isPhoneCameraFallbackEnabled = uiState.isPhoneCameraFallbackEnabled,
+            onTogglePhoneCameraFallback = { viewModel.togglePhoneCameraFallback() },
             currentGatewayUrl = viewModel.getGatewayUrl(),
             onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
             onCheckUpdates = { viewModel.checkForUpdates(silent = false) },

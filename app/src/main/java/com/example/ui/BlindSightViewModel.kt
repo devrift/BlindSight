@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.AppState
+import com.example.data.model.CameraFrameData
+import com.example.data.model.CameraSource
 import com.example.data.model.ChatMessage
 import com.example.data.model.ListenMode
 import com.example.data.model.MemoryFact
@@ -46,6 +48,9 @@ data class UiState(
     val highContrastYellow: Boolean = false,
     val gatewayUrl: String = "https://blindsightai.vercel.app",
     val latestFrameBytes: ByteArray? = null,
+    val latestFrameSource: CameraSource = CameraSource.NONE,
+    val isPhoneCameraFallbackEnabled: Boolean = true,
+    val isHardwareGlassesConnected: Boolean = false,
     val voicePersona: VoicePersona = VoicePersona.AUTO
 )
 
@@ -73,6 +78,18 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private var isUserCommandActive = false
 
     init {
+        _uiState.value = _uiState.value.copy(
+            isPhoneCameraFallbackEnabled = repository.isPhoneCameraFallbackEnabled()
+        )
+
+        viewModelScope.launch {
+            repository.telemetry.collect { tel ->
+                _uiState.value = _uiState.value.copy(
+                    isHardwareGlassesConnected = tel.isHardwareConnected
+                )
+            }
+        }
+
         checkForUpdates(silent = true)
         directAudioRecorder = com.example.service.DirectAudioRecorder(
             onSilenceDetected = {
@@ -229,9 +246,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refreshLatestHardwareFrame() {
         viewModelScope.launch {
-            val bytes = repository.captureFreshFrame()
-            if (bytes != null && bytes.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(latestFrameBytes = bytes)
+            val frameData = repository.captureFreshFrameWithSource()
+            if (frameData.bytes != null && frameData.bytes.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    latestFrameBytes = frameData.bytes,
+                    latestFrameSource = frameData.source
+                )
             }
         }
     }
@@ -541,9 +561,14 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     fun describeScene(customPrompt: String? = null) {
         hapticHelper.vibrateConfirm()
         ttsHelper?.playEarcon(TtsHelper.EarconType.WAKE)
+        val initialStatus = if (_uiState.value.isHardwareGlassesConnected) {
+            if (_uiState.value.language == SupportedLanguage.HINDI) "स्मार्ट चश्मे के कैमरे से दृश्य देखा जा रहा है…" else "Scanning scene with smart glasses camera…"
+        } else {
+            if (_uiState.value.language == SupportedLanguage.HINDI) "मोबाइल बैक कैमरे से आगे का दृश्य देखा जा रहा है…" else "Using mobile back camera to inspect path ahead…"
+        }
         _uiState.value = _uiState.value.copy(
             isCameraScanning = true,
-            statusText = if (customPrompt.isNullOrBlank()) "Capturing and analyzing live camera frame…" else "Analyzing camera view: \"$customPrompt\"…"
+            statusText = initialStatus
         )
 
         viewModelScope.launch {
@@ -554,12 +579,53 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             _uiState.value = _uiState.value.copy(
                 isCameraScanning = false,
                 latestFrameBytes = result.frameBytes,
+                latestFrameSource = result.cameraSource,
                 appState = AppState.SPEAKING,
                 statusText = result.description
             )
             repository.addMessage(isUser = false, text = result.description)
             speak(result.description)
         }
+    }
+
+    fun togglePhoneCameraFallback() {
+        val newVal = !_uiState.value.isPhoneCameraFallbackEnabled
+        repository.setPhoneCameraFallbackEnabled(newVal)
+        _uiState.value = _uiState.value.copy(isPhoneCameraFallbackEnabled = newVal)
+        hapticHelper.vibrateConfirm()
+        val announcement = if (newVal) {
+            if (_uiState.value.language == SupportedLanguage.HINDI) {
+                "मोबाइल कैमरा फॉलबैक सक्षम है। जब भी विज़न स्कैन होगा, मैं बोलकर सूचित करूंगा।"
+            } else {
+                "Mobile camera fallback enabled. BlindSight will announce 'Using your mobile back camera' whenever scanning."
+            }
+        } else {
+            if (_uiState.value.language == SupportedLanguage.HINDI) {
+                "मोबाइल कैमरा फॉलबैक बंद है। केवल स्मार्ट चश्मे का उपयोग होगा।"
+            } else {
+                "Mobile camera fallback disabled. BlindSight will only use smart glasses camera."
+            }
+        }
+        _uiState.value = _uiState.value.copy(statusText = announcement)
+        speak(announcement)
+    }
+
+    fun speakHardwareStatus() {
+        hapticHelper.vibrateTap()
+        val isGlasses = _uiState.value.isHardwareGlassesConnected
+        val isFallback = _uiState.value.isPhoneCameraFallbackEnabled
+        val lang = _uiState.value.language
+        val status = if (lang == SupportedLanguage.HINDI) {
+            val glasses = if (isGlasses) "स्मार्ट चश्मा कनेक्टेड है।" else "स्मार्ट चश्मा कनेक्ट नहीं है।"
+            val camera = if (isGlasses) "स्मार्ट चश्मे का कैमरा सक्रिय है।" else if (isFallback) "विज़न के लिए मोबाइल का बैक कैमरा उपयोग में है।" else "मोबाइल कैमरा फॉलबैक बंद है।"
+            "हार्डवेयर स्थिति: $glasses $camera अल्ट्रासोनिक रडार ${if (isGlasses) "सक्रिय है।" else "हार्डवेयर कनेक्ट नहीं है।"} माइक्रोफोन चालू है।"
+        } else {
+            val glasses = if (isGlasses) "Smart glasses are connected." else "Smart glasses are disconnected."
+            val camera = if (isGlasses) "Using smart glasses camera." else if (isFallback) "Mobile back camera is in use with spoken privacy notice." else "Mobile camera fallback is disabled."
+            "Hardware status: $glasses $camera Ultrasonic radar is ${if (isGlasses) "active." else "hardware disconnected."} Microphone is active."
+        }
+        _uiState.value = _uiState.value.copy(statusText = status)
+        speak(status)
     }
 
     fun setLanguage(lang: SupportedLanguage) {
