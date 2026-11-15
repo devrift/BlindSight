@@ -245,6 +245,8 @@ fun BlindSightScreen(
         SettingsDialog(
             currentLanguage = uiState.language,
             onLanguageChange = { viewModel.setLanguage(it) },
+            currentVoicePersona = uiState.voicePersona,
+            onVoicePersonaChange = { viewModel.setVoicePersona(it) },
             currentTextSize = uiState.textSizeMultiplier,
             onTextSizeChange = { viewModel.setTextSize(it) },
             highContrastYellow = uiState.highContrastYellow,

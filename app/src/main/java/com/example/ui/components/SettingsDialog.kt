@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.SupportedLanguage
+import com.example.service.VoicePersona
 import com.example.ui.theme.BlindSightAmber
 import com.example.ui.theme.BlindSightCard
 import com.example.ui.theme.BlindSightCardEdge
@@ -56,6 +57,8 @@ import com.example.ui.theme.BlindSightTextPrimary
 fun SettingsDialog(
     currentLanguage: SupportedLanguage,
     onLanguageChange: (SupportedLanguage) -> Unit,
+    currentVoicePersona: VoicePersona = VoicePersona.AUTO,
+    onVoicePersonaChange: (VoicePersona) -> Unit = {},
     currentTextSize: Float,
     onTextSizeChange: (Float) -> Unit,
     highContrastYellow: Boolean,
@@ -138,6 +141,47 @@ fun SettingsDialog(
                     Text(
                         text = lang.label,
                         fontSize = 14.sp,
+                        color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                    if (isSelected) {
+                        Text(text = "Active", fontSize = 12.sp, color = BlindSightAmber, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // AI Voice Persona Selection
+            Text(
+                text = "Human AI Voice Model",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = BlindSightTextPrimary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Select neural human voice (replaces robotic Google Assistant)",
+                fontSize = 12.sp,
+                color = BlindSightTextMuted
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            VoicePersona.entries.forEach { persona ->
+                val isSelected = currentVoicePersona == persona
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) BlindSightAmber.copy(alpha = 0.2f) else Color.Transparent)
+                        .clickable { onVoicePersonaChange(persona) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = persona.label,
+                        fontSize = 13.sp,
                         color = if (isSelected) BlindSightAmber else BlindSightTextPrimary,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )

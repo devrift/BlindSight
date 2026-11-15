@@ -11,9 +11,11 @@ import com.example.data.model.ReflexAlert
 import com.example.data.model.ReflexTelemetry
 import com.example.data.model.SupportedLanguage
 import com.example.data.repository.CompanionRepository
+import com.example.service.DirectAudioRecorder
 import com.example.service.HapticHelper
 import com.example.service.SpeechRecognizerHelper
 import com.example.service.TtsHelper
+import com.example.service.VoicePersona
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,7 +42,8 @@ data class UiState(
     val textSizeMultiplier: Float = 1.0f,
     val highContrastYellow: Boolean = false,
     val gatewayUrl: String = "http://192.168.29.173:5000",
-    val latestFrameBytes: ByteArray? = null
+    val latestFrameBytes: ByteArray? = null,
+    val voicePersona: VoicePersona = VoicePersona.AUTO
 )
 
 class BlindSightViewModel(application: Application) : AndroidViewModel(application) {
@@ -71,6 +74,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
         ttsHelper = TtsHelper(application) { ready ->
             if (ready) {
+                ttsHelper?.setGatewayUrl(repository.getGatewayUrl())
                 speak("BlindSight assistant active. Tap the center button to speak.")
             }
         }
@@ -145,9 +149,18 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setGatewayUrl(url: String) {
         repository.setGatewayUrl(url)
-        _uiState.value = _uiState.value.copy(gatewayUrl = repository.getGatewayUrl())
+        val cleanUrl = repository.getGatewayUrl()
+        _uiState.value = _uiState.value.copy(gatewayUrl = cleanUrl)
+        ttsHelper?.setGatewayUrl(cleanUrl)
         hapticHelper.vibrateConfirm()
         speak("Glasses Gateway URL updated.")
+    }
+
+    fun setVoicePersona(persona: VoicePersona) {
+        _uiState.value = _uiState.value.copy(voicePersona = persona)
+        ttsHelper?.setVoicePersona(persona)
+        hapticHelper.vibrateConfirm()
+        speak("Voice set to ${persona.label}.")
     }
 
     fun refreshLatestHardwareFrame() {
@@ -246,29 +259,22 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     fun onSpeechResult(spokenText: String) {
         val trimmed = spokenText.trim()
         if (trimmed.isEmpty()) return
-        val low = trimmed.lowercase()
 
-        // Wake triggers for hands-free invocation
-        val wakeTriggers = listOf(
-            "hey blindsight", "blindsight", "ok blindsight", "okay blindsight",
-            "blind sight", "hey blind sight", "ok blind sight", "okay blind sight"
+        // Comprehensive phonetic regex for wake word: "hey blindsight", "a blindsight", "a blind sight", "blind side", "blindsight", etc.
+        val wakeRegex = Regex(
+            "^(?:hey|a|ay|ey|hi|hello|ok|okay|the|i|हे|नमस्ते)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|ब्लाइंड\\s*साइट|ब्लाइंडसाइट)\\b",
+            RegexOption.IGNORE_CASE
         )
-        var cleanPrompt = trimmed
-        var isWakeTriggered = false
 
-        for (trigger in wakeTriggers) {
-            if (low.startsWith(trigger)) {
-                isWakeTriggered = true
-                cleanPrompt = trimmed.substring(trigger.length).trim().removePrefix(",").trim()
-                break
-            } else if (low == trigger) {
-                isWakeTriggered = true
-                cleanPrompt = ""
-                break
-            }
+        val match = wakeRegex.find(trimmed)
+        val isWakeTriggered = match != null && match.range.first == 0
+        var cleanPrompt = if (isWakeTriggered) {
+            trimmed.substring(match!!.range.last + 1).trim().removePrefix(",").trim()
+        } else {
+            trimmed
         }
 
-        // 1. Wake word alone: "Hey BlindSight"
+        // 1. Wake word alone: "Hey BlindSight" / "a blindsight" / "blindsight"
         if (isWakeTriggered && cleanPrompt.isEmpty()) {
             isUserCommandActive = true
             hapticHelper.vibrateConfirm()
@@ -277,10 +283,12 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 appState = AppState.COMMAND_LISTENING,
                 statusText = "I'm listening… Go ahead, say your question."
             )
+            // Automatically begin audio recording with silence auto-detection!
+            directAudioRecorder?.startRecording()
             return
         }
 
-        val promptToProcess = if (isWakeTriggered) cleanPrompt else trimmed
+        val promptToProcess = cleanPrompt
 
         // In continuous all-in-one mode, only drop if this is unprompted room noise in standby
         val shouldProcess = isWakeTriggered || isUserCommandActive || _uiState.value.appState == AppState.COMMAND_LISTENING

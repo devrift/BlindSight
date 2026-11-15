@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,6 +27,7 @@ class SpeechRecognizerHelper(
     var isContinuousMode = false
     private var currentLanguageCode = "en-US"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private var clientErrorCount = 0
     private val maxClientRetries = 3
 
@@ -78,6 +80,22 @@ class SpeechRecognizerHelper(
     }
 
     /**
+     * Suppresses default Google Assistant beep/chime sound effects during speech recognition.
+     */
+    private fun suppressSystemSoundsTemporarily(durationMs: Long = 320L) {
+        try {
+            audioManager?.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_MUTE, 0)
+            audioManager?.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
+            mainHandler.postDelayed({
+                try {
+                    audioManager?.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_UNMUTE, 0)
+                    audioManager?.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+                } catch (_: Exception) {}
+            }, durationMs)
+        } catch (_: Exception) {}
+    }
+
+    /**
      * Resolves phonetic slips and matches priority BlindSight voice intents
      * so that similar-sounding words are not shuffled into nonsense.
      */
@@ -88,7 +106,7 @@ class SpeechRecognizerHelper(
 
         val priorityKeywords = listOf(
             "hey blindsight", "blindsight", "ok blindsight", "okay blindsight",
-            "blind sight", "hey blind sight",
+            "a blindsight", "blind sight", "hey blind sight", "blind side",
             "describe the scene", "describe scene", "describe what is in front of me", "describe",
             "what is in front of me", "what's in front of me", "look ahead", "look around",
             "what time is it", "tell me the time", "battery level", "battery",
@@ -115,9 +133,15 @@ class SpeechRecognizerHelper(
         var text = raw.trim()
         val low = text.lowercase()
 
-        // Normalize common phonetic slips for wake word and key blind assistant commands
-        if (low.contains("blind site") || low.contains("blind side") || low.contains("bind sight") || low.contains("line sight")) {
-            text = text.replace(Regex("(?i)blind\\s+site|blind\\s+side|bind\\s+sight|line\\s+sight"), "BlindSight")
+        // Normalize common phonetic slips for wake word ("a blindsight", "blind side", "blind site", etc.)
+        if (low.contains("a blindsight") || low.contains("a blind sight") || low.contains("a blind side") ||
+            low.contains("blind site") || low.contains("blind side") || low.contains("bind sight") ||
+            low.contains("line sight") || low.contains("ey blindsight") || low.contains("ay blindsight")
+        ) {
+            text = text.replace(
+                Regex("(?i)\\b(a|ay|ey|the|hey)?\\s*(blind\\s*site|blind\\s*side|bind\\s*sight|line\\s*sight|blind\\s*sight)\\b"),
+                "BlindSight"
+            )
         }
         if (low.startsWith("this tribe") || low.startsWith("the scribe") || low.startsWith("dis tribe") || low.startsWith("the stripe")) {
             text = text.replace(Regex("(?i)^this\\s+tribe|^the\\s+scribe|^dis\\s+tribe|^the\\s+stripe"), "describe")
@@ -148,6 +172,7 @@ class SpeechRecognizerHelper(
 
             override fun onEndOfSpeech() {
                 isListening = false
+                suppressSystemSoundsTemporarily(200L)
                 Log.d(tag, "Speech ended. Processing audio.")
             }
 
@@ -166,7 +191,7 @@ class SpeechRecognizerHelper(
                             }
                         }, 1200)
                     } else {
-                        // On-demand mode: cleanly rest in IDLE. No annoying 2-second mic oscillation!
+                        // On-demand mode: cleanly rest in IDLE. No annoying mic oscillation!
                         onError("Tap center button to speak.")
                     }
                     return
@@ -303,12 +328,15 @@ class SpeechRecognizerHelper(
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3500L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 4000L)
+                // Fast auto-silence completion (1.1s trailing silence instead of 4 seconds)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1100L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
             }
 
             try {
+                // Suppress Google Assistant prompt sound effect
+                suppressSystemSoundsTemporarily(320L)
                 speechRecognizer?.startListening(intent)
                 isListening = true
                 onListeningStateChanged?.invoke(true)
@@ -358,10 +386,13 @@ class SpeechRecognizerHelper(
 
     fun onPermissionGranted(languageCode: String = currentLanguageCode) {
         mainHandler.post {
-            Log.d(tag, "Microphone permission confirmed. Starting recognizer.")
+            Log.d(tag, "Microphone permission confirmed. Standby ready.")
             clientErrorCount = 0
             destroyRecognizerInternal()
-            startListening(languageCode, forceRestart = true)
+            // Do not aggressively auto-start flapping recognizer on launch unless continuous mode is active
+            if (isContinuousMode) {
+                startListening(languageCode, forceRestart = true)
+            }
         }
     }
 
