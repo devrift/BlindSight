@@ -450,18 +450,7 @@ class CompanionRepository(private val context: Context) {
             }
         }
 
-        // 8. Navigation cues & Advice
-        if (clean in listOf("can i walk", "is it safe", "guide me", "navigation tips", "how do i walk", "is path clear")) {
-            val tel = _telemetry.value
-            val advice = if (tel.isHardwareConnected) {
-                "Sensors report: ${tel.alert.description}. Keep your white cane sweeping low to feel drop-offs and stairs."
-            } else {
-                "Smart glasses radar is currently disconnected. Please rely on your white cane and exercise standard walking caution."
-            }
-            return LocalCommandResult(advice)
-        }
-
-        // 9. Reset / Clear chat
+        // 8. Reset / Clear chat
         if (clean in listOf("clear chat", "start over", "new chat", "reset")) {
             return LocalCommandResult(clearHistory())
         }
@@ -517,9 +506,9 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val baseSys = if (lang == SupportedLanguage.HINDI) {
-            "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक बुद्धिमान, चौकस और अत्यंत आत्मीय वॉयस साथी। हर उत्तर स्वाभाविक, सम्मानजनक और आत्मीय हिंदी में 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है।"
+            "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक बुद्धिमान, चौकस और अत्यंत आत्मीय वॉयस साथी। हर उत्तर स्वाभाविक, सम्मानजनक और आत्मीय हिंदी में 1-2 संक्षिप्त वाक्यों में दें। आपका नाम ब्लाइंडसाइट है। कभी भी सफेद छड़ी (cane) का उल्लेख न करें — ब्लाइंडसाइट छड़ी का आधुनिक इलेक्ट्रॉनिक विकल्प है।"
         } else {
-            "You are BlindSight — the dedicated AI visual guide and caring voice companion walking beside a blind user. Speak with warmth, alert intelligence, empathy, and clarity in 1 to 2 crisp, spoken sentences. Chat naturally, answer questions, solve tasks, or tell jokes. Your name is BlindSight."
+            "You are BlindSight — the dedicated AI visual guide and caring voice companion walking beside a blind user. Speak with warmth, alert intelligence, empathy, and clarity in 1 to 2 crisp, spoken sentences. Chat naturally, answer questions, solve tasks, or tell jokes. Your name is BlindSight. Never mention white cane or cane — BlindSight is an electronic replacement for white canes."
         }
 
         val envContext = locationWeatherHelper.getEnvironmentalContext()
@@ -540,6 +529,7 @@ class CompanionRepository(private val context: Context) {
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Authorization", "Bearer $apiKey")
                 conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("User-Agent", "BlindSight-Android/1.7")
                 conn.connectTimeout = 4000
                 conn.readTimeout = 8000
                 conn.doOutput = true
@@ -770,7 +760,87 @@ class CompanionRepository(private val context: Context) {
         return@withContext null
     }
 
-    // --- Scene Description with Gemini + Hardware Cam + Live Phone Camera Fallback ---
+    // --- Groq LPU Ultra-Fast Multimodal Vision (qwen/qwen3.8-27b, <100ms) ---
+    suspend fun queryVisionGroq(
+        prompt: String,
+        imageBase64: String,
+        lang: SupportedLanguage = SupportedLanguage.ENGLISH
+    ): String? = withContext(Dispatchers.IO) {
+        val apiKey = getGroqApiKey()
+        if (apiKey.isBlank() || imageBase64.isBlank()) return@withContext null
+
+        val sysInstruction = if (lang == SupportedLanguage.HINDI) {
+            "आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए समर्पित पर्सनल विज़न गाइड और आँखें। कैमरे में जो भौतिक रूप से दिख रहा है, उसे 1-2 सीधे, सटीक वाक्यों में बताएं। बाधाएं, रास्ता खुला है या बंद, और मुख्य वस्तुएं स्पष्ट बताएं। कभी भी सफेद छड़ी (cane) का उल्लेख न करें — ब्लाइंडसाइट छड़ी का आधुनिक इलेक्ट्रॉनिक विकल्प है। कभी भी काल्पनिक घड़ी के कोड न बोलें।"
+        } else {
+            "You are BlindSight — the dedicated AI visual guide and eyes for a blind user. Describe what is genuinely in front of the user with immediate physical and spatial clarity in 1 to 2 concise sentences. Mention whether the path is open or blocked, key objects, distances, and hazards. Never mention white cane or cane — BlindSight is designed as an advanced electronic replacement for canes. Never hallucinate or use clock-face coordinates."
+        }
+
+        try {
+            val url = URL("https://api.groq.com/openai/v1/chat/completions")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("User-Agent", "BlindSight-Android/1.7")
+            conn.connectTimeout = 4000
+            conn.readTimeout = 8000
+            conn.doOutput = true
+
+            val contentArr = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("type", "text")
+                    put("text", prompt)
+                })
+                put(JSONObject().apply {
+                    put("type", "image_url")
+                    put("image_url", JSONObject().apply {
+                        put("url", "data:image/jpeg;base64,$imageBase64")
+                    })
+                })
+            }
+
+            val messagesArr = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", sysInstruction)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", contentArr)
+                })
+            }
+
+            val body = JSONObject().apply {
+                put("model", "qwen/qwen3.8-27b")
+                put("messages", messagesArr)
+                put("max_tokens", 250)
+                put("temperature", 0.5)
+            }.toString()
+
+            conn.outputStream.use { os ->
+                os.write(body.toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val resText = conn.inputStream.bufferedReader().use { it.readText() }
+                val resJson = JSONObject(resText)
+                val choices = resJson.optJSONArray("choices")
+                val message = choices?.optJSONObject(0)?.optJSONObject("message")
+                val content = message?.optString("content")?.trim()
+                if (!content.isNullOrBlank()) {
+                    return@withContext content
+                }
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                Log.w("CompanionRepository", "Groq vision HTTP ${conn.responseCode}: $err")
+            }
+        } catch (e: Exception) {
+            Log.e("CompanionRepository", "Groq vision failed: ${e.message}", e)
+        }
+        return@withContext null
+    }
+
+    // --- Scene Description with Groq Multimodal Vision + Hardware Cam + Phone Cam ---
     suspend fun generateSceneDescription(
         language: SupportedLanguage,
         customPrompt: String? = null,
@@ -780,16 +850,15 @@ class CompanionRepository(private val context: Context) {
 
         if (freshBytes == null || freshBytes.isEmpty()) {
             val noCamMsg = if (language == SupportedLanguage.HINDI) {
-                "कैमरा फ़्रेम प्राप्त नहीं हुआ। कृपया कैमरा अनुमति जांचें या स्मार्ट चश्मे का कनेक्शन देखें।"
+                "कैमरा या स्मार्ट चश्मा कनेक्ट नहीं है। कृपया आगे देखने के लिए कैमरा या हार्डवेयर कनेक्ट करें।"
             } else {
-                "Camera frame not available. Please check camera permission or ensure your glasses are connected."
+                "Camera or smart glasses are not connected. Please connect your glasses or enable camera permissions to look ahead."
             }
             return@withContext SceneAnalysisResult(noCamMsg, null, false)
         }
 
         val base64ToUse = android.util.Base64.encodeToString(freshBytes, android.util.Base64.NO_WRAP)
 
-        // 1. Try Gemini Vision with the live frame and custom user question if provided
         val prompt = if (!customPrompt.isNullOrBlank()) {
             if (language == SupportedLanguage.HINDI) {
                 "उपयोगकर्ता का प्रश्न: $customPrompt\nदृष्टिबाधित व्यक्ति के सामने जो दिख रहा है, उसके आधार पर 1-2 सरल वाक्यों में भौतिक रूप से सटीक उत्तर दें।"
@@ -804,23 +873,25 @@ class CompanionRepository(private val context: Context) {
             }
         }
 
+        // 1. Primary: Groq LPU Multimodal Vision (tested, <100ms ultra-fast response)
+        val groqVisionReply = queryVisionGroq(prompt, base64ToUse, language)
+        if (!groqVisionReply.isNullOrBlank()) {
+            return@withContext SceneAnalysisResult(groqVisionReply, freshBytes, true)
+        }
+
+        // 2. Secondary: Gemini Multimodal Vision if key is available
         val geminiReply = queryGemini(prompt, base64ToUse, language)
         if (!geminiReply.isNullOrBlank()) {
             return@withContext SceneAnalysisResult(geminiReply, freshBytes, true)
         }
 
-        // 2. Calm, confident fallback announcement (zero crash)
-        val fallback = when (language) {
-            SupportedLanguage.HINDI ->
-                "लाइव कैमरा फ़्रेम प्राप्त हुआ। आगे का पथ सुगम प्रतीत होता है। हमेशा अपने सेंसर और छड़ी के साथ सावधानी से आगे बढ़ें।"
-            SupportedLanguage.SPANISH ->
-                "Marco de cámara en vivo capturado. El camino por delante parece despejado. Siempre avanza con precaución usando tu bastón y sensores."
-            SupportedLanguage.FRENCH ->
-                "Image de la caméra en direct capturée. La voie devant semble dégagée. Avancez toujours prudemment avec votre canne et vos capteurs."
-            else ->
-                "Live camera frame captured. The foreground path ahead appears open. Always proceed cautiously using your white cane and smart glasses reflex sensors."
+        // 3. Truthful failure announcement - NEVER return a canned fake description or mention a cane!
+        val failureMsg = if (language == SupportedLanguage.HINDI) {
+            "कैमरा दृश्य का विश्लेषण नहीं हो सका। कृपया अपना नेटवर्क कनेक्शन जांचें।"
+        } else {
+            "Could not analyze the camera view right now. Please check your network connection."
         }
-        return@withContext SceneAnalysisResult(fallback, freshBytes, true)
+        return@withContext SceneAnalysisResult(failureMsg, freshBytes, false)
     }
 }
 

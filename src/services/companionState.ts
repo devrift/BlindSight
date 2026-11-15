@@ -269,8 +269,8 @@ export class CompanionStateService {
     // 9. Navigation advice
     if (['can i walk', 'is it safe', 'guide me', 'navigation tips', 'how do i walk', 'is path clear'].includes(cleaned)) {
       const reply = currentLang === 'hi'
-        ? 'आगे का रास्ता सुगम प्रतीत होता है। अपनी छड़ी को नीचे घुमाते रहें और बाधा होने पर संवेदक तुरंत सूचित करेंगे।'
-        : 'Path ahead is monitored. Keep your white cane sweeping low to feel drop-offs. The glasses sensors will vibrate if an obstacle is within 2 meters.';
+        ? 'आगे का रास्ता सुगम प्रतीत होता है। आपके चश्मे के संवेदक किसी भी बाधा के आने पर तुरंत सूचित करेंगे।'
+        : 'Path ahead is actively monitored. Your smart glasses reflex sensors will alert you if an obstacle is within 2 meters.';
       return { isLocal: true, reply };
     }
 

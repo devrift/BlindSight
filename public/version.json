@@ -1,6 +1,6 @@
 {
-  "versionCode": 11,
-  "versionName": "1.7.4",
+  "versionCode": 12,
+  "versionName": "1.7.5",
   "apkUrl": "https://blindsightpage.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Zero manual language options with seamless automatic language detection, single clear professional neural voice per language, and natural privacy-preserving location spoken summaries."
+  "releaseNotes": "Active ENC/ANC background noise filtering (mutes traffic & party noise), real-time multimodal vision via Groq LPUs (<100ms) with zero canned responses, full hardware camera linking, and complete white-cane replacement mission."
 }

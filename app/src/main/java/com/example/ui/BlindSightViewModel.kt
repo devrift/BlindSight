@@ -429,9 +429,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         // 2. Vision / Camera query check: If user asks what they are looking at, what's in front, what they're holding,
-        // or if they are currently on the Vision / Camera tab:
+        // whether it's safe to walk, or if they are currently on the Vision / Camera tab:
         val isVisualQuery = Regex(
-            "\\b(describe|look|see|holding|in front|ahead|around|what is this|what's this|what are these|what is that|what's that|read|sign|color|colour|door|obstacle|camera|view|सामने|आगे|देखो|दिख|पढ़ो|पहचानो|क्या है)\\b",
+            "\\b(describe|look|see|holding|in front|ahead|around|what is this|what's this|what are these|what is that|what's that|read|sign|color|colour|door|obstacle|camera|view|walk|safe|clear|path|guide|सामने|आगे|देखो|दिख|पढ़ो|पहचानो|क्या है|रास्ता|चलूं|सुरक्षित)\\b",
             RegexOption.IGNORE_CASE
         ).containsMatchIn(low) || (_uiState.value.selectedTab == AppTab.VISION)
 
@@ -514,21 +514,6 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
         if (low.contains("battery") || low.contains("charge")) {
             return repository.getBatteryStatus()
-        }
-        if (low.contains("capital of india") || low.contains("bharat ki rajdhani")) {
-            return "The capital of India is New Delhi."
-        }
-        if (low.contains("capital of france")) {
-            return "The capital of France is Paris."
-        }
-        if (low.contains("capital of usa") || low.contains("capital of america") || low.contains("capital of the united states")) {
-            return "The capital of the United States is Washington, D.C."
-        }
-        if (low.contains("speed of light")) {
-            return "The speed of light in a vacuum is approximately 299,792 kilometers per second."
-        }
-        if (low.contains("largest planet")) {
-            return "Jupiter is the largest planet in our solar system."
         }
 
         return when (_uiState.value.language) {

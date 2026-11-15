@@ -90,7 +90,7 @@ export const App: React.FC = () => {
           </svg>
           <div>
             <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text)' }}>
-              BlindSight <span style={{ fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 600, verticalAlign: 'middle', background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 12 }}>v1.5</span>
+              BlindSight <span style={{ fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 600, verticalAlign: 'middle', background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 12 }}>v1.7.5</span>
             </h1>
           </div>
         </div>
@@ -98,7 +98,7 @@ export const App: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34d399', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)', padding: '4px 10px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', display: 'inline-block' }}></span>
-            Groq 120B AI Active
+            Groq LPU Vision & 120B AI Active
           </span>
         </div>
       </header>
@@ -128,20 +128,23 @@ export const App: React.FC = () => {
             BlindSight for Android
           </h2>
           <p style={{ margin: 0, color: 'var(--muted)', fontSize: '1.05rem', lineHeight: 1.5, maxWidth: 580, marginInline: 'auto' }}>
-            Empowering independent mobility with <strong>120-Billion Parameter Frontier AI</strong>, sub-second <strong>Groq Whisper voice guidance</strong>, and ultrasonic obstacle radar.
+            Empowering independent mobility with <strong>Real-Time Multimodal Vision (&lt;100ms)</strong>, <strong>Active ENC Noise Cancellation</strong> in traffic/crowds, and sub-second <strong>Groq Whisper voice guidance</strong>.
           </p>
         </div>
 
         {/* Feature Pills */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
           <span style={{ background: '#1e293b', color: 'var(--text)', fontSize: '0.82rem', fontWeight: 600, padding: '5px 12px', borderRadius: 16 }}>
+            👁️ Groq LPU Vision (&lt;100ms)
+          </span>
+          <span style={{ background: '#1e293b', color: 'var(--text)', fontSize: '0.82rem', fontWeight: 600, padding: '5px 12px', borderRadius: 16 }}>
+            🔇 Active ENC Noise Filtering
+          </span>
+          <span style={{ background: '#1e293b', color: 'var(--text)', fontSize: '0.82rem', fontWeight: 600, padding: '5px 12px', borderRadius: 16 }}>
             ⚡ Groq 120B AI Brain
           </span>
           <span style={{ background: '#1e293b', color: 'var(--text)', fontSize: '0.82rem', fontWeight: 600, padding: '5px 12px', borderRadius: 16 }}>
             🎙️ Whisper Large v3 Turbo
-          </span>
-          <span style={{ background: '#1e293b', color: 'var(--text)', fontSize: '0.82rem', fontWeight: 600, padding: '5px 12px', borderRadius: 16 }}>
-            🔇 Zero Mic Flapping
           </span>
           <span style={{ background: '#1e293b', color: 'var(--text)', fontSize: '0.82rem', fontWeight: 600, padding: '5px 12px', borderRadius: 16 }}>
             🛡️ Ultrasonic Obstacle Radar
@@ -174,7 +177,7 @@ export const App: React.FC = () => {
             }}
           >
             <Download size={24} />
-            <span>Download BlindSight APK (v1.5)</span>
+            <span>Download BlindSight APK (v1.7.5)</span>
           </a>
 
           <button

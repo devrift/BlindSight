@@ -746,8 +746,8 @@ class JarvisVoiceAssistant:
             return "Take a deep breath and take your time. I am right here beside you. You are safe and doing great." if lang == "en" else "गहरी सांस लें और आराम करें। मैं हमेशा आपके साथ हूँ, आप बिल्कुल सुरक्षित हैं।"
 
         # 5. Mobility & Safety Advice
-        if any(k in norm for k in ["can i walk", "is it safe", "guide me", "how to walk", "white cane", "cane"]):
-            return "Keep your white cane moving side to side at ground level to check for steps. I will alert you if any obstacle is ahead." if lang == "en" else "अपनी छड़ी को ज़मीन पर दोनों तरफ घुमाते हुए चलें। कोई भी बाधा आने पर मैं तुरंत आपको सूचित करूँगा।"
+        if any(k in norm for k in ["can i walk", "is it safe", "guide me", "how to walk"]):
+            return "Path ahead is actively monitored by your smart glasses reflex sensors. Walk forward with steady steps." if lang == "en" else "आपके स्मार्ट चश्मे के सेंसर आगे के रास्ते पर नज़र रखे हुए हैं। स्थिर कदमों से आगे बढ़ें।"
 
         # 6. General Knowledge & Facts
         if "capital of india" in norm or "bharat ki rajdhani" in norm:

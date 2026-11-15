@@ -320,12 +320,12 @@ export class VisionAiService {
         };
       }
 
-      // Calm, reassuring navigation fallback
+      // Truthful camera guidance
       return {
         reply:
           langCode === 'hi'
-            ? 'कैमरा फ़्रेम प्राप्त हुआ। आगे का पथ सुगम प्रतीत होता है। हमेशा अपने सेंसर और छड़ी के साथ सावधानी से आगे बढ़ें।'
-            : 'Camera frame captured. The foreground path ahead appears open. Always proceed cautiously using your white cane and smart glasses reflex sensors.',
+            ? 'कैमरा दृश्य का विश्लेषण नहीं हो सका। कृपया अपना नेटवर्क कनेक्शन जांचें।'
+            : 'Could not analyze the camera view right now. Please check your network connection.',
         ok: true,
         imageAttached: true
       };

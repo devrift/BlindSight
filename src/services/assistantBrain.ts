@@ -98,7 +98,7 @@ export class AssistantBrain {
 
     // 9. Navigation Advice & Safety
     if (this.containsAny(clean, ['can i walk', 'is it safe', 'guide me', 'navigation tips', 'how do i walk', 'is path clear'])) {
-      return 'Keep your head level and proceed with steady steps. Your glasses reflex sensors will vibrate if any obstacle comes within 2 meters. Always keep your primary white cane moving to detect stairs and surface changes.';
+      return 'Keep your head level and proceed with steady steps. Your glasses reflex sensors will alert you if any obstacle comes within 2 meters.';
     }
 
     // 10. General Knowledge Quick Answers
