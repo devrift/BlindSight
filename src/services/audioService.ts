@@ -279,10 +279,7 @@ export class AudioService {
       hi: 'Hindi (Female)',
       en: 'English (Female)',
       bn: 'Bengali (Female)',
-      ta: 'Tamil (Female)',
-      te: 'Telugu (Female)',
-      es: 'English (Female)',
-      fr: 'English (Female)'
+      pa: 'Punjabi (Female)'
     };
     const voice = svaraVoices[langCode] || 'Hindi (Female)';
 

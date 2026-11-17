@@ -135,6 +135,7 @@ class PhoneCameraHelper(private val context: Context) {
 
                 @SuppressLint("MissingPermission")
                 val stateCallback = object : CameraDevice.StateCallback() {
+                    @Suppress("DEPRECATION")
                     override fun onOpened(camera: CameraDevice) {
                         cameraDevice = camera
                         try {

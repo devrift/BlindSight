@@ -25,7 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -241,7 +241,7 @@ fun GiantMicButton(
                 ) {
                     Icon(
                         imageVector = when {
-                            isSpeaking -> Icons.Default.VolumeUp
+                            isSpeaking -> Icons.AutoMirrored.Filled.VolumeUp
                             isListening -> Icons.Default.GraphicEq
                             isThinking -> Icons.Default.GraphicEq
                             else -> Icons.Default.Mic

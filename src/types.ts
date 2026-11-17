@@ -47,6 +47,7 @@ export interface DiagnosticsLog {
 }
 
 export interface ReflexTelemetry {
+  isHardwareConnected?: boolean;
   leftCm: number;
   centerCm: number;
   rightCm: number;

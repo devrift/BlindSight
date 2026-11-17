@@ -55,7 +55,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     ReflexService.init();
     const unsub = ReflexService.addListener((telemetry) => {
-      setIsGlassesConnected(telemetry.isHardwareConnected);
+      setIsGlassesConnected(!!telemetry.isHardwareConnected);
       if (telemetry.centerCm > 0 && telemetry.centerCm < 45) {
         setOrbState('caution');
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -498,7 +498,7 @@ export const App: React.FC = () => {
       };
 
       recog.onend = () => {
-        if (orbState === 'listen') {
+        if (recognitionRef.current) {
           if (accumulated.trim()) {
             finalizeAndSend();
           } else {
@@ -993,7 +993,7 @@ export const App: React.FC = () => {
 
       {/* APK QR Modal */}
       {isQrModalOpen && (
-        <ApkQrModal onClose={() => setIsQrModalOpen(false)} />
+        <ApkQrModal isOpen={isQrModalOpen} onClose={() => setIsQrModalOpen(false)} />
       )}
     </div>
   );

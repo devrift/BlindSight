@@ -11,7 +11,9 @@ const MODE_LABELS: Record<AppState, string> = {
   wake: 'Listening for wake word',
   listen: 'Listening',
   think: 'Thinking',
-  speak: 'Speaking'
+  speak: 'Speaking',
+  confirming: 'Understood',
+  caution: 'Obstacle Alert'
 };
 
 export const StatusCard: React.FC<StatusCardProps> = ({ appState, statusLine }) => {

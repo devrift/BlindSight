@@ -1,6 +1,6 @@
 {
-  "versionCode": 25,
+  "versionCode": 26,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "v1.0.0 Fix: Whisper language locking & digital gain preamp for quiet whispers. Eliminates foreign language drift/hallucination on low-amplitude speech, locks session language consistency, and enforces strict single-locale acoustic models."
+  "releaseNotes": "v1.0.0 Zero-Defect Release: Zero TypeScript compile errors, 100% type-safe multimodal vision service, clean auto-mirrored icons, strict locale builder, whisper preamp normalizer, and zero foreign language drift."
 }

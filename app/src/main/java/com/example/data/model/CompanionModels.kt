@@ -58,10 +58,10 @@ enum class SupportedLanguage(
     val locale: Locale,
     val confirmation: String
 ) {
-    ENGLISH("en", "en-IN", "English", "EN", Locale("en", "IN"), "Language set to English."),
-    HINDI("hi", "hi-IN", "हिंदी-उर्दू", "HI", Locale("hi", "IN"), "भाषा हिंदी-उर्दू पर सेट हो गई।"),
-    PUNJABI("pa", "pa-IN", "ਪੰਜਾਬੀ", "PA", Locale("pa", "IN"), "ਭਾਸ਼ਾ ਪੰਜਾਬੀ ਵਿੱਚ ਸੈੱਟ ਕੀਤੀ ਗਈ ਹੈ।"),
-    BENGALI("bn", "bn-IN", "বাংলা", "BN", Locale("bn", "IN"), "ভাষা বাংলায় সেট করা হয়েছে।")
+    ENGLISH("en", "en-IN", "English", "EN", Locale.forLanguageTag("en-IN"), "Language set to English."),
+    HINDI("hi", "hi-IN", "हिंदी-उर्दू", "HI", Locale.forLanguageTag("hi-IN"), "भाषा हिंदी-उर्दू पर सेट हो गई।"),
+    PUNJABI("pa", "pa-IN", "ਪੰਜਾਬੀ", "PA", Locale.forLanguageTag("pa-IN"), "ਭਾਸ਼ਾ ਪੰਜਾਬੀ ਵਿੱਚ ਸੈੱਟ ਕੀਤੀ ਗਈ ਹੈ।"),
+    BENGALI("bn", "bn-IN", "বাংলা", "BN", Locale.forLanguageTag("bn-IN"), "ভাষা বাংলায় সেট করা হয়েছে।")
 }
 
 data class ChatMessage(

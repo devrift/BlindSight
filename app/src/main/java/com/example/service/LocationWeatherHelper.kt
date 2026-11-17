@@ -87,6 +87,7 @@ class LocationWeatherHelper(private val context: Context) : LocationListener, Se
         }
     }
 
+    @Suppress("DEPRECATION")
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null) return
         if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {

@@ -119,14 +119,14 @@
 </svg>
 </div>
 
-<div class="bad"><b>🔴 Rule 1 —</b> The Pi's ground must <b>never</b> touch the buck's ground. All Pi traffic is wireless (Wi-Fi HTTP), so no common reference is needed.</div>
+<div class="bad"><b>[Red wire] Rule 1 —</b> The Pi's ground must <b>never</b> touch the buck's ground. All Pi traffic is wireless (Wi-Fi HTTP), so no common reference is needed.</div>
 <div class="ok"><b>✅ Rule 2 —</b> ESP32, CAM, DAC and sensors <b>must</b> share one common ground. They exchange signals, so they need a common reference.</div>
 
 <h2>2 · Main ESP32 DevKit V1 — every pin</h2>
 <div class="wrap">
 <table>
 <tr><th>ESP32 pin</th><th>Goes to</th><th>Notes</th></tr>
-<tr><td><code>VIN</code></td><td>5V BUS</td><td>🔴 5V in here. <b>Never</b> feed the 3V3 pin.</td></tr>
+<tr><td><code>VIN</code></td><td>5V BUS</td><td>[Red wire] 5V in here. <b>Never</b> feed the 3V3 pin.</td></tr>
 <tr><td><code>GND</code></td><td>GND BUS</td><td>any GND pin</td></tr>
 <tr><td><code>GPIO 26</code></td><td>DAC <b>BCK</b></td><td>I2S bit clock</td></tr>
 <tr><td><code>GPIO 25</code></td><td>DAC <b>LCK/LRCK</b></td><td>I2S word select</td></tr>
@@ -206,7 +206,7 @@
 </svg>
 </div>
 
-<div class="bad"><b>🔴 Biggest new gotcha:</b> With the Arduino-as-TTL trick the labels lined up <i>straight</i> (D0→U0R). With a <b>real</b> USB-TTL they <b>cross</b>: <code>TTL TXD → CAM U0R</code> and <code>CAM U0T → TTL RXD</code>. Get this backwards and you get "Failed to connect."</div>
+<div class="bad"><b>[Red wire] Biggest new gotcha:</b> With the Arduino-as-TTL trick the labels lined up <i>straight</i> (D0→U0R). With a <b>real</b> USB-TTL they <b>cross</b>: <code>TTL TXD → CAM U0R</code> and <code>CAM U0T → TTL RXD</code>. Get this backwards and you get "Failed to connect."</div>
 <div class="ok"><b>✅ Set the adapter jumper to 3V3</b> → the 1k/2k divider on U0R is <b>no longer needed</b>. That's the main reason a real TTL beats the Arduino hack. If your adapter is 5V-only, keep the divider on that one line.</div>
 <div class="warn"><b>⚠️ Power the CAM from the buck, not the TTL.</b> Adapters supply 100–500 mA; the CAM peaks near 800 mA. Keep the TTL for data + GND only — but the <b>GND wire is still required</b> as the signal reference.</div>
 

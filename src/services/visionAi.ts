@@ -53,6 +53,18 @@ export class VisionAiService {
   }
 
   /**
+   * Describes visual scene using Gemini multimodal vision with Groq fallback
+   */
+  static async describeScene(imageDataUrl: string, langCode: LanguageCode, customPrompt?: string): Promise<string | null> {
+    const prompt = customPrompt || (langCode === 'hi'
+      ? 'आगे क्या दिख रहा है? बाधाओं और रास्ते का स्पष्ट 1-2 वाक्यों में वर्णन करें।'
+      : 'Describe what is directly in front of the user in 1-2 clear, spatial sentences focusing on immediate obstacles, ground level, and clear walking paths.');
+    const geminiReply = await this.queryGeminiDirect(prompt, imageDataUrl, langCode);
+    if (geminiReply) return geminiReply;
+    return await this.queryGroqDirect(prompt, langCode, imageDataUrl);
+  }
+
+  /**
    * Directly queries Groq ultra-fast 120B parameter model
    */
   static async queryGroqDirect(prompt: string, langCode: LanguageCode, imageDataUrl?: string | null): Promise<string | null> {
