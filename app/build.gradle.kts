@@ -13,11 +13,11 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.example"
+    applicationId = "com.blindsight.companion"
     minSdk = 26
     targetSdk = 36
-    versionCode = 21
-    versionName = "1.9.2"
+    versionCode = 22
+    versionName = "1.9.3"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

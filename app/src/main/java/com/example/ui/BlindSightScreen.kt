@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,11 +32,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -186,34 +190,35 @@ fun BlindSightScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // =================================================================
-            // 1. TOP HEADER: Functional Connection Chips & Animated Theme Switch
+            // 1. TOP HEADER: Functional Connection Chips, Separated Hitbox Theme Switch & Settings
             // =================================================================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: Functional Telemetry Chips ONLY (Glasses & Active Lens)
+                // Left: Functional Telemetry Chips (Glasses & Active Lens)
                 Row(
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     // Glasses Connection Chip
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(18.dp))
                             .background(if (isGlassesConnected) ElectricCobalt.copy(alpha = 0.85f) else glassBg)
-                            .border(1.dp, if (isGlassesConnected) VividCyan else LiquidGlassBorder, RoundedCornerShape(20.dp))
+                            .border(1.dp, if (isGlassesConnected) VividCyan else LiquidGlassBorder, RoundedCornerShape(18.dp))
                             .clickable { viewModel.speakHardwareStatus() }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                             .semantics {
                                 role = Role.Button
                                 contentDescription = if (isGlassesConnected) "Glasses connected." else "Glasses disconnected. Using phone fallback."
                             },
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Box(
                             modifier = Modifier
@@ -222,48 +227,49 @@ fun BlindSightScreen(
                                 .background(if (isGlassesConnected) VividCyan else Color(0xFF64748B))
                         )
                         Text(
-                            text = if (isGlassesConnected) "Glasses Connected" else "Glasses Disconnected",
-                            fontSize = 12.sp,
+                            text = if (isGlassesConnected) "Glasses" else "Glasses Off",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isGlassesConnected) Color.White else textSecondary,
-                            letterSpacing = 0.3.sp
+                            maxLines = 1
                         )
                     }
 
                     // Active Sensor Lens Chip (Tap to Flip Camera)
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(18.dp))
                             .background(glassBg)
-                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(20.dp))
+                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(18.dp))
                             .clickable { viewModel.onGiantMicClick() }
-                            .padding(horizontal = 10.dp, vertical = 7.dp)
+                            .padding(horizontal = 9.dp, vertical = 6.dp)
                             .semantics {
                                 role = Role.Button
                                 contentDescription = "Active camera lens."
                             },
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Cameraswitch,
                             contentDescription = null,
                             tint = ElectricCobalt,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                         Text(
-                            text = "Back Camera",
+                            text = "Camera",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = textSecondary
+                            color = textSecondary,
+                            maxLines = 1
                         )
                     }
                 }
 
-                // Right Actions: Mic Indicator Dot, Stop Speech, Spring Theme Switch, Settings
+                // Right Actions: Mic Indicator Dot, Stop Speech, Spring Theme Switch, Isolated Settings Button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Subtle Audio Level / Listening Dot
                     val isListening = uiState.appState == AppState.COMMAND_LISTENING || uiState.appState == AppState.WAKE_LISTENING
@@ -283,7 +289,7 @@ fun BlindSightScreen(
                         IconButton(
                             onClick = { viewModel.stopSpeaking() },
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                                 .background(AlertWarningRed.copy(alpha = 0.2f))
                                 .border(1.dp, AlertWarningRed, CircleShape)
@@ -292,12 +298,12 @@ fun BlindSightScreen(
                                 imageVector = Icons.Default.StopCircle,
                                 contentDescription = "Silence audio",
                                 tint = AlertWarningRed,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
-                    // Animated Spring Physics Theme Switch
+                    // Animated Spring Physics Theme Switch (Explicit width & padding)
                     val thumbOffset by animateDpAsState(
                         targetValue = if (isDark) 18.dp else 0.dp,
                         animationSpec = spring(
@@ -309,11 +315,11 @@ fun BlindSightScreen(
 
                     Box(
                         modifier = Modifier
-                            .width(44.dp)
-                            .height(26.dp)
-                            .clip(RoundedCornerShape(13.dp))
+                            .width(46.dp)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(14.dp))
                             .background(if (isDark) Color(0xFF0F2752) else Color(0xFFC7DEFF))
-                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(13.dp))
+                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(14.dp))
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -325,7 +331,7 @@ fun BlindSightScreen(
                         Box(
                             modifier = Modifier
                                 .offset(x = thumbOffset)
-                                .size(22.dp)
+                                .size(24.dp)
                                 .clip(CircleShape)
                                 .background(ElectricCobalt),
                             contentAlignment = Alignment.Center
@@ -334,25 +340,97 @@ fun BlindSightScreen(
                                 imageVector = if (isDark) Icons.Default.DarkMode else Icons.Default.LightMode,
                                 contentDescription = "Toggle Dark/Light theme",
                                 tint = Color.White,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }
 
-                    // Settings Button
-                    IconButton(
-                        onClick = { showSettingsDialogLocal = true },
+                    // Settings Button (Completely separated, dedicated 42dp clickable hitbox)
+                    Box(
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(42.dp)
                             .clip(CircleShape)
                             .background(glassBg)
                             .border(1.dp, LiquidGlassBorder, CircleShape)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { showSettingsDialogLocal = true }
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = textSecondary,
-                            modifier = Modifier.size(17.dp)
+                            contentDescription = "Open Settings",
+                            tint = textPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // =================================================================
+            // TEXT MEMORY FLOATING NOTIFICATION PILL
+            // =================================================================
+            val latestMessage = history.lastOrNull()
+            AnimatedVisibility(
+                visible = history.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 3.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (isDark) Color(0xCC0A1934) else Color(0xEEFFFFFF))
+                        .border(1.dp, LiquidGlassBorder, RoundedCornerShape(18.dp))
+                        .clickable { viewModel.setShowHistoryDialog(true) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Text Memory: ${latestMessage?.text ?: ""}. Tap to view full speech transcript."
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Hearing,
+                            contentDescription = null,
+                            tint = ElectricCobalt,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (latestMessage != null) {
+                                (if (latestMessage.isUser) "You: " else "BlindSight: ") + latestMessage.text
+                            } else "Text Memory",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(ElectricCobalt.copy(alpha = 0.15f))
+                            .border(1.dp, ElectricCobalt.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "${history.size} msgs",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ElectricCobalt
                         )
                     }
                 }

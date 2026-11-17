@@ -85,7 +85,17 @@ class PhoneCameraHelper(private val context: Context) {
                 val characteristics = cameraManager.getCameraCharacteristics(cameraId)
                 val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
 
-                val imageReader = ImageReader.newInstance(640, 480, ImageFormat.JPEG, 2)
+                // Dynamically resolve high-definition camera capture resolution (1080p / 720p)
+                val configMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                val jpegSizes = configMap?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
+                val targetSize = jpegSizes
+                    .filter { it.width <= 1920 && it.height <= 1080 }
+                    .maxByOrNull { it.width * it.height }
+                    ?: jpegSizes.firstOrNull()
+                    ?: android.util.Size(1280, 720)
+
+                Log.d(tag, "Configuring HD camera capture at ${targetSize.width}x${targetSize.height}")
+                val imageReader = ImageReader.newInstance(targetSize.width, targetSize.height, ImageFormat.JPEG, 2)
                 var cameraDevice: CameraDevice? = null
                 var captureSession: CameraCaptureSession? = null
 
@@ -232,8 +242,8 @@ class PhoneCameraHelper(private val context: Context) {
                 originalBitmap
             }
 
-            // Downscale to 640x480 max bounds to preserve token budget
-            val maxBound = 640
+            // High-definition bounds (1280px max bound) with 85% JPEG quality for crisp visual perception
+            val maxBound = 1280
             val scaledBitmap = if (rotatedBitmap.width > maxBound || rotatedBitmap.height > maxBound) {
                 val scale = minOf(maxBound.toFloat() / rotatedBitmap.width, maxBound.toFloat() / rotatedBitmap.height)
                 Bitmap.createScaledBitmap(
@@ -247,8 +257,8 @@ class PhoneCameraHelper(private val context: Context) {
             }
 
             val outputStream = ByteArrayOutputStream()
-            // Strict 65% quality JPEG downscaling
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 65, outputStream)
+            // Crisp 85% quality JPEG compression
+            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
 
             if (scaledBitmap != originalBitmap && scaledBitmap != rotatedBitmap) scaledBitmap.recycle()
             if (rotatedBitmap != originalBitmap) rotatedBitmap.recycle()

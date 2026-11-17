@@ -5,8 +5,8 @@ export const LANGUAGES: Record<LanguageCode, LanguageOption> = {
     code: 'en',
     label: 'English',
     espeakVoice: 'en',
-    neuralVoice: 'en-IN-NeerjaNeural',
-    speechLang: 'en-IN',
+    neuralVoice: 'en-US-AriaNeural',
+    speechLang: 'en-US',
     confirmation: 'Language set to English.'
   },
   hi: {

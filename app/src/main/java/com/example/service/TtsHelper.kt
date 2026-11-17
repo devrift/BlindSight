@@ -137,7 +137,12 @@ class TtsHelper(
             val langCode = locale.language
 
             val matchingVoices = voices.filter { voice ->
-                voice.locale.language.equals(langCode, ignoreCase = true)
+                if (langCode.equals("en", ignoreCase = true)) {
+                    voice.locale.language.equals("en", ignoreCase = true) &&
+                        (voice.locale.country.equals("US", ignoreCase = true) || voice.locale.country.isEmpty())
+                } else {
+                    voice.locale.language.equals(langCode, ignoreCase = true)
+                }
             }
 
             if (matchingVoices.isEmpty()) return
@@ -201,12 +206,12 @@ class TtsHelper(
             .replace(Regex("\\s+"), " ")
             .trim()
 
-        // 1 Single Professional, Easy-to-Understand Neural Voice per Supported Language
+        // 1 Single Professional, Easy-to-Understand Neural Voice per Supported Language (Locked consistent accent)
         val voiceParam = when (currentLanguage) {
             SupportedLanguage.HINDI -> "hi-IN-SwaraNeural"
             SupportedLanguage.PUNJABI -> "pa-IN-OjasNeural"
             SupportedLanguage.BENGALI -> "bn-IN-TanishaaNeural"
-            SupportedLanguage.ENGLISH -> "en-IN-NeerjaNeural"
+            SupportedLanguage.ENGLISH -> "en-US-AriaNeural"
         }
         val langParam = currentLanguage.code.split("-").first().lowercase()
 
