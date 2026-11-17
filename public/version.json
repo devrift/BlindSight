@@ -1,6 +1,6 @@
 {
-  "versionCode": 16,
-  "versionName": "1.7.9",
+  "versionCode": 17,
+  "versionName": "1.8.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "Complete Architecture Upgrade: Gemini 3.8 Flash & Groq 120B reasoning brain, lifelike natural neural voice streaming, acoustic echo cancellation with 450ms guard buffer, and full directional clock-position spatial awareness."
+  "releaseNotes": "v1.8.0 update: Fixed microphone wake-word session dropping, updated 90-degree camera orientation correction, eliminated white cane references, added directional spatial anchors, and updated UI."
 }
