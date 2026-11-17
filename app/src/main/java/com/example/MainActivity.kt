@@ -68,5 +68,28 @@ class MainActivity : ComponentActivity() {
                 BlindSightScreen(viewModel = viewModel)
             }
         }
+        checkAssistantLaunch(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkAssistantLaunch(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        checkAssistantLaunch(intent)
+    }
+
+    private fun checkAssistantLaunch(intent: android.content.Intent?) {
+        if (intent == null) return
+        if (intent.action == android.content.Intent.ACTION_ASSIST ||
+            intent.action == android.content.Intent.ACTION_VOICE_COMMAND ||
+            intent.getBooleanExtra("START_ASSISTANT_LISTENING", false)
+        ) {
+            intent.removeExtra("START_ASSISTANT_LISTENING")
+            viewModel.onTactileSingleTap()
+        }
     }
 }

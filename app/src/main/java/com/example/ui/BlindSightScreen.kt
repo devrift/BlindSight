@@ -437,101 +437,23 @@ fun BlindSightScreen(
             }
 
             // =================================================================
-            // 2. TOP 40%: VIEWPORT HUD (TRUE LIQUID GLASS)
+            // 2. CENTER: ANIMATED ALLY SMILEY COMPANION FACE
             // =================================================================
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .padding(horizontal = 18.dp, vertical = 4.dp)
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0x2EFFFFFF),
-                                Color(0x08FFFFFF)
-                            )
-                        )
-                    )
-                    .background(glassBg)
-                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(32.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (latestBitmap != null) {
-                    Image(
-                        bitmap = latestBitmap,
-                        contentDescription = "Live camera view upright snapshot",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Videocam,
-                            contentDescription = null,
-                            tint = ElectricCobalt,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = if (uiState.isCameraScanning) "Scanning Path Ahead..." else "Back Camera Active",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ElectricCobalt,
-                            letterSpacing = 0.5.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Double-tap lower glass to describe scene",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = textSecondary
-                        )
-                    }
-                }
-
-                // Ribbon
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isDark) Color(0xCC060B14) else Color(0xCCEAF2FF))
-                        .border(1.dp, LiquidGlassBorder, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 9.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = if (latestBitmap != null) "FRAME CAPTURED" else "UPRIGHT 640x480",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = VividCyan,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-            }
-
-            // =================================================================
-            // 3. CENTER: ANIMATED ALLY SMILEY COMPANION FACE
-            // =================================================================
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             AllyFaceOrb(
                 appState = uiState.appState,
                 onClick = { viewModel.onTactileSingleTap() },
-                sizeDp = 215.dp,
+                sizeDp = 260.dp,
                 isDarkMode = isDark,
                 modifier = Modifier
                     .semantics {
                         role = Role.Button
-                        contentDescription = "Ally companion face. State: ${uiState.appState.label}. Tap to talk or resume."
+                        contentDescription = "BlindSight companion face. State: ${uiState.appState.label}. Tap to talk or resume."
                     }
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // =================================================================
             // 4. BOTTOM 50%: MASSIVE TACTILE TOUCH GLASS SURFACE

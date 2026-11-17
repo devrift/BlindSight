@@ -79,7 +79,12 @@ Append actions cleanly when requested:
 - Toggle flashlight: [ACTION:TORCH_ON] / [ACTION:TORCH_OFF]
 - Switch lens: [ACTION:SWITCH_CAMERA]
 - Read text: [ACTION:READ_TEXT]
-- Walking navigation: [ACTION:NAVIGATE <destination>]`;
+- Walking navigation: [ACTION:NAVIGATE <destination>]
+- Set Alarm: [ACTION:SET_ALARM:hour:minute:label]
+- Set Timer: [ACTION:SET_TIMER:seconds:label]
+- Make Call: [ACTION:CALL:number_or_name]
+- Set Reminder: [ACTION:SET_REMINDER:text]
+- Open App: [ACTION:OPEN_APP:name]`;
 
     const models = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'];
     for (const model of models) {
@@ -216,7 +221,12 @@ Append actions cleanly when requested:
 - Toggle flashlight: [ACTION:TORCH_ON] / [ACTION:TORCH_OFF]
 - Switch lens: [ACTION:SWITCH_CAMERA]
 - Read text: [ACTION:READ_TEXT]
-- Walking navigation: [ACTION:NAVIGATE <destination>]`;
+- Walking navigation: [ACTION:NAVIGATE <destination>]
+- Set Alarm: [ACTION:SET_ALARM:hour:minute:label]
+- Set Timer: [ACTION:SET_TIMER:seconds:label]
+- Make Call: [ACTION:CALL:number_or_name]
+- Set Reminder: [ACTION:SET_REMINDER:text]
+- Open App: [ACTION:OPEN_APP:name]`;
 
       parts.push({ text: `${sysInstruction}\n\nUser Question: ${prompt}` });
 

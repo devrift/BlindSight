@@ -573,6 +573,11 @@ class CompanionRepository(private val context: Context) {
         - Switch lens: [ACTION:SWITCH_CAMERA]
         - Read text: [ACTION:READ_TEXT]
         - Walking navigation: [ACTION:NAVIGATE <destination>]
+        - Set Alarm: [ACTION:SET_ALARM:hour:minute:label] (e.g. [ACTION:SET_ALARM:7:30:Wake up])
+        - Set Timer: [ACTION:SET_TIMER:seconds:label] (e.g. [ACTION:SET_TIMER:300:Tea])
+        - Make Call: [ACTION:CALL:number_or_name] (e.g. [ACTION:CALL:9876543210])
+        - Set Reminder: [ACTION:SET_REMINDER:text] (e.g. [ACTION:SET_REMINDER:Take medicine at 8pm])
+        - Open App: [ACTION:OPEN_APP:name] (e.g. [ACTION:OPEN_APP:whatsapp])
 
         $envContext$factsBlock
         """.trimIndent()
@@ -748,6 +753,11 @@ class CompanionRepository(private val context: Context) {
         - Switch lens: [ACTION:SWITCH_CAMERA]
         - Read text: [ACTION:READ_TEXT]
         - Walking navigation: [ACTION:NAVIGATE <destination>]
+        - Set Alarm: [ACTION:SET_ALARM:hour:minute:label] (e.g. [ACTION:SET_ALARM:7:30:Wake up])
+        - Set Timer: [ACTION:SET_TIMER:seconds:label] (e.g. [ACTION:SET_TIMER:300:Tea])
+        - Make Call: [ACTION:CALL:number_or_name] (e.g. [ACTION:CALL:9876543210])
+        - Set Reminder: [ACTION:SET_REMINDER:text] (e.g. [ACTION:SET_REMINDER:Take medicine at 8pm])
+        - Open App: [ACTION:OPEN_APP:name] (e.g. [ACTION:OPEN_APP:whatsapp])
 
         $envContext$factsBlock
         """.trimIndent()
