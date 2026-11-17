@@ -256,5 +256,3 @@ export const ReflexTelemetryModal: React.FC<ReflexTelemetryModalProps> = ({
     </div>
   );
 };
-  );
-};
