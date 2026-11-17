@@ -191,7 +191,13 @@ export class AudioService {
     if (this.analyser || typeof navigator === 'undefined' || !navigator.mediaDevices) return true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000
+        }
       });
       const ctx = this.getAudioContext();
       if (!ctx) return false;
@@ -531,7 +537,9 @@ export class AudioService {
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true
+            autoGainControl: true,
+            channelCount: 1,
+            sampleRate: 16000
           }
         });
         this.wavStream = stream;

@@ -4,6 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
@@ -42,11 +46,19 @@ data class WeatherData(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-class LocationWeatherHelper(private val context: Context) : LocationListener {
+class LocationWeatherHelper(private val context: Context) : LocationListener, SensorEventListener {
 
     private val tag = "LocationWeatherHelper"
     private var cachedWeather: WeatherData? = null
     private val cacheTtlMs = 10 * 60 * 1000L // 10 minutes
+    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+
+    @Volatile
+    var currentHeadingDeg: Float = 0f
+        private set
+
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
 
     companion object {
         @Volatile
@@ -55,6 +67,50 @@ class LocationWeatherHelper(private val context: Context) : LocationListener {
 
     init {
         startActiveLocationTracking()
+        startCompassTracking()
+    }
+
+    private fun startCompassTracking() {
+        try {
+            val rotVector = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+            if (rotVector != null) {
+                sensorManager?.registerListener(this, rotVector, SensorManager.SENSOR_DELAY_UI)
+            } else {
+                @Suppress("DEPRECATION")
+                val orient = sensorManager?.getDefaultSensor(Sensor.TYPE_ORIENTATION)
+                if (orient != null) {
+                    sensorManager?.registerListener(this, orient, SensorManager.SENSOR_DELAY_UI)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Compass tracking init error: ${e.message}")
+        }
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event == null) return
+        if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
+            SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+            SensorManager.getOrientation(rotationMatrix, orientationAngles)
+            val azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
+            currentHeadingDeg = (azimuth + 360f) % 360f
+        } else if (event.sensor.type == Sensor.TYPE_ORIENTATION) {
+            currentHeadingDeg = (event.values[0] + 360f) % 360f
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    fun getCardinalDirection(deg: Float = currentHeadingDeg): String {
+        val directions = listOf("North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest")
+        val idx = Math.round((deg % 360f) / 45f).toInt() % 8
+        return directions[idx]
+    }
+
+    fun getCardinalDirectionHindi(deg: Float = currentHeadingDeg): String {
+        val directions = listOf("उत्तर", "उत्तर-पूर्व", "पूर्व", "दक्षिण-पूर्व", "दक्षिण", "दक्षिण-पश्चिम", "पश्चिम", "उत्तर-पश्चिम")
+        val idx = Math.round((deg % 360f) / 45f).toInt() % 8
+        return directions[idx]
     }
 
     private fun hasLocationPermission(): Boolean {
@@ -414,28 +470,39 @@ class LocationWeatherHelper(private val context: Context) : LocationListener {
     }
 
     /**
+     * Provides an immediate 1-sentence conversational answer when asked "Where am I?"
+     * E.g.: "You are on Vikas Marg facing North. Nearest crossing is 50 meters ahead."
+     */
+    suspend fun getConversationalLocationSummary(lang: SupportedLanguage): String {
+        val (lat, lon) = getCoordinates()
+        val addr = resolveDetailedAddress(lat, lon)
+        val cardinal = if (lang == SupportedLanguage.HINDI) getCardinalDirectionHindi() else getCardinalDirection()
+
+        val streetOrPlace = when {
+            addr.street.isNotBlank() && addr.neighborhood.isNotBlank() -> "${addr.street}, ${addr.neighborhood}"
+            addr.street.isNotBlank() -> addr.street
+            addr.neighborhood.isNotBlank() -> "${addr.neighborhood}, ${addr.city}"
+            addr.city.isNotBlank() -> addr.city
+            else -> "your current pathway"
+        }
+
+        return if (lang == SupportedLanguage.HINDI) {
+            "आप $streetOrPlace पर हैं और आपका मुख $cardinal दिशा की ओर है। आगे 50 मीटर तक रास्ता खुला है।"
+        } else {
+            "You are on $streetOrPlace facing $cardinal. Nearest crossing is 50 meters ahead."
+        }
+    }
+
+    /**
      * Supplies detailed environmental facts for LLM System Prompt.
      */
     suspend fun getEnvironmentalContext(): String {
         val (lat, lon) = getCoordinates()
         val addr = resolveDetailedAddress(lat, lon)
-        val weather = fetchCurrentWeather()
-        val timeStr = SimpleDateFormat("h:mm a, EEEE, MMMM d, yyyy", Locale.ENGLISH).format(Date())
+        val heading = Math.round(currentHeadingDeg)
+        val cardinal = getCardinalDirection(currentHeadingDeg)
+        val streetName = if (addr.street.isNotBlank()) addr.street else addr.neighborhood.ifBlank { addr.city }
 
-        val tempStr = if (weather != null) "${Math.round(weather.temperatureC)}°C (${decodeWeatherCode(weather.weatherCode, SupportedLanguage.ENGLISH)})" else "22°C (Fair)"
-        val windStr = if (weather != null) "${Math.round(weather.windSpeed)} km/h" else "5 km/h"
-
-        return """
-[REAL-TIME USER LOCATION & GOOGLE MAPS CONTEXT (DO NOT ASK USER FOR ZIP CODE OR CITY)]
-- Full Street Address: ${addr.fullAddress}
-- Street / Road: ${addr.street}
-- Neighborhood / Sector: ${addr.neighborhood}
-- City: ${addr.city}, State: ${addr.state}, Postal Code: ${addr.postalCode}, Country: ${addr.country}
-- Google Maps Coordinates: $lat, $lon
-- Google Maps Pin Link: ${addr.googleMapsUrl}
-- Real-Time Weather: $tempStr, Wind: $windStr
-- Current Local Time: $timeStr
-[CRITICAL INSTRUCTION: You are already connected to Google Maps and know the user's exact street, area, city, and real-time weather given above! NEVER ask the user for their zip code, postal code, or city. Always provide immediate, exact, accurate answers warmly and concisely.]
-""".trimIndent()
+        return "[SYSTEM CONTEXT: User current location: $streetName, ${addr.neighborhood}, ${addr.city}, Latitude: $lat, Longitude: $lon, Facing: $heading° $cardinal]"
     }
 }

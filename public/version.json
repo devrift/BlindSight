@@ -1,6 +1,6 @@
 {
-  "versionCode": 17,
-  "versionName": "1.8.0",
+  "versionCode": 18,
+  "versionName": "1.8.1",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "v1.8.0 update: Fixed microphone wake-word session dropping, updated 90-degree camera orientation correction, eliminated white cane references, added directional spatial anchors, and updated UI."
+  "releaseNotes": "v1.8.1 Production Fix: Real-time turn-by-turn Google Maps walking navigation intent, instant street-level 'Where am I?' landmark spatial QA, and native audio hardware noise cancellation."
 }

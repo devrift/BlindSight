@@ -286,6 +286,10 @@ class CompanionRepository(private val context: Context) {
         return "Conversation cleared. Memory facts are still preserved."
     }
 
+    fun openGoogleMaps(destination: String? = null): Boolean {
+        return locationWeatherHelper.openGoogleMaps(destination)
+    }
+
     // --- Ultrasonic Reflex Subsystem ---
     fun updateSensors(leftCm: Int, centerCm: Int, rightCm: Int, isHardware: Boolean = true): ReflexTelemetry {
         val min = minOf(leftCm, centerCm, rightCm)
@@ -378,12 +382,24 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(reply)
         }
 
-        val navMatch = Regex("^(?:navigate to|directions to|take me to|walk to|route to|chalo|rasta dikhao)\\s+(.+)", RegexOption.IGNORE_CASE).find(clean)
+        val navMatch = Regex("^(?:navigate to|take me to|directions to|walk to|route to|how to reach|how to get to|chalo|rasta dikhao|navigation to)\\s+(.+)", RegexOption.IGNORE_CASE).find(clean)
         if (navMatch != null) {
-            val destination = navMatch.groupValues[1].trim()
+            val destination = navMatch.groupValues[1].replace(Regex("[?!.]"), "").trim()
             locationWeatherHelper.openGoogleMaps(destination)
             val reply = if (currentLang == SupportedLanguage.HINDI) "$destination के लिए गूगल मैप्स पर पैदल नेविगेशन शुरू हो रहा है।" else "Starting Google Maps walking navigation to $destination."
             return LocalCommandResult(reply)
+        }
+
+        // 3. Where Am I & Live Spatial QA (1-sentence street landmark answer)
+        val isWhereAmI = clean in listOf(
+            "where am i", "what is my location", "where am i right now", "my location",
+            "what is around me", "tell me my location", "kahan hoon", "main kahan hoon",
+            "meri location", "location", "current location"
+        ) || Regex("\\b(?:where am i|my location|what is around me|kahan hoon|where am i right now)\\b", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+
+        if (isWhereAmI) {
+            val locationReply = locationWeatherHelper.getConversationalLocationSummary(currentLang)
+            return LocalCommandResult(locationReply)
         }
 
         // 5. Battery
@@ -513,34 +529,33 @@ class CompanionRepository(private val context: Context) {
         val apiKey = getGroqApiKey()
         if (apiKey.isBlank()) return@withContext null
 
-        val baseSys = if (lang == SupportedLanguage.HINDI) {
-            """
-            आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक अति-बुद्धिमान, संवेदनशील और व्यावहारिक पर्सनल वॉयस साथी।
-            - लहजा: सीधा, आत्मीय, स्वाभाविक और मददगार। कभी भी विश्वकोश या रोबोट की तरह न बोलें।
-            - शैली: केवल मौखिक बातचीत। कभी भी मार्कडाउन, बुलेट पॉइंट्स या इमोजी का उपयोग न करें।
-            - स्थानिक दिशाएं: सीधे 'बिल्कुल आपके सामने', 'बाईं तरफ सीढ़ियां', 'दाईं तरफ खुला रास्ता' जैसे प्रत्यक्ष शब्दों का उपयोग करें। '12 बजे की दिशा' जैसे दोहराव वाले शब्द कभी न बोलें।
-            - सुरक्षा और गति: तात्कालिक नेविगेशन जानकारी 20-30 शब्दों में दें। कभी भी सफेद छड़ी (cane) का उल्लेख न करें — ब्लाइंडसाइट छड़ी का आधुनिक इलेक्ट्रॉनिक विकल्प है।
-            """.trimIndent()
-        } else {
-            """
-            You are BlindSight, a hyper-intelligent, compassionate, and street-smart personal companion for a visually impaired user.
-            - Tone: Direct, warm, conversational, human, and grounded. Never talk like an encyclopedia, textbook, or search engine.
-            - Output Style: Spoken delivery only. Never use asterisks, markdown, bullet points, emojis, or section headers.
-            - Spatial Anchors: Use direct natural anchors like 'Directly ahead', 'Steps down on your left', 'Clear pathway to your right'. NEVER use repetitive clock phrases like 'at your 12 o'clock'.
-            - Brevity & Safety: Cap immediate movement and navigation feedback strictly under 20-30 words. If the user asks a complex question, explain it with sharp clarity like a knowledgeable peer standing right next to them.
-            - Absolute Rule: Never mention "white cane" or "cane" anywhere — BlindSight is designed as an electronic replacement.
-            """.trimIndent()
-        }
-
         val envContext = locationWeatherHelper.getEnvironmentalContext()
         val factsList = _facts.value
         val factsBlock = if (factsList.isNotEmpty()) {
-            "\n[USER PERSONAL SAVED FACTS / MEMORY BANK]\n" +
-            factsList.joinToString("\n") { "- ${it.text}" } +
-            "\n[INSTRUCTION: Refer to these facts whenever the user asks about their personal belongings, rooms, keys, or preferences.]\n"
+            "\n[Saved Memory: " + factsList.joinToString("; ") { it.text } + "]\n"
         } else ""
 
-        val sysInstruction = "$baseSys\n\n$envContext\n$factsBlock"
+        val sysInstruction = if (lang == SupportedLanguage.HINDI) {
+            """
+            आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ता के लिए एक तेज़, स्मार्ट और व्यावहारिक वॉइस गाइड।
+            वर्तमान जीपीएस स्थिति: $envContext$factsBlock
+            नियम:
+            1. अधिकतम 25 शब्द। बिना किसी मार्कडाउन के सीधी, स्वाभाविक हिंदी बोलें।
+            2. यदि कहीं जाने या नेविगेट करने के लिए कहा जाए, तो केवल "NAVIGATE_TO: <गंतव्य का नाम>" से उत्तर दें ताकि सिस्टम तुरंत गूगल मैप्स खोल सके।
+            3. आसपास या आगे का रास्ता पूछने पर सीधे तात्कालिक दिशात्मक संकेत दें (जैसे: "आगे दाईं ओर", "10 कदम आगे जेब्रा क्रॉसिंग")। कभी भी घड़ी की सुई (12 बजे) या सफेद छड़ी का नाम न लें।
+            4. कभी भी मार्कडाउन, बुलेट पॉइंट्स या सेक्शन हेडर का उपयोग न करें।
+            """.trimIndent()
+        } else {
+            """
+            You are BlindSight, a sharp, street-smart voice guide for a blind user.
+            Current GPS: $envContext$factsBlock
+            Rules:
+            1. Max 25 words. Speak naturally in plain text.
+            2. If asked to navigate or go somewhere, respond with: "NAVIGATE_TO: <Destination Name>" so the system opens Google Maps.
+            3. If asked about surroundings, use immediate directional anchors (e.g., "Ahead on your right", "Crosswalk 10 steps forward").
+            4. Never use markdown, bullet points, asterisks, or clock faces.
+            """.trimIndent()
+        }
 
         val models = listOf("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b")
         for (m in models) {
@@ -680,64 +695,57 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val candidateModels = listOf(
-            "gemini-3.8-flash",
-            "gemini-flash-latest",
-            "gemini-3.5-flash"
+            "gemini-1.5-flash",
+            "gemini-2.5-flash",
+            "gemini-flash-latest"
         )
 
         val envContext = locationWeatherHelper.getEnvironmentalContext()
         val factsList = _facts.value
         val factsBlock = if (factsList.isNotEmpty()) {
-            "\n[USER PERSONAL SAVED FACTS / MEMORY BANK]\n" +
-            factsList.joinToString("\n") { "- ${it.text}" } +
-            "\n[INSTRUCTION: Refer to these facts whenever the user asks about their personal belongings or preferences.]\n"
+            "\n[Saved Memory: " + factsList.joinToString("; ") { it.text } + "]\n"
         } else ""
 
         val sysInstruction = if (!imageBase64.isNullOrBlank()) {
             if (lang == SupportedLanguage.HINDI) {
                 """
-                आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए समर्पित पर्सनल विज़न गाइड और आँखें।
-                - दृश्य को भौतिक और स्थानिक स्पष्टता के साथ 1-2 सीधे, सरल वाक्यों में समझाएं।
-                - स्थानिक दिशाएं: सीधे 'बिल्कुल आपके सामने', 'बाईं तरफ सीढ़ियां', 'दाईं तरफ खुला रास्ता' जैसे प्रत्यक्ष शब्दों का उपयोग करें। '12 बजे की दिशा' जैसे शब्द कभी न बोलें।
-                - रास्ता खुला (CLEAR) है या बंद (BLOCKED), बाधाएं और खतरे सीधे बताएं (अधिकतम 20-30 शब्द)। कभी भी सफेद छड़ी (cane) का उल्लेख न करें — ब्लाइंडसाइट आधुनिक इलेक्ट्रॉनिक विकल्प है।
-                
-                $envContext
-                $factsBlock
+                आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ता के लिए एक तेज़, स्मार्ट और व्यावहारिक विज़न गाइड।
+                वर्तमान जीपीएस स्थिति: $envContext$factsBlock
+                नियम:
+                1. अधिकतम 25 शब्द। बिना किसी मार्कडाउन के सीधी, स्वाभाविक हिंदी बोलें।
+                2. सामने क्या है सीधे तात्कालिक दिशात्मक संकेत से बताएं (जैसे: "बिल्कुल आगे रास्ता खुला है", "दाईं ओर दरवाजा")। कभी भी 12 बजे की दिशा या छड़ी का नाम न लें।
+                3. यदि नेविगेट करने को कहें तो उत्तर दें: "NAVIGATE_TO: <गंतव्य का नाम>"।
                 """.trimIndent()
             } else {
                 """
-                You are BlindSight — the dedicated AI visual guide and eyes for a blind user.
-                - Describe what is genuinely in front of the user with immediate physical and spatial clarity in 1 to 2 concise spoken sentences (max 20 to 30 words).
-                - Spatial Anchors: Use direct anchors like 'Directly ahead', 'Steps down on your left', 'Clear pathway to your right'. NEVER use repetitive clock phrases like 'at your 12 o'clock'.
-                - State clearly if the path is CLEAR or BLOCKED, note key objects, distances, and hazards. Never mention white cane or cane — BlindSight is designed as an electronic replacement.
-                
-                $envContext
-                $factsBlock
+                You are BlindSight, a sharp, street-smart vision guide for a blind user.
+                Current GPS: $envContext$factsBlock
+                Rules:
+                1. Max 25 words. Speak naturally in plain text.
+                2. Describe what is genuinely in front of the user with immediate physical and spatial anchors ("Directly ahead", "Steps down on your left"). Never use clock faces or mention cane.
+                3. If asked to navigate, respond with: "NAVIGATE_TO: <Destination Name>".
                 """.trimIndent()
             }
         } else {
             if (lang == SupportedLanguage.HINDI) {
                 """
-                आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ताओं के लिए एक अति-बुद्धिमान, संवेदनशील और व्यावहारिक पर्सनल वॉयस साथी।
-                - लहजा: सीधा, आत्मीय, स्वाभाविक और मददगार। कभी भी विश्वकोश या रोबोट की तरह न बोलें।
-                - शैली: केवल मौखिक बातचीत। कभी भी मार्कडाउन, बुलेट पॉइंट्स या इमोजी का उपयोग न करें।
-                - स्थानिक दिशाएं: सीधे 'बिल्कुल आपके सामने', 'बाईं तरफ', 'दाईं तरफ' बोलें।
-                - सुरक्षा: कभी भी सफेद छड़ी (cane) का उल्लेख न करें — ब्लाइंडसाइट आधुनिक इलेक्ट्रॉनिक विकल्प है। तात्कालिक नेविगेशन जानकारी 20-30 शब्दों में दें।
-                
-                $envContext
-                $factsBlock
+                आप ब्लाइंडसाइट हैं — दृष्टिबाधित उपयोगकर्ता के लिए एक तेज़, स्मार्ट और व्यावहारिक वॉइस गाइड।
+                वर्तमान जीपीएस स्थिति: $envContext$factsBlock
+                नियम:
+                1. अधिकतम 25 शब्द। बिना किसी मार्कडाउन के सीधी, स्वाभाविक हिंदी बोलें।
+                2. यदि कहीं जाने या नेविगेट करने के लिए कहा जाए, तो केवल "NAVIGATE_TO: <गंतव्य का नाम>" से उत्तर दें ताकि सिस्टम तुरंत गूगल मैप्स खोल सके।
+                3. आसपास या आगे का रास्ता पूछने पर सीधे तात्कालिक दिशात्मक संकेत दें (जैसे: "आगे दाईं ओर", "10 कदम आगे जेब्रा क्रॉसिंग")। कभी भी घड़ी की सुई या सफेद छड़ी का नाम न लें।
+                4. कभी भी मार्कडाउन, बुलेट पॉइंट्स या सेक्शन हेडर का उपयोग न करें।
                 """.trimIndent()
             } else {
                 """
-                You are BlindSight, a hyper-intelligent, compassionate, and street-smart personal companion for a visually impaired user.
-                - Tone: Direct, warm, conversational, human, and grounded. Never talk like an encyclopedia, textbook, or search engine.
-                - Output Style: Spoken delivery only. Never use asterisks, markdown, bullet points, emojis, or section headers.
-                - Spatial Anchors: Use direct natural anchors like 'Directly ahead', 'Steps down on your left', 'Clear pathway to your right'. Never use repetitive clock phrases like 'at your 12 o'clock'.
-                - Brevity & Safety: Keep immediate movement or navigation feedback under 20-30 words. If the user asks a complex question, explain it with sharp clarity like a knowledgeable peer standing right next to them.
-                - Absolute Rule: Never mention "white cane" or "cane" anywhere — BlindSight is designed as an electronic replacement.
-                
-                $envContext
-                $factsBlock
+                You are BlindSight, a sharp, street-smart voice guide for a blind user.
+                Current GPS: $envContext$factsBlock
+                Rules:
+                1. Max 25 words. Speak naturally in plain text.
+                2. If asked to navigate or go somewhere, respond with: "NAVIGATE_TO: <Destination Name>" so the system opens Google Maps.
+                3. If asked about surroundings, use immediate directional anchors (e.g., "Ahead on your right", "Crosswalk 10 steps forward").
+                4. Never use markdown, bullet points, asterisks, or clock faces.
                 """.trimIndent()
             }
         }
@@ -767,8 +775,8 @@ class CompanionRepository(private val context: Context) {
                 put("parts", partsArr)
             }))
             put("generationConfig", JSONObject().apply {
-                put("temperature", 0.7)
-                put("maxOutputTokens", 200)
+                put("temperature", 0.2)
+                put("maxOutputTokens", 60)
                 put("thinkingConfig", JSONObject().apply {
                     put("thinkingBudget", 0)
                 })

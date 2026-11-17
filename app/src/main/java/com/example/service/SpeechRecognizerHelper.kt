@@ -70,6 +70,9 @@ class SpeechRecognizerHelper(
 
     private fun destroyRecognizerInternal() {
         try {
+            audioManager?.mode = AudioManager.MODE_NORMAL
+        } catch (_: Exception) {}
+        try {
             speechRecognizer?.cancel()
         } catch (_: Exception) {}
         try {
@@ -336,11 +339,12 @@ class SpeechRecognizerHelper(
 
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageCode)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageCode)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (languageCode.isNotBlank()) languageCode else java.util.Locale.getDefault().toLanguageTag())
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, if (languageCode.isNotBlank()) languageCode else java.util.Locale.getDefault().toLanguageTag())
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
                 // Fast auto-silence completion (1.1s trailing silence instead of 4 seconds)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1100L)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
@@ -348,13 +352,16 @@ class SpeechRecognizerHelper(
             }
 
             try {
+                // Force audio mode to MODE_IN_COMMUNICATION to activate native hardware AEC & NoiseSuppressor
+                audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
                 // Suppress Google Assistant prompt sound effect
                 suppressSystemSoundsTemporarily(320L)
                 speechRecognizer?.startListening(intent)
                 isListening = true
                 onListeningStateChanged?.invoke(true)
-                Log.d(tag, "In-app startListening called successfully.")
+                Log.d(tag, "In-app startListening called successfully with hardware AEC/ENC.")
             } catch (e: Exception) {
+                try { audioManager?.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
                 Log.e(tag, "Error invoking startListening: ${e.message}", e)
                 handleClientError()
             }
@@ -387,6 +394,9 @@ class SpeechRecognizerHelper(
 
     private fun stopListeningInternal() {
         if (isListening) {
+            try {
+                audioManager?.mode = AudioManager.MODE_NORMAL
+            } catch (_: Exception) {}
             try {
                 speechRecognizer?.stopListening()
             } catch (e: Exception) {

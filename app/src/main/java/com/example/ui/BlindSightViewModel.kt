@@ -482,6 +482,25 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
+        // 5. Check if LLM requested navigation to destination
+        val navToMatch = Regex("NAVIGATE_TO:\\s*(.+)", RegexOption.IGNORE_CASE).find(reply)
+        if (navToMatch != null) {
+            val destination = navToMatch.groupValues[1].replace(Regex("[*._#`\n\r]"), "").trim()
+            repository.openGoogleMaps(destination)
+            val spokenNotice = if (_uiState.value.language == SupportedLanguage.HINDI) {
+                "$destination के लिए गूगल मैप्स पर पैदल नेविगेशन शुरू हो रहा है।"
+            } else {
+                "Starting walking navigation to $destination on Google Maps."
+            }
+            repository.addMessage(isUser = false, text = spokenNotice)
+            _uiState.value = _uiState.value.copy(
+                appState = AppState.SPEAKING,
+                statusText = spokenNotice
+            )
+            speak(spokenNotice)
+            return
+        }
+
         repository.addMessage(isUser = false, text = reply)
         _uiState.value = _uiState.value.copy(
             appState = AppState.SPEAKING,
