@@ -79,9 +79,9 @@ class TtsHelper(
                 Log.w(tag, "Failed to set audio attributes: ${e.message}")
             }
 
-            // Natural, warm human cadence (never high-pitched or robotic)
-            tts?.setSpeechRate(0.96f)
-            tts?.setPitch(0.98f)
+            // Natural, brisk conversational cadence (1.15x speed, natural pitch)
+            tts?.setSpeechRate(1.15f)
+            tts?.setPitch(1.0f)
 
             setLanguage(currentLanguage)
 

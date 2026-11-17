@@ -453,7 +453,7 @@ export class AudioService {
         utter.voice = bestVoice;
       }
 
-      utter.rate = 1.0;
+      utter.rate = 1.15;
       utter.pitch = 1.0;
 
       let finished = false;

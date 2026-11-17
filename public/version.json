@@ -1,6 +1,6 @@
 {
-  "versionCode": 20,
-  "versionName": "1.9.1",
+  "versionCode": 21,
+  "versionName": "1.9.2",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "v1.9.1 Liquid Glass Architecture: Modern Apple/VisionOS-style frosted glass UI, fluid audio-reactive liquid membrane orb (no cartoon faces, strict emoji ban), upright 640x480 viewport HUD, 1.5s speech recognition pacing buffer, and full 14 agentic app controls."
+  "releaseNotes": "v1.9.2 True Liquid Glass & Ally Smiley Architecture: Animated Ally Smiley vector face, pause-resume state machine repair, unified electric blue design system, natural 1.15x conversational TTS pacing, and cleaned HUD telemetry."
 }

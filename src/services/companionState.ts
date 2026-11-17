@@ -344,10 +344,9 @@ export class CompanionStateService {
           newLanguage: code
         };
       } else {
-        const labels = Object.values(LANGUAGES).map(l => l.label).join(', ');
         return {
           isLocal: true,
-          reply: `I don't know that language yet. I can reply in: ${labels}.`
+          reply: "Sorry, I'm not clear. Can you speak again?"
         };
       }
     }

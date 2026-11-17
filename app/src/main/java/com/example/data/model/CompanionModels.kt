@@ -9,7 +9,8 @@ enum class AppState(val label: String) {
     THINKING("Processing…"),
     SPEAKING("Speaking answer"),
     CONFIRMING("Understood"),
-    CAUTION("Caution")
+    CAUTION("Caution"),
+    STANDBY_PAUSED("Paused")
 }
 
 enum class ListenMode(val displayName: String, val hint: String) {

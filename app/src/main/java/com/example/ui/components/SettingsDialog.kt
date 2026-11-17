@@ -1,8 +1,12 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,16 +14,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -37,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -48,12 +58,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.SupportedLanguage
 import com.example.service.VoicePersona
-import com.example.ui.theme.BlindSightAmber
-import com.example.ui.theme.BlindSightCard
-import com.example.ui.theme.BlindSightCardEdge
-import com.example.ui.theme.BlindSightTextMuted
-import com.example.ui.theme.BlindSightTextPrimary
+import com.example.ui.theme.ElectricCobalt
+import com.example.ui.theme.LiquidGlassBorder
+import com.example.ui.theme.MidnightBlueGlass
+import com.example.ui.theme.PorcelainGlass
+import com.example.ui.theme.SlateTextDark
+import com.example.ui.theme.SlateTextMuted
+import com.example.ui.theme.TextPrimaryWhite
+import com.example.ui.theme.TextSecondarySlate
+import com.example.ui.theme.VividCyan
 
+/**
+ * Modern Liquid Glass Settings Dialog.
+ * Standardized on the Unified Royal / Electric Blue Design System.
+ */
 @Composable
 fun SettingsDialog(
     currentLanguage: SupportedLanguage,
@@ -62,8 +80,8 @@ fun SettingsDialog(
     onVoicePersonaChange: (VoicePersona) -> Unit = {},
     currentTextSize: Float,
     onTextSizeChange: (Float) -> Unit,
-    highContrastYellow: Boolean,
-    onToggleHighContrast: () -> Unit,
+    isDarkMode: Boolean = true,
+    onToggleDarkMode: () -> Unit = {},
     isPhoneCameraFallbackEnabled: Boolean = true,
     onTogglePhoneCameraFallback: () -> Unit = {},
     currentGatewayUrl: String = "",
@@ -73,14 +91,20 @@ fun SettingsDialog(
     onDismiss: () -> Unit
 ) {
     var gatewayText by remember { mutableStateOf(currentGatewayUrl) }
+
+    val dialogBg = if (isDarkMode) MidnightBlueGlass else PorcelainGlass
+    val textPrimary = if (isDarkMode) TextPrimaryWhite else SlateTextDark
+    val textSecondary = if (isDarkMode) TextSecondarySlate else SlateTextMuted
+    val cardSurface = if (isDarkMode) Color(0xFF060B14) else Color(0xFFF1F6FF)
+
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(BlindSightCard)
-                .border(2.dp, BlindSightCardEdge, RoundedCornerShape(20.dp))
-                .padding(20.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(dialogBg)
+                .border(1.dp, LiquidGlassBorder, RoundedCornerShape(28.dp))
+                .padding(22.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             // Header
@@ -89,18 +113,21 @@ fun SettingsDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = null,
-                        tint = BlindSightAmber,
+                        tint = ElectricCobalt,
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
                         text = "Settings",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BlindSightTextPrimary
+                        color = textPrimary
                     )
                 }
 
@@ -114,58 +141,93 @@ fun SettingsDialog(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = BlindSightTextMuted
+                        tint = textSecondary
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Automatic Language & Voice Card
-            Box(
+            // Animated Spring Physics Theme Switch
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF0F172A))
-                    .border(1.dp, BlindSightCardEdge, RoundedCornerShape(12.dp))
-                    .padding(14.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(cardSurface)
+                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(14.dp))
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF10B981))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isDarkMode) "Deep Oceanic Obsidian" else "Porcelain Ice Light",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textPrimary
+                    )
+                    Text(
+                        text = if (isDarkMode) "Electric blue & midnight glass" else "Clean porcelain glass with cerulean accents",
+                        fontSize = 12.sp,
+                        color = textSecondary
+                    )
+                }
+
+                // Spring physics switch track
+                val thumbOffset by animateDpAsState(
+                    targetValue = if (isDarkMode) 24.dp else 0.dp,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessLow
+                    ),
+                    label = "themeSwitchThumb"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .width(54.dp)
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(if (isDarkMode) Color(0xFF0F2752) else Color(0xFFC7DEFF))
+                        .border(1.dp, LiquidGlassBorder, RoundedCornerShape(15.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onToggleDarkMode
                         )
-                        Text(
-                            text = "Auto Language & Voice Active",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = BlindSightTextPrimary
+                        .padding(3.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = thumbOffset)
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(ElectricCobalt, VividCyan)
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "BlindSight automatically detects whether you speak in English or Hindi, and responds using clear, professional human speech.",
-                        fontSize = 12.sp,
-                        color = BlindSightTextMuted,
-                        lineHeight = 16.sp
-                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Text Size
             Text(
                 text = "Text Size",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
+                color = textPrimary
             )
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -178,9 +240,9 @@ fun SettingsDialog(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) BlindSightAmber else Color(0xFF05070C))
-                            .border(1.dp, if (isSelected) BlindSightAmber else BlindSightCardEdge, RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) ElectricCobalt else cardSurface)
+                            .border(1.dp, if (isSelected) VividCyan else LiquidGlassBorder, RoundedCornerShape(12.dp))
                             .clickable { onTextSizeChange(scale) }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
@@ -189,59 +251,22 @@ fun SettingsDialog(
                             text = label,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.Black else BlindSightTextPrimary
+                            color = if (isSelected) Color.White else textPrimary
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // High Contrast Yellow mode
+            // Mobile Back Camera Fallback
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF05070C))
-                    .border(1.dp, BlindSightCardEdge, RoundedCornerShape(10.dp))
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Yellow-on-Black Mode",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = BlindSightTextPrimary
-                    )
-                    Text(
-                        text = "High luminance yellow for severe cataracts/low vision",
-                        fontSize = 12.sp,
-                        color = BlindSightTextMuted
-                    )
-                }
-
-                Switch(
-                    checked = highContrastYellow,
-                    onCheckedChange = { onToggleHighContrast() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = BlindSightAmber,
-                        checkedTrackColor = BlindSightAmber.copy(alpha = 0.5f)
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Mobile Back Camera Fallback & Privacy Setting
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF05070C))
-                    .border(1.dp, BlindSightCardEdge, RoundedCornerShape(10.dp))
-                    .padding(12.dp),
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(cardSurface)
+                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(14.dp))
+                    .padding(14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -250,12 +275,12 @@ fun SettingsDialog(
                         text = "Mobile Camera Fallback",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BlindSightTextPrimary
+                        color = textPrimary
                     )
                     Text(
-                        text = "Uses phone's back camera when glasses are disconnected, announcing 'Using your mobile back camera'.",
+                        text = "Inspect path ahead using phone camera when smart glasses are disconnected.",
                         fontSize = 12.sp,
-                        color = BlindSightTextMuted
+                        color = textSecondary
                     )
                 }
 
@@ -263,26 +288,26 @@ fun SettingsDialog(
                     checked = isPhoneCameraFallbackEnabled,
                     onCheckedChange = { onTogglePhoneCameraFallback() },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = BlindSightAmber,
-                        checkedTrackColor = BlindSightAmber.copy(alpha = 0.5f)
+                        checkedThumbColor = VividCyan,
+                        checkedTrackColor = ElectricCobalt.copy(alpha = 0.5f)
                     )
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Hardware Glasses Gateway IP
             Text(
-                text = "Glasses Gateway URL (v1.5 Cam)",
+                text = "Smart Glasses Gateway IP",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = BlindSightTextPrimary
+                color = textPrimary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "IP where ESP32 uploads frames (e.g. http://192.168.29.173:5000)",
+                text = "ESP32 wireless bridge URL (e.g. http://192.168.29.173:5000)",
                 fontSize = 12.sp,
-                color = BlindSightTextMuted
+                color = textSecondary
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(
@@ -296,17 +321,17 @@ fun SettingsDialog(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color(0xFF05070C),
-                        unfocusedContainerColor = Color(0xFF05070C),
-                        focusedTextColor = BlindSightTextPrimary,
-                        unfocusedTextColor = BlindSightTextPrimary,
-                        focusedIndicatorColor = BlindSightAmber,
-                        unfocusedIndicatorColor = BlindSightCardEdge
+                        focusedContainerColor = cardSurface,
+                        unfocusedContainerColor = cardSurface,
+                        focusedTextColor = textPrimary,
+                        unfocusedTextColor = textPrimary,
+                        focusedIndicatorColor = ElectricCobalt,
+                        unfocusedIndicatorColor = LiquidGlassBorder
                     )
                 )
                 Button(
                     onClick = { onGatewayUrlChange(gatewayText) },
-                    colors = ButtonDefaults.buttonColors(containerColor = BlindSightAmber, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt, contentColor = Color.White),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text("Save", fontWeight = FontWeight.Bold)
@@ -322,17 +347,17 @@ fun SettingsDialog(
                     onCheckUpdates()
                 },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = BlindSightAmber.copy(alpha = 0.2f)),
+                colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt.copy(alpha = 0.2f)),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Settings,
+                    imageVector = Icons.Default.SystemUpdate,
                     contentDescription = null,
-                    tint = BlindSightAmber,
+                    tint = VividCyan,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.size(8.dp))
-                Text(text = "Check for App Updates", color = BlindSightAmber, fontWeight = FontWeight.Bold)
+                Text(text = "Check for App Updates", color = VividCyan, fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -341,17 +366,17 @@ fun SettingsDialog(
             Button(
                 onClick = onReadHelp,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = BlindSightCardEdge),
+                colors = ButtonDefaults.buttonColors(containerColor = cardSurface),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.HelpOutline,
+                    imageVector = Icons.Default.VolumeUp,
                     contentDescription = null,
-                    tint = BlindSightAmber,
+                    tint = ElectricCobalt,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.size(8.dp))
-                Text(text = "Speak All Commands Help", color = BlindSightTextPrimary, fontWeight = FontWeight.Bold)
+                Text(text = "Speak All Commands Help", color = textPrimary, fontWeight = FontWeight.Bold)
             }
         }
     }

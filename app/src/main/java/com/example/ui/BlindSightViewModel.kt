@@ -39,12 +39,14 @@ data class UiState(
     val appState: AppState = AppState.IDLE,
     val selectedTab: AppTab = AppTab.COMPANION,
     val language: SupportedLanguage = SupportedLanguage.ENGLISH,
-    val statusText: String = "BlindSight active. Tap anywhere on the lower glass to speak.",
+    val statusText: String = "BlindSight active. Tap lower glass to speak.",
     val heardText: String = "",
     val speechInput: String = "",
     val isAutoSweeping: Boolean = false,
     val isCameraScanning: Boolean = false,
     val textSizeMultiplier: Float = 1.0f,
+    val isDarkMode: Boolean = true,
+    val isStandbyPaused: Boolean = false,
     val highContrastYellow: Boolean = false,
     val gatewayUrl: String = "https://blindsightai.vercel.app",
     val latestFrameBytes: ByteArray? = null,
@@ -393,6 +395,19 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val trimmed = spokenText.trim()
         if (trimmed.isEmpty()) return
 
+        // 1. STANDBY_PAUSED State Gate: Strictly listen for resume wake intents while paused
+        if (_uiState.value.isStandbyPaused || _uiState.value.appState == AppState.STANDBY_PAUSED) {
+            val resumeRegex = Regex(
+                "\\b(?:resume|continue|start|chalo|shuru\\s*karo|wake\\s*up|unpause|shuru|chal|आगे\\s*बढ़ो|शुरू\\s*करो|चालू\\s*करो)\\b",
+                RegexOption.IGNORE_CASE
+            )
+            if (resumeRegex.containsMatchIn(trimmed)) {
+                resumeFromStandby()
+            }
+            // Ignore any general chatter while paused without freezing speech recognition!
+            return
+        }
+
         // Comprehensive phonetic regex for wake word: "hey blindsight", "a blindsight", "a blind sight", "blind side", "blindsight", etc.
         val wakeRegex = Regex(
             "^(?:hey|a|ay|ey|hi|hello|ok|okay|the|i|हे|नमस्ते)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|ब्लाइंड\\s*साइट|ब्लाइंडसाइट)\\b",
@@ -535,8 +550,42 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         setLanguage(all[nextIdx])
     }
 
+    fun toggleDarkMode() {
+        val newVal = !_uiState.value.isDarkMode
+        _uiState.value = _uiState.value.copy(isDarkMode = newVal)
+        hapticHelper.vibrateConfirm()
+    }
+
+    fun enterStandbyPaused() {
+        ttsHelper?.stop()
+        _uiState.value = _uiState.value.copy(
+            appState = AppState.STANDBY_PAUSED,
+            isStandbyPaused = true,
+            statusText = "Paused. Say 'Resume' to continue."
+        )
+        // Keep the speech recognizer active in continuous mode so "resume" works!
+        speechRecognizerHelper?.isContinuousMode = true
+        speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
+    }
+
+    fun resumeFromStandby() {
+        _uiState.value = _uiState.value.copy(
+            appState = AppState.IDLE,
+            isStandbyPaused = false,
+            statusText = "BlindSight active. Tap lower glass to speak."
+        )
+        hapticHelper.vibrateConfirm()
+        ttsHelper?.playEarcon(TtsHelper.EarconType.OK)
+        val resumeMsg = if (_uiState.value.language == SupportedLanguage.HINDI) "दोबारा शुरू किया गया।" else "Resumed."
+        deliverSpokenReply(resumeMsg)
+    }
+
     fun onTactileSingleTap() {
         val currentState = _uiState.value.appState
+        if (currentState == AppState.STANDBY_PAUSED || _uiState.value.isStandbyPaused) {
+            resumeFromStandby()
+            return
+        }
         if (currentState == AppState.SPEAKING) {
             stopSpeaking()
             return
@@ -656,16 +705,19 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val pauseRegex = Regex("\\[ACTION:PAUSE\\]", RegexOption.IGNORE_CASE)
         if (pauseRegex.containsMatchIn(rawReply)) {
             text = text.replace(pauseRegex, "").trim()
-            speechRecognizerHelper?.pauseListening()
+            enterStandbyPaused()
             triggerConfirmEmotion()
+            val pauseMsg = if (_uiState.value.language == SupportedLanguage.HINDI) "पॉज़ किया गया। जारी रखने के लिए रेज़्यूम कहें।" else "Paused. Say resume to continue."
+            deliverSpokenReply(pauseMsg)
+            return
         }
 
         // 8. Resume Action: [ACTION:RESUME]
         val resumeRegex = Regex("\\[ACTION:RESUME\\]", RegexOption.IGNORE_CASE)
         if (resumeRegex.containsMatchIn(rawReply)) {
             text = text.replace(resumeRegex, "").trim()
-            speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
-            triggerConfirmEmotion()
+            resumeFromStandby()
+            return
         }
 
         // 9. Repeat Action: [ACTION:REPEAT]
