@@ -6,8 +6,8 @@ import {
   CameraOff,
   BatteryCharging,
   Compass,
-  Sparkles,
-  Smartphone
+  Smartphone,
+  Eye
 } from 'lucide-react';
 import { VisionAiService } from './services/visionAi';
 import { AudioService } from './services/audioService';
@@ -19,6 +19,17 @@ import { ApkQrModal } from './components/ApkQrModal';
 
 const LOCKED_LANGUAGES: LanguageCode[] = ['en', 'hi', 'pa', 'bn'];
 
+/**
+ * BlindSight Liquid Glass Accessible Experience.
+ *
+ * Designed strictly according to assistive mobility principles:
+ * - Obsidian Canvas (#080B10)
+ * - Apple / VisionOS Frosted Glassmorphism (blur 28px, border 1px solid rgba(255,255,255,0.12))
+ * - Top 40%: Viewport HUD with glowing liquid glass border showing live upright camera
+ * - Center: Organic fluid audio-reactive liquid orb/membrane
+ * - Bottom 50%: Massive tactile touch surface with 1.5s speech silence buffer
+ * - Zero emojis throughout UI and spoken output
+ */
 export const App: React.FC = () => {
   const [orbState, setOrbState] = useState<AllyOrbState>('idle');
   const [currentLang, setCurrentLang] = useState<LanguageCode>('en');
@@ -28,12 +39,13 @@ export const App: React.FC = () => {
   const [isCameraActive, setIsCameraActive] = useState<boolean>(true);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [statusSubtitle, setStatusSubtitle] = useState<string>(
-    "Double-tap: Describe Scene  •  2 fingers: Silence"
+    "Single-tap: Speak  •  Double-tap: Describe  •  2 fingers: Silence"
   );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<number | null>(null);
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimerRef = useRef<number | null>(null);
 
@@ -74,7 +86,11 @@ export const App: React.FC = () => {
         }
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          }
         });
 
         if (isMounted) {
@@ -155,6 +171,49 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Immediate Scene Description (Double Tap)
+  const handleDescribeScene = useCallback(async (isReadingText = false) => {
+    triggerHaptic([50, 70, 50]);
+    setOrbState('think');
+    const promptText = isReadingText
+      ? "Read all text, signs, labels, or numbers visible in this view. If no text is visible, say 'No text visible'."
+      : "Describe what is directly in front of me with immediate directional anchors.";
+    setStatusSubtitle(isReadingText ? "Reading visible text…" : "Capturing scene snapshot…");
+
+    let capturedDataUrl: string | null = null;
+    if (videoRef.current && isCameraActive) {
+      capturedDataUrl = VisionAiService.captureFrameFromVideo(videoRef.current);
+    }
+
+    try {
+      const reply = capturedDataUrl
+        ? await VisionAiService.describeScene(capturedDataUrl, currentLang, promptText)
+        : await VisionAiService.queryGroqDirect(promptText, currentLang);
+
+      const cleanedReply = (reply || "Directly ahead is clear. Path is open.")
+        .replace(/\[ACTION:[^\]]+\]/gi, '').trim();
+
+      setAiResponse(cleanedReply);
+      setOrbState('speak');
+
+      AudioService.speak(
+        cleanedReply,
+        currentLang,
+        undefined,
+        () => setOrbState('speak'),
+        () => {
+          setOrbState('idle');
+          triggerHaptic(20);
+        }
+      );
+    } catch {
+      const fallback = "Path directly ahead is open. Proceed steadily.";
+      setAiResponse(fallback);
+      setOrbState('speak');
+      AudioService.speak(fallback, currentLang, undefined, () => setOrbState('speak'), () => setOrbState('idle'));
+    }
+  }, [currentLang, isCameraActive, triggerHaptic]);
+
   // Process Action tags cleanly
   const executeAppActions = useCallback((rawReply: string): string => {
     let text = rawReply;
@@ -174,14 +233,14 @@ export const App: React.FC = () => {
       return text ? `${text} ${notice}` : notice;
     }
 
-    // 2. Flashlight Action: [ACTION:TORCH ON] or [ACTION:TORCH OFF]
-    if (/\[ACTION:TORCH\s+ON\]/i.test(rawReply)) {
-      text = text.replace(/\[ACTION:TORCH\s+ON\]/i, '').trim();
+    // 2. Flashlight Action: [ACTION:TORCH_ON] / [ACTION:TORCH_OFF]
+    if (/\[ACTION:TORCH_?ON\]/i.test(rawReply)) {
+      text = text.replace(/\[ACTION:TORCH_?ON\]/i, '').trim();
       setWebTorch(true);
       setOrbState('confirming');
       triggerHaptic(50);
-    } else if (/\[ACTION:TORCH\s+OFF\]/i.test(rawReply)) {
-      text = text.replace(/\[ACTION:TORCH\s+OFF\]/i, '').trim();
+    } else if (/\[ACTION:TORCH_?OFF\]/i.test(rawReply)) {
+      text = text.replace(/\[ACTION:TORCH_?OFF\]/i, '').trim();
       setWebTorch(false);
       setOrbState('confirming');
       triggerHaptic(50);
@@ -201,10 +260,20 @@ export const App: React.FC = () => {
       return text || (currentLang === 'hi' ? 'सामने का दृश्य देखा जा रहा है…' : 'Inspecting scene…');
     }
 
+    // 5. Language Switch: [ACTION:SET_LANGUAGE <en|hi|pa|bn>]
+    const langMatch = /\[ACTION:SET_LANGUAGE\s+([a-zA-Z]+)\]/i.exec(rawReply);
+    if (langMatch) {
+      const code = langMatch[1].toLowerCase().slice(0, 2) as LanguageCode;
+      text = text.replace(langMatch[0], '').trim();
+      if (LOCKED_LANGUAGES.includes(code)) {
+        setCurrentLang(code);
+      }
+    }
+
     // Strip any remaining [ACTION:...] tags
     text = text.replace(/\[ACTION:[^\]]+\]/gi, '').trim();
     return text;
-  }, [currentLang, triggerHaptic, setWebTorch]);
+  }, [currentLang, triggerHaptic, setWebTorch, handleDescribeScene]);
 
   // Process text or visual query
   const handleQuery = useCallback(async (queryText: string) => {
@@ -272,48 +341,7 @@ export const App: React.FC = () => {
     }
   }, [currentLang, isCameraActive, triggerHaptic, executeAppActions]);
 
-  // Immediate Scene Description (Double Tap)
-  const handleDescribeScene = useCallback(async (isReadingText = false) => {
-    triggerHaptic([50, 70, 50]);
-    setOrbState('think');
-    const promptText = isReadingText
-      ? "Read all text, signs, labels, or numbers visible in this view. If no text is visible, say 'No text visible'."
-      : "Describe what is directly in front of me with immediate directional anchors.";
-    setStatusSubtitle(isReadingText ? "Reading visible text…" : "Capturing scene snapshot…");
-
-    let capturedDataUrl: string | null = null;
-    if (videoRef.current && isCameraActive) {
-      capturedDataUrl = VisionAiService.captureFrameFromVideo(videoRef.current);
-    }
-
-    try {
-      const reply = capturedDataUrl
-        ? await VisionAiService.describeScene(capturedDataUrl, currentLang, promptText)
-        : await VisionAiService.queryGroqDirect(promptText, currentLang);
-
-      const finalReply = executeAppActions(reply || "Directly ahead is clear. Path is open.");
-      setAiResponse(finalReply);
-      setOrbState('speak');
-
-      AudioService.speak(
-        finalReply,
-        currentLang,
-        undefined,
-        () => setOrbState('speak'),
-        () => {
-          setOrbState('idle');
-          triggerHaptic(20);
-        }
-      );
-    } catch {
-      const fallback = "Path directly ahead is open. Proceed steadily.";
-      setAiResponse(fallback);
-      setOrbState('speak');
-      AudioService.speak(fallback, currentLang, undefined, () => setOrbState('speak'), () => setOrbState('idle'));
-    }
-  }, [currentLang, isCameraActive, triggerHaptic, executeAppActions]);
-
-  // Voice Recognition Start / Stop
+  // Voice Recognition Start / Stop with 1.5s silence gap buffer
   const handleStartListening = useCallback(() => {
     if (orbState === 'speak') {
       handleStopSpeaking();
@@ -321,6 +349,10 @@ export const App: React.FC = () => {
     }
 
     if (orbState === 'listen') {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -347,12 +379,29 @@ export const App: React.FC = () => {
 
     try {
       const recog = new SpeechRecognitionClass();
-      recog.continuous = false;
-      recog.interimResults = false;
+      recog.continuous = true;
+      recog.interimResults = true;
 
       // Strict Locale Locking
       const langConfig = LANGUAGES[currentLang] || LANGUAGES.en;
       recog.lang = langConfig.speechLang;
+
+      let accumulated = '';
+
+      const finalizeAndSend = () => {
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        try {
+          recog.stop();
+        } catch {}
+        if (accumulated.trim()) {
+          handleQuery(accumulated.trim());
+        } else {
+          setOrbState('idle');
+        }
+      };
 
       recog.onstart = () => {
         setOrbState('listen');
@@ -360,21 +409,38 @@ export const App: React.FC = () => {
       };
 
       recog.onresult = (ev: any) => {
-        const text = ev.results?.[0]?.[0]?.transcript || '';
-        if (text.trim()) {
-          handleQuery(text.trim());
-        } else {
-          setOrbState('idle');
+        let interim = '';
+        for (let i = ev.resultIndex; i < ev.results.length; ++i) {
+          const trans = ev.results[i][0].transcript;
+          if (ev.results[i].isFinal) {
+            accumulated += ' ' + trans;
+          } else {
+            interim += trans;
+          }
+        }
+        const full = (accumulated + ' ' + interim).trim();
+        if (full) {
+          setStatusSubtitle(`Listening: "${full}"`);
+          // 1.5s Silence Gap Buffer before finalizing
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = window.setTimeout(() => {
+            finalizeAndSend();
+          }, 1500);
         }
       };
 
       recog.onerror = () => {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         setOrbState('idle');
       };
 
       recog.onend = () => {
         if (orbState === 'listen') {
-          setOrbState('idle');
+          if (accumulated.trim()) {
+            handleQuery(accumulated.trim());
+          } else {
+            setOrbState('idle');
+          }
         }
       };
 
@@ -387,7 +453,7 @@ export const App: React.FC = () => {
 
   // Touch & Blind Ergonomics Gesture Dispatcher
   const handleTouchStart = (e: React.TouchEvent) => {
-    // 1. Two-finger tap: instantly silence speech
+    // Two-finger tap: instantly silence speech
     if (e.touches.length >= 2) {
       e.preventDefault();
       if (singleTapTimerRef.current) {
@@ -402,7 +468,7 @@ export const App: React.FC = () => {
   const handlePadTap = () => {
     const now = Date.now();
     if (now - lastTapTimeRef.current < 380) {
-      // 2. Double-tap detected: describe scene immediately!
+      // Double-tap detected: describe scene immediately!
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
@@ -410,7 +476,7 @@ export const App: React.FC = () => {
       lastTapTimeRef.current = 0;
       handleDescribeScene(false);
     } else {
-      // Single tap: start delayed timer
+      // Single tap: start delayed timer for talk
       lastTapTimeRef.current = now;
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
@@ -423,7 +489,7 @@ export const App: React.FC = () => {
   };
 
   const stateHeadline = {
-    idle: 'Tap Anywhere to Talk',
+    idle: 'Tap Lower Glass to Talk',
     listen: 'Listening to you…',
     think: 'Thinking…',
     speak: 'BlindSight Guiding…',
@@ -434,7 +500,7 @@ export const App: React.FC = () => {
   return (
     <div
       style={{
-        backgroundColor: '#0B0E14',
+        backgroundColor: '#080B10',
         color: '#FFFFFF',
         minHeight: '100dvh',
         width: '100vw',
@@ -444,20 +510,10 @@ export const App: React.FC = () => {
         justifyContent: 'space-between',
         overflow: 'hidden',
         userSelect: 'none',
-        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}
       onTouchStart={handleTouchStart}
     >
-      {/* Hidden camera stream video element for live snapshot capture */}
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        autoPlay
-        style={{ position: 'fixed', top: -9999, left: -9999, width: 640, height: 480, pointerEvents: 'none' }}
-        aria-hidden="true"
-      />
-
       {/* =================================================================
           1. TOP HEADER: Subtle Battery/GPS Status Pill & Active Language Badge
           ================================================================= */}
@@ -465,17 +521,17 @@ export const App: React.FC = () => {
         style={{
           width: '100%',
           maxWidth: 640,
-          padding: '16px 20px',
+          padding: '14px 20px 8px 20px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          zIndex: 10
+          zIndex: 20
         }}
       >
         {/* Subtle Battery & Sensor Status Pill */}
         <div
           onClick={() => {
-            const report = `System active. Battery normal. GPS locked. Path ahead clear.`;
+            const report = `BlindSight active. Battery normal. GPS locked. Path ahead clear.`;
             setAiResponse(report);
             AudioService.speak(report, currentLang);
             triggerHaptic(30);
@@ -484,8 +540,10 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 7,
-            backgroundColor: '#161B22',
-            border: '1px solid #1E293B',
+            backgroundColor: 'rgba(18, 24, 38, 0.45)',
+            backdropFilter: 'blur(28px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
             borderRadius: 20,
             padding: '7px 14px',
             fontSize: 12,
@@ -494,7 +552,7 @@ export const App: React.FC = () => {
           }}
           role="button"
           tabIndex={0}
-          aria-label="Status report pill. Tap to hear hardware battery and GPS status."
+          aria-label="Hardware status pill. Tap to hear battery and GPS report."
         >
           <BatteryCharging size={15} color="#38bdf8" />
           <span>READY</span>
@@ -503,7 +561,7 @@ export const App: React.FC = () => {
           <span style={{ color: '#94A3B8', fontWeight: 600 }}>GPS READY</span>
         </div>
 
-        {/* Right Action Icons: Stop Speech, Language Badge, APK QR, Camera */}
+        {/* Right Action Icons: Stop Speech, Language Badge, Camera Toggle, APK QR */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {orbState === 'speak' && (
             <button
@@ -532,8 +590,10 @@ export const App: React.FC = () => {
             type="button"
             onClick={handleCycleLanguage}
             style={{
-              backgroundColor: '#161B22',
-              border: '1px solid #1E293B',
+              backgroundColor: 'rgba(18, 24, 38, 0.45)',
+              backdropFilter: 'blur(28px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               borderRadius: 20,
               padding: '7px 13px',
               fontSize: 12,
@@ -555,8 +615,10 @@ export const App: React.FC = () => {
               width: 36,
               height: 36,
               borderRadius: '50%',
-              backgroundColor: '#161B22',
-              border: '1px solid #1E293B',
+              backgroundColor: 'rgba(18, 24, 38, 0.45)',
+              backdropFilter: 'blur(28px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               color: isCameraActive ? '#38bdf8' : '#94A3B8',
               display: 'flex',
               alignItems: 'center',
@@ -576,8 +638,10 @@ export const App: React.FC = () => {
               width: 36,
               height: 36,
               borderRadius: '50%',
-              backgroundColor: '#161B22',
-              border: '1px solid #1E293B',
+              backgroundColor: 'rgba(18, 24, 38, 0.45)',
+              backdropFilter: 'blur(28px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               color: '#94A3B8',
               display: 'flex',
               alignItems: 'center',
@@ -592,7 +656,108 @@ export const App: React.FC = () => {
       </header>
 
       {/* =================================================================
-          2. THE LIVING "ALLY" FACE / MORPHING EXPRESSION ORB (Top 40%)
+          2. TOP 40%: VIEWPORT HUD WITH GLOWING LIQUID GLASS BORDER
+          ================================================================= */}
+      <section
+        style={{
+          width: '100%',
+          maxWidth: 600,
+          height: '24vh',
+          minHeight: 140,
+          maxHeight: 200,
+          margin: '4px 16px',
+          padding: '0 16px',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative'
+        }}
+        aria-label="Camera Viewport HUD"
+      >
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: 22,
+            overflow: 'hidden',
+            position: 'relative',
+            backgroundColor: 'rgba(18, 24, 38, 0.45)',
+            backdropFilter: 'blur(28px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          {isCameraActive ? (
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block'
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                color: '#94A3B8'
+              }}
+            >
+              <Eye size={28} color="#38bdf8" />
+              <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.5 }}>
+                VISION VIEWPORT READY
+              </span>
+            </div>
+          )}
+
+          {/* Liquid HUD Overlay Ribbon */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              left: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: 'rgba(8, 11, 16, 0.75)',
+              backdropFilter: 'blur(12px)',
+              borderRadius: 12,
+              padding: '4px 10px',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: 0.8,
+              color: isCameraActive ? '#38bdf8' : '#94A3B8',
+              border: '1px solid rgba(255, 255, 255, 0.08)'
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                backgroundColor: isCameraActive ? '#38bdf8' : '#64748b'
+              }}
+            />
+            {isCameraActive ? 'UPRIGHT FEED • 640x480' : 'STANDBY'}
+          </div>
+        </div>
+      </section>
+
+      {/* =================================================================
+          3. CENTER: ORGANIC FLUID AUDIO-REACTIVE LIQUID ORB / MEMBRANE
           ================================================================= */}
       <main
         style={{
@@ -601,18 +766,18 @@ export const App: React.FC = () => {
           alignItems: 'center',
           justifyContent: 'center',
           flex: '0 0 auto',
-          padding: '10px 0'
+          padding: '4px 0'
         }}
       >
         <AllyFaceOrb
           state={orbState}
           onClick={handlePadTap}
-          size={250}
+          size={210}
         />
       </main>
 
       {/* =================================================================
-          3. FULL-SCREEN TACTILE CANVAS & LARGE ACCESSIBILITY TYPOGRAPHY (Lower 60%)
+          4. BOTTOM 50%: MASSIVE TACTILE TOUCH GLASS SURFACE
           ================================================================= */}
       <section
         onClick={handlePadTap}
@@ -624,10 +789,13 @@ export const App: React.FC = () => {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: 'rgba(22, 27, 34, 0.45)',
-          borderTop: '1px solid rgba(30, 41, 59, 0.7)',
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
+          backgroundColor: 'rgba(18, 24, 38, 0.45)',
+          backdropFilter: 'blur(28px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+          boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+          borderTopLeftRadius: 32,
+          borderTopRightRadius: 32,
           padding: '24px 20px',
           boxSizing: 'border-box',
           cursor: 'pointer',
@@ -635,7 +803,7 @@ export const App: React.FC = () => {
         }}
         role="button"
         tabIndex={0}
-        aria-label={`Tactile Talk and Sense surface. Current state: ${stateHeadline}. Tap anywhere to speak, double tap to describe scene, or tap with 2 fingers to silence.`}
+        aria-label={`Tactile Talk and Sense surface. Current state: ${stateHeadline}. Single tap anywhere to speak, double tap to describe scene, or tap with two fingers to silence.`}
         onKeyDown={(e) => {
           if (e.key === ' ' || e.key === 'Enter') {
             e.preventDefault();
@@ -650,7 +818,14 @@ export const App: React.FC = () => {
               fontSize: '1.75rem',
               fontWeight: 800,
               margin: '0 0 12px 0',
-              color: orbState === 'caution' ? '#ef4444' : orbState === 'confirming' ? '#f59e0b' : orbState === 'listen' ? '#38bdf8' : '#FFFFFF'
+              color:
+                orbState === 'caution'
+                  ? '#ef4444'
+                  : orbState === 'confirming'
+                  ? '#f59e0b'
+                  : orbState === 'listen'
+                  ? '#38bdf8'
+                  : '#FFFFFF'
             }}
           >
             {stateHeadline}
@@ -677,8 +852,8 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            backgroundColor: '#0B0E14',
-            border: '1px solid #1E293B',
+            backgroundColor: 'rgba(8, 11, 16, 0.75)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
             borderRadius: 18,
             padding: '8px 16px',
             fontSize: 13,

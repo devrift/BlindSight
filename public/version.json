@@ -1,6 +1,6 @@
 {
-  "versionCode": 19,
-  "versionName": "1.9.0",
+  "versionCode": 20,
+  "versionName": "1.9.1",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "v1.9.0 Ally Architecture: Expressive living AI Face/Orb, full-screen blind tactile interaction, strict 4-language boundary (EN, HI, PA, BN), and real-time app action controls (Maps walking navigation, torch, OCR reading, surroundings)."
+  "releaseNotes": "v1.9.1 Liquid Glass Architecture: Modern Apple/VisionOS-style frosted glass UI, fluid audio-reactive liquid membrane orb (no cartoon faces, strict emoji ban), upright 640x480 viewport HUD, 1.5s speech recognition pacing buffer, and full 14 agentic app controls."
 }

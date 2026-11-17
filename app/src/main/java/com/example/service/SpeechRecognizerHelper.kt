@@ -353,14 +353,14 @@ class SpeechRecognizerHelper(
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, lockedLocale)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lockedLocale)
-                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
-                // Fast auto-silence completion (1.1s trailing silence instead of 4 seconds)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1100L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, lockedLocale)
+                putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayListOf("en-IN", "hi-IN", "ur-IN", "pa-IN", "bn-IN"))
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             }
 
             try {

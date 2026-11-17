@@ -5,7 +5,6 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -19,15 +18,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.Dp
@@ -38,19 +34,21 @@ import com.example.ui.theme.AllyAmberGlow
 import com.example.ui.theme.AllyCyan
 import com.example.ui.theme.AllyWarning
 import com.example.ui.theme.AllyWarningAmber
+import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * The Living "Ally" Face / Morphing Expression Orb.
+ * Organic, Fluid Audio-Reactive Liquid Orb / Membrane.
  *
- * An expressive, emotionally intelligent visual presence inspired by Envision Ally.
- * Seamlessly reflects 6 organic conversational states:
- * - Idle / Attentive: Gentle breathing glow with soft, occasional eye blinks.
- * - Listening: Concentric soft wave ripples reacting dynamically to user voice amplitude; slight upward "curious" eye tilt.
- * - Thinking / Processing: Smooth, warm rotational shimmer and slight squint/focus expression.
- * - Speaking / Guiding: Fluid, audio-reactive mouth/soundwave line moving in sync with speech playback.
- * - Empathetic / Confirming: Warm amber/gold smile flash when a command is understood or safe path is confirmed.
- * - Caution / Obstacle Hazard: Gentle pulse shift to soft red-amber warning state accompanied by alert glow.
+ * An industrial-grade, Apple/VisionOS-inspired liquid glass intelligence presence:
+ * - IDLE: Calm, rhythmic breathing expansion, deep obsidian and cyan specular glass reflections.
+ * - LISTENING: Concentric harmonic ripples propagating outward, liquid cyan membrane reacting to audio.
+ * - THINKING: Swirling rotational liquid plasma vortex with orbiting caustic flares.
+ * - SPEAKING: Volumetric fluid undulation and expansion with multi-harmonic wave nodes and radiant glow.
+ * - CONFIRMING: Radiant golden fluid shimmer expanding outward with glass refraction.
+ * - CAUTION: Soft pulsing red-amber warning luminescence across the outer perimeter.
+ *
+ * Strictly adheres to the project's accessibility rules: zero emojis, pure tactile liquid aesthetic.
  */
 @Composable
 fun AllyFaceOrb(
@@ -59,71 +57,68 @@ fun AllyFaceOrb(
     modifier: Modifier = Modifier,
     sizeDp: Dp = 250.dp
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "AllyOrbInfinite")
+    val infiniteTransition = rememberInfiniteTransition(label = "LiquidOrbTransition")
 
-    // 1. Organic Breathing Pulse (scale 0.96 to 1.04)
-    val breathingScale by infiniteTransition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.04f,
+    // 1. Organic Harmonic Phases
+    val idleBreathing by infiniteTransition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
         animationSpec = infiniteRepeatable(
             animation = tween(2800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "breathingScale"
+        label = "idleBreathing"
     )
 
-    // 2. Periodic Eye Blink (every ~4.2s quick dip to 0.1f)
-    val blinkProgress by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "blinkProgress"
-    )
-
-    // 3. Concentric Ripple Expansion (for Listening)
-    val ripplePhase by infiniteTransition.animateFloat(
+    val wavePhase1 by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = 6.28318f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = LinearEasing),
+            animation = tween(2400, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "ripplePhase"
+        label = "wavePhase1"
     )
 
-    // 4. Rotational Shimmer Angle (for Thinking)
+    val wavePhase2 by infiniteTransition.animateFloat(
+        initialValue = 6.28318f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1700, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "wavePhase2"
+    )
+
     val rotationAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(2500, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotationAngle"
     )
 
-    // 5. Soundwave Undulation Phase (for Speaking)
-    val mouthWavePhase by infiniteTransition.animateFloat(
+    val ripplePhase by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 6.28318f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
+            animation = tween(1500, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "mouthWavePhase"
+        label = "ripplePhase"
     )
 
-    // Dynamic State Colors
+    // Conversational State Flags
     val isListening = appState == AppState.WAKE_LISTENING || appState == AppState.COMMAND_LISTENING
     val isThinking = appState == AppState.THINKING
     val isSpeaking = appState == AppState.SPEAKING
     val isConfirming = appState == AppState.CONFIRMING
     val isCaution = appState == AppState.CAUTION
 
-    val primaryGlowColor by animateColorAsState(
+    // Dynamic Liquid Glass Colors
+    val primaryColor by animateColorAsState(
         targetValue = when {
             isCaution -> AllyWarning
             isConfirming -> AllyAmberGlow
@@ -133,10 +128,10 @@ fun AllyFaceOrb(
             else -> AllyCyan.copy(alpha = 0.85f)
         },
         animationSpec = tween(400),
-        label = "primaryGlowColor"
+        label = "liquidPrimaryColor"
     )
 
-    val secondaryGlowColor by animateColorAsState(
+    val secondaryColor by animateColorAsState(
         targetValue = when {
             isCaution -> AllyWarningAmber
             isConfirming -> AllyAmber
@@ -146,30 +141,7 @@ fun AllyFaceOrb(
             else -> Color(0xFF0F172A)
         },
         animationSpec = tween(400),
-        label = "secondaryGlowColor"
-    )
-
-    val eyeTiltAngle by animateFloatAsState(
-        targetValue = when {
-            isListening -> 10f // curious upward tilt
-            isThinking -> -6f // focused inward squint
-            isConfirming -> 0f
-            else -> 0f
-        },
-        animationSpec = tween(350),
-        label = "eyeTiltAngle"
-    )
-
-    val eyeHeightFactor by animateFloatAsState(
-        targetValue = when {
-            isThinking -> 0.28f // narrow concentration slit
-            isConfirming -> 0.65f // happy crescent
-            isCaution -> 1.15f // wide alert eyes
-            isSpeaking -> 1.1f
-            else -> 1.0f
-        },
-        animationSpec = tween(300),
-        label = "eyeHeightFactor"
+        label = "liquidSecondaryColor"
     )
 
     Box(
@@ -184,35 +156,34 @@ fun AllyFaceOrb(
     ) {
         Canvas(modifier = Modifier.size(sizeDp)) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            val baseRadius = (size.minDimension / 2f) * 0.72f
-            val orbRadius = baseRadius * (if (isListening || isSpeaking) breathingScale else 1.0f)
+            val baseRadius = (size.minDimension / 2f) * 0.68f
 
-            // ---------------------------------------------------------------
-            // A. Concentric Soft Wave Ripples (Listening state)
-            // ---------------------------------------------------------------
+            // -----------------------------------------------------------------
+            // 1. Concentric Harmonic Ripples (Listening State)
+            // -----------------------------------------------------------------
             if (isListening) {
                 for (i in 0..2) {
                     val progress = (ripplePhase + i * 0.33f) % 1f
-                    val rippleRadius = orbRadius + progress * (size.minDimension * 0.25f)
-                    val rippleAlpha = (1f - progress).coerceIn(0f, 0.45f)
+                    val rippleR = baseRadius + progress * (size.minDimension * 0.28f)
+                    val alpha = (1f - progress).coerceIn(0f, 0.45f)
                     drawCircle(
-                        color = AllyCyan.copy(alpha = rippleAlpha),
-                        radius = rippleRadius,
+                        color = AllyCyan.copy(alpha = alpha),
+                        radius = rippleR,
                         center = center,
-                        style = Stroke(width = 2.5.dp.toPx())
+                        style = Stroke(width = 2.dp.toPx())
                     )
                 }
             }
 
-            // ---------------------------------------------------------------
-            // B. Ambient Breathing Glow Halo
-            // ---------------------------------------------------------------
-            val glowRadius = orbRadius * 1.35f
+            // -----------------------------------------------------------------
+            // 2. Ambient Volumetric Glow Halo
+            // -----------------------------------------------------------------
+            val glowRadius = baseRadius * (if (isSpeaking) 1.55f else 1.35f)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        primaryGlowColor.copy(alpha = if (isSpeaking || isConfirming) 0.5f else 0.32f),
-                        secondaryGlowColor.copy(alpha = 0.12f),
+                        primaryColor.copy(alpha = if (isSpeaking || isConfirming) 0.55f else 0.32f),
+                        secondaryColor.copy(alpha = 0.15f),
                         Color.Transparent
                     ),
                     center = center,
@@ -222,41 +193,85 @@ fun AllyFaceOrb(
                 center = center
             )
 
-            // ---------------------------------------------------------------
-            // C. Main Dark Glass Orb Core
-            // ---------------------------------------------------------------
-            drawCircle(
+            // -----------------------------------------------------------------
+            // 3. Fluid Organic Membrane Generation
+            // -----------------------------------------------------------------
+            val points = 36
+            val membranePath = Path()
+            val amp1 = when {
+                isSpeaking -> baseRadius * 0.12f
+                isListening -> baseRadius * 0.08f
+                isThinking -> baseRadius * 0.06f
+                isCaution -> baseRadius * 0.09f
+                else -> baseRadius * 0.035f
+            }
+            val amp2 = when {
+                isSpeaking -> baseRadius * 0.08f
+                isListening -> baseRadius * 0.05f
+                isThinking -> baseRadius * 0.04f
+                else -> baseRadius * 0.02f
+            }
+
+            val rScale = if (isListening || isSpeaking) idleBreathing else 1.0f
+
+            val coords = mutableListOf<Offset>()
+            for (i in 0 until points) {
+                val theta = (i.toFloat() / points) * 6.2831853f
+                // Multi-harmonic radial displacement
+                val harmonic = sin(theta * 3f + wavePhase1) * amp1 + cos(theta * 5f + wavePhase2) * amp2
+                val currentR = (baseRadius + harmonic) * rScale
+                val x = center.x + currentR * cos(theta)
+                val y = center.y + currentR * sin(theta)
+                coords.add(Offset(x, y))
+            }
+
+            // Construct smooth spline path through harmonic points
+            if (coords.isNotEmpty()) {
+                membranePath.moveTo(
+                    (coords[0].x + coords[points - 1].x) / 2f,
+                    (coords[0].y + coords[points - 1].y) / 2f
+                )
+                for (i in 0 until points) {
+                    val current = coords[i]
+                    val next = coords[(i + 1) % points]
+                    val midX = (current.x + next.x) / 2f
+                    val midY = (current.y + next.y) / 2f
+                    membranePath.quadraticTo(current.x, current.y, midX, midY)
+                }
+                membranePath.close()
+            }
+
+            // Draw Liquid Glass Membrane Interior
+            drawPath(
+                path = membranePath,
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFF161F30),
-                        Color(0xFF0F172A),
-                        Color(0xFF0B0E14)
+                        Color(0xFF1E293B),
+                        Color(0xFF111827),
+                        Color(0xFF080B10)
                     ),
-                    center = center,
-                    radius = orbRadius
-                ),
-                radius = orbRadius,
-                center = center
+                    center = Offset(center.x - baseRadius * 0.2f, center.y - baseRadius * 0.25f),
+                    radius = baseRadius * 1.1f
+                )
             )
 
-            // Outer Ring Border with subtle rim glow
-            drawCircle(
+            // Draw Liquid Membrane Outer Specular Rim
+            drawPath(
+                path = membranePath,
                 brush = Brush.sweepGradient(
                     colors = listOf(
-                        primaryGlowColor.copy(alpha = 0.8f),
-                        secondaryGlowColor.copy(alpha = 0.3f),
-                        primaryGlowColor.copy(alpha = 0.8f)
+                        primaryColor.copy(alpha = 0.85f),
+                        secondaryColor.copy(alpha = 0.4f),
+                        primaryColor.copy(alpha = 0.85f)
                     ),
                     center = center
                 ),
-                radius = orbRadius,
-                center = center,
-                style = Stroke(width = 2.2.dp.toPx())
+                style = Stroke(width = 2.4.dp.toPx())
             )
 
-            // ---------------------------------------------------------------
-            // D. Rotational Shimmer Arc (Thinking state)
-            // ---------------------------------------------------------------
+            // -----------------------------------------------------------------
+            // 4. Rotational Plasma Shimmer Vortex (Thinking State)
+            // -----------------------------------------------------------------
             if (isThinking) {
                 rotate(rotationAngle, pivot = center) {
                     drawArc(
@@ -270,228 +285,52 @@ fun AllyFaceOrb(
                             center = center
                         ),
                         startAngle = 0f,
-                        sweepAngle = 120f,
+                        sweepAngle = 140f,
                         useCenter = false,
-                        topLeft = Offset(center.x - orbRadius, center.y - orbRadius),
-                        size = Size(orbRadius * 2, orbRadius * 2),
-                        style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
+                        topLeft = Offset(center.x - baseRadius * 0.85f, center.y - baseRadius * 0.85f),
+                        size = Size(baseRadius * 1.7f, baseRadius * 1.7f),
+                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                     )
                 }
             }
 
-            // ---------------------------------------------------------------
-            // E. The Living Ally Eyes
-            // ---------------------------------------------------------------
-            val eyeSpacing = orbRadius * 0.44f
-            val eyeY = center.y - (orbRadius * 0.16f)
-            val baseEyeWidth = 19.dp.toPx()
-            val baseEyeHeight = 30.dp.toPx()
+            // -----------------------------------------------------------------
+            // 5. Inner Luminous Core / Audio Nucleus
+            // -----------------------------------------------------------------
+            val nucleusRadius = baseRadius * (if (isSpeaking) 0.48f else 0.35f) * idleBreathing
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        primaryColor.copy(alpha = if (isSpeaking) 0.9f else 0.65f),
+                        secondaryColor.copy(alpha = 0.35f),
+                        Color.Transparent
+                    ),
+                    center = center,
+                    radius = nucleusRadius
+                ),
+                radius = nucleusRadius,
+                center = center
+            )
 
-            // Calculate instantaneous blink factor: dips briefly every 4.2s
-            val blinkFactor = if (blinkProgress > 0.95f) {
-                // In the blink window: interpolate to thin slit
-                val normalized = ((blinkProgress - 0.95f) / 0.05f) * 3.14159f
-                (1f - sin(normalized)).coerceIn(0.12f, 1f)
-            } else {
-                1f
-            }
-
-            val currentEyeHeight = (baseEyeHeight * eyeHeightFactor * blinkFactor).coerceAtLeast(3.dp.toPx())
-            val currentEyeWidth = if (isThinking) baseEyeWidth * 1.25f else baseEyeWidth
-
-            // Left Eye
-            val leftEyeCenter = Offset(center.x - eyeSpacing, eyeY)
-            rotate(eyeTiltAngle, pivot = leftEyeCenter) {
-                if (isConfirming) {
-                    // Joyful Crescent Eye (^)
-                    val crescentPath = Path().apply {
-                        val w = currentEyeWidth * 1.1f
-                        val h = currentEyeHeight * 0.8f
-                        moveTo(leftEyeCenter.x - w / 2, leftEyeCenter.y + h / 2)
-                        quadraticTo(
-                            leftEyeCenter.x, leftEyeCenter.y - h / 2,
-                            leftEyeCenter.x + w / 2, leftEyeCenter.y + h / 2
-                        )
-                    }
-                    drawPath(
-                        crescentPath,
-                        color = AllyAmberGlow,
-                        style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                } else {
-                    val rect = RoundRect(
-                        left = leftEyeCenter.x - currentEyeWidth / 2,
-                        top = leftEyeCenter.y - currentEyeHeight / 2,
-                        right = leftEyeCenter.x + currentEyeWidth / 2,
-                        bottom = leftEyeCenter.y + currentEyeHeight / 2,
-                        cornerRadius = CornerRadius(currentEyeWidth / 2, currentEyeWidth / 2)
-                    )
-                    drawRoundRect(
-                        brush = Brush.verticalGradient(
-                            listOf(Color.White, primaryGlowColor)
-                        ),
-                        topLeft = Offset(rect.left, rect.top),
-                        size = Size(rect.width, rect.height),
-                        cornerRadius = rect.topLeftCornerRadius
-                    )
-                }
-            }
-
-            // Right Eye
-            val rightEyeCenter = Offset(center.x + eyeSpacing, eyeY)
-            rotate(-eyeTiltAngle, pivot = rightEyeCenter) {
-                if (isConfirming) {
-                    // Joyful Crescent Eye (^)
-                    val crescentPath = Path().apply {
-                        val w = currentEyeWidth * 1.1f
-                        val h = currentEyeHeight * 0.8f
-                        moveTo(rightEyeCenter.x - w / 2, rightEyeCenter.y + h / 2)
-                        quadraticTo(
-                            rightEyeCenter.x, rightEyeCenter.y - h / 2,
-                            rightEyeCenter.x + w / 2, rightEyeCenter.y + h / 2
-                        )
-                    }
-                    drawPath(
-                        crescentPath,
-                        color = AllyAmberGlow,
-                        style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                } else {
-                    val rect = RoundRect(
-                        left = rightEyeCenter.x - currentEyeWidth / 2,
-                        top = rightEyeCenter.y - currentEyeHeight / 2,
-                        right = rightEyeCenter.x + currentEyeWidth / 2,
-                        bottom = rightEyeCenter.y + currentEyeHeight / 2,
-                        cornerRadius = CornerRadius(currentEyeWidth / 2, currentEyeWidth / 2)
-                    )
-                    drawRoundRect(
-                        brush = Brush.verticalGradient(
-                            listOf(Color.White, primaryGlowColor)
-                        ),
-                        topLeft = Offset(rect.left, rect.top),
-                        size = Size(rect.width, rect.height),
-                        cornerRadius = rect.topLeftCornerRadius
-                    )
-                }
-            }
-
-            // ---------------------------------------------------------------
-            // F. Expressive Mouth / Audio-Reactive Soundwave Line
-            // ---------------------------------------------------------------
-            val mouthY = center.y + (orbRadius * 0.38f)
-
-            when {
-                // 1. Speaking: Fluid audio-reactive soundwave mouth line
-                isSpeaking -> {
-                    val waveWidth = orbRadius * 0.92f
-                    val waveStartX = center.x - waveWidth / 2
-                    val wavePath = Path()
-                    val segments = 32
-                    for (step in 0..segments) {
-                        val fraction = step.toFloat() / segments
-                        val x = waveStartX + fraction * waveWidth
-                        // Gaussian window envelope so edges taper to zero
-                        val envelope = sin(fraction * 3.14159f)
-                        val frequency = 3.5f
-                        val waveOffset = sin(fraction * frequency * 6.283f + mouthWavePhase) * (14.dp.toPx() * envelope)
-                        val y = mouthY + waveOffset
-                        if (step == 0) wavePath.moveTo(x, y) else wavePath.lineTo(x, y)
-                    }
-                    drawPath(
-                        wavePath,
-                        brush = Brush.horizontalGradient(
-                            listOf(
-                                AllyAmber.copy(alpha = 0.5f),
-                                Color.White,
-                                AllyAmberGlow,
-                                Color.White,
-                                AllyAmber.copy(alpha = 0.5f)
-                            )
-                        ),
-                        style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    )
-                }
-
-                // 2. Confirming / Empathetic: Warm amber/gold joyful smile curve
-                isConfirming -> {
-                    val smileWidth = orbRadius * 0.8f
-                    val smilePath = Path().apply {
-                        moveTo(center.x - smileWidth / 2, mouthY - 4.dp.toPx())
-                        quadraticTo(
-                            center.x, mouthY + 16.dp.toPx(),
-                            center.x + smileWidth / 2, mouthY - 4.dp.toPx()
-                        )
-                    }
-                    drawPath(
-                        smilePath,
-                        color = AllyAmberGlow,
-                        style = Stroke(width = 4.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                }
-
-                // 3. Thinking: Concentrated focus bar with glowing center
-                isThinking -> {
-                    val barWidth = orbRadius * 0.44f
-                    drawLine(
-                        color = AllyAmber.copy(alpha = 0.9f),
-                        start = Offset(center.x - barWidth / 2, mouthY),
-                        end = Offset(center.x + barWidth / 2, mouthY),
-                        strokeWidth = 3.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 3.dp.toPx(),
-                        center = Offset(center.x, mouthY)
-                    )
-                }
-
-                // 4. Caution: Alert straight/cautionary line in soft red-amber
-                isCaution -> {
-                    val warnWidth = orbRadius * 0.65f
-                    drawLine(
-                        color = AllyWarning,
-                        start = Offset(center.x - warnWidth / 2, mouthY + 2.dp.toPx()),
-                        end = Offset(center.x + warnWidth / 2, mouthY + 2.dp.toPx()),
-                        strokeWidth = 3.5.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                }
-
-                // 5. Listening: Open attentive curve
-                isListening -> {
-                    val listenWidth = orbRadius * 0.52f
-                    val listenPath = Path().apply {
-                        moveTo(center.x - listenWidth / 2, mouthY)
-                        quadraticTo(
-                            center.x, mouthY + 7.dp.toPx(),
-                            center.x + listenWidth / 2, mouthY
-                        )
-                    }
-                    drawPath(
-                        listenPath,
-                        color = AllyCyan,
-                        style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                }
-
-                // 6. Idle: Gentle resting subtle smile
-                else -> {
-                    val idleWidth = orbRadius * 0.48f
-                    val idlePath = Path().apply {
-                        moveTo(center.x - idleWidth / 2, mouthY)
-                        quadraticTo(
-                            center.x, mouthY + 5.dp.toPx(),
-                            center.x + idleWidth / 2, mouthY
-                        )
-                    }
-                    drawPath(
-                        idlePath,
-                        color = Color.White.copy(alpha = 0.75f),
-                        style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                }
-            }
+            // -----------------------------------------------------------------
+            // 6. Liquid Glass Top Specular Caustic Reflection
+            // -----------------------------------------------------------------
+            val specularOffset = Offset(center.x, center.y - baseRadius * 0.42f)
+            val specularWidth = baseRadius * 0.85f
+            val specularHeight = baseRadius * 0.26f
+            drawOval(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isSpeaking) 0.45f else 0.28f),
+                        Color.White.copy(alpha = 0.05f),
+                        Color.Transparent
+                    ),
+                    center = specularOffset,
+                    radius = specularWidth / 2f
+                ),
+                topLeft = Offset(specularOffset.x - specularWidth / 2f, specularOffset.y - specularHeight / 2f),
+                size = Size(specularWidth, specularHeight)
+            )
         }
     }
 }

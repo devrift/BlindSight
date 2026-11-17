@@ -33,6 +33,15 @@ class PhoneCameraHelper(private val context: Context) {
 
     private val tag = "PhoneCameraHelper"
 
+    var isFrontCamera: Boolean = false
+        private set
+
+    fun switchCamera(): Boolean {
+        isFrontCamera = !isFrontCamera
+        Log.d(tag, "Switched camera. isFrontCamera=$isFrontCamera")
+        return isFrontCamera
+    }
+
     fun hasCameraPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context,
@@ -61,9 +70,10 @@ class PhoneCameraHelper(private val context: Context) {
                     return@suspendCancellableCoroutine
                 }
 
+                val targetFacing = if (isFrontCamera) CameraCharacteristics.LENS_FACING_FRONT else CameraCharacteristics.LENS_FACING_BACK
                 val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
                     val characteristics = cameraManager.getCameraCharacteristics(id)
-                    characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+                    characteristics.get(CameraCharacteristics.LENS_FACING) == targetFacing
                 } ?: cameraManager.cameraIdList.firstOrNull()
 
                 if (cameraId == null) {

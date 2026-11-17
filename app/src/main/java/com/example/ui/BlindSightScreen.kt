@@ -1,8 +1,10 @@
 package com.example.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,10 +23,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -40,9 +48,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -51,31 +61,39 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.data.model.AppState
 import com.example.service.UpdateDownloadState
 import com.example.ui.components.AllyFaceOrb
+import com.example.ui.components.ConversationHistoryView
 import com.example.ui.components.MemoryBankDialog
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.UpdateDialog
 import com.example.ui.theme.AllyAmber
-import com.example.ui.theme.AllyBackground
-import com.example.ui.theme.AllyBorder
 import com.example.ui.theme.AllyCyan
-import com.example.ui.theme.AllySurface
 import com.example.ui.theme.AllyTextPrimary
 import com.example.ui.theme.AllyTextSecondary
 import com.example.ui.theme.AllyWarning
+import com.example.ui.theme.DeepObsidianCanvas
+import com.example.ui.theme.LiquidGlassBackground
+import com.example.ui.theme.LiquidGlassBorder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * BlindSight "Ally" Experience: Serene, accessible, and expressive conversational companion.
+ * BlindSight Liquid Glass Accessible Experience.
  *
  * Full tactile interaction designed specifically for blind & low-vision ergonomics:
- * - Single tap anywhere on lower 60%: Toggle voice listening / speak to BlindSight
+ * - Single tap anywhere on lower glass: Toggle voice listening / speak to BlindSight
  * - Double tap anywhere: Instantly capture & describe scene
  * - Two-finger tap anywhere: Instantly silence speech
+ *
+ * Features:
+ * - Top 40%: Viewport HUD with subtle glowing liquid glass border showing live upright camera
+ * - Center: Organic fluid audio-reactive liquid orb/membrane
+ * - Bottom 50%: Massive tactile touch surface with subtle haptic feedback
+ * - Zero emojis throughout UI and spoken output
  */
 @Composable
 fun BlindSightScreen(
@@ -84,11 +102,22 @@ fun BlindSightScreen(
     val uiState by viewModel.uiState.collectAsState()
     val telemetry by viewModel.telemetry.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
+    val history by viewModel.history.collectAsState()
 
-    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showSettingsDialogLocal by remember { mutableStateOf(false) }
     var showMemoryDialog by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
+
+    val latestBitmap = remember(uiState.latestFrameBytes) {
+        uiState.latestFrameBytes?.let { bytes ->
+            try {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier
@@ -136,13 +165,13 @@ fun BlindSightScreen(
                     }
                 }
             },
-        containerColor = AllyBackground
+        containerColor = DeepObsidianCanvas
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(AllyBackground),
+                .background(DeepObsidianCanvas),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // =================================================================
@@ -151,7 +180,7 @@ fun BlindSightScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -159,8 +188,8 @@ fun BlindSightScreen(
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(AllySurface)
-                        .border(1.dp, AllyBorder, RoundedCornerShape(20.dp))
+                        .background(LiquidGlassBackground)
+                        .border(1.dp, LiquidGlassBorder, RoundedCornerShape(20.dp))
                         .clickable { viewModel.speakHardwareStatus() }
                         .padding(horizontal = 12.dp, vertical = 7.dp)
                         .semantics {
@@ -240,8 +269,8 @@ fun BlindSightScreen(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .background(AllySurface)
-                            .border(1.dp, AllyBorder, RoundedCornerShape(20.dp))
+                            .background(LiquidGlassBackground)
+                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(20.dp))
                             .clickable { viewModel.cycleLanguage() }
                             .padding(horizontal = 12.dp, vertical = 7.dp)
                             .semantics {
@@ -261,12 +290,12 @@ fun BlindSightScreen(
 
                     // Quick Settings Icon
                     IconButton(
-                        onClick = { showSettingsDialog = true },
+                        onClick = { showSettingsDialogLocal = true },
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(AllySurface)
-                            .border(1.dp, AllyBorder, CircleShape)
+                            .background(LiquidGlassBackground)
+                            .border(1.dp, LiquidGlassBorder, CircleShape)
                             .semantics {
                                 role = Role.Button
                                 contentDescription = "Open Settings."
@@ -283,39 +312,110 @@ fun BlindSightScreen(
             }
 
             // =================================================================
-            // 2. THE LIVING "ALLY" FACE / MORPHING EXPRESSION ORB (Top 40%)
+            // 2. TOP 40%: VIEWPORT HUD WITH GLOWING LIQUID GLASS BORDER
             // =================================================================
-            Spacer(modifier = Modifier.weight(0.12f))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .padding(horizontal = 18.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(LiquidGlassBackground)
+                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(22.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (latestBitmap != null) {
+                    Image(
+                        bitmap = latestBitmap,
+                        contentDescription = "Live camera view upright snapshot",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = null,
+                            tint = AllyCyan,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (uiState.isCameraScanning) "SCANNING SCENE..." else "VISION VIEWPORT READY",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AllyCyan,
+                            letterSpacing = 0.8.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Double-tap to describe immediate path ahead",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = AllyTextSecondary
+                        )
+                    }
+                }
+
+                // HUD Ribbon
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(10.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(DeepObsidianCanvas.copy(alpha = 0.8f))
+                        .border(1.dp, LiquidGlassBorder, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (latestBitmap != null) "FRAME CAPTURED" else "UPRIGHT HUD",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AllyCyan,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
+
+            // =================================================================
+            // 3. CENTER: ORGANIC FLUID AUDIO-REACTIVE LIQUID ORB (Center)
+            // =================================================================
+            Spacer(modifier = Modifier.height(8.dp))
 
             AllyFaceOrb(
                 appState = uiState.appState,
                 onClick = { viewModel.onTactileSingleTap() },
+                sizeDp = 210.dp,
                 modifier = Modifier
                     .semantics {
                         role = Role.Button
-                        contentDescription = "Ally face presence. Current state: ${uiState.appState.label}. Tap to talk."
+                        contentDescription = "Ally fluid presence. Current state: ${uiState.appState.label}. Tap to talk."
                     }
             )
 
-            Spacer(modifier = Modifier.weight(0.12f))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // =================================================================
-            // 3. FULL-SCREEN TACTILE CANVAS & LARGE ACCESSIBILITY TYPOGRAPHY (Lower 60%)
+            // 4. BOTTOM 50%: FULL-SCREEN TACTILE CANVAS & ACCESSIBLE TYPOGRAPHY
             // =================================================================
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.76f)
-                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                    .background(AllySurface.copy(alpha = 0.5f))
-                    .border(1.dp, AllyBorder.copy(alpha = 0.6f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
+                    .weight(1f)
+                    .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                    .background(LiquidGlassBackground)
+                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                    .padding(horizontal = 24.dp, vertical = 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 // Conversational State Headline (28sp–32sp Inter / SF Pro)
                 val stateHeadline = when (uiState.appState) {
-                    AppState.IDLE -> "Tap Anywhere to Talk"
+                    AppState.IDLE -> "Tap Lower Glass to Talk"
                     AppState.WAKE_LISTENING, AppState.COMMAND_LISTENING -> "Listening to you…"
                     AppState.THINKING -> "Thinking…"
                     AppState.SPEAKING -> "BlindSight Guiding…"
@@ -336,15 +436,15 @@ fun BlindSightScreen(
                 ) {
                     Text(
                         text = stateHeadline,
-                        fontSize = 28.sp,
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         color = headlineColor,
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Prominent Spoken Text / Assistant Response (24sp–26sp, high contrast #FFFFFF)
+                    // Prominent Spoken Text / Assistant Response (22sp–24sp, high contrast #FFFFFF)
                     val primaryGuidanceText = if (uiState.statusText.isNotBlank()) {
                         uiState.statusText
                     } else {
@@ -353,10 +453,10 @@ fun BlindSightScreen(
 
                     Text(
                         text = "\"$primaryGuidanceText\"",
-                        fontSize = 22.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Medium,
                         color = AllyTextPrimary,
-                        lineHeight = 32.sp,
+                        lineHeight = 28.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -374,8 +474,8 @@ fun BlindSightScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
-                            .background(AllyBackground)
-                            .border(1.dp, AllyBorder, RoundedCornerShape(16.dp))
+                            .background(DeepObsidianCanvas.copy(alpha = 0.8f))
+                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(16.dp))
                             .padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {
                         Icon(
@@ -385,21 +485,22 @@ fun BlindSightScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Double-tap: Describe Scene  •  2 fingers: Silence",
-                            fontSize = 13.sp,
+                            text = "Single-tap: Speak  •  Double-tap: Describe  •  2 fingers: Silence",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = AllyTextSecondary
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
             }
         }
     }
 
     // Modal Dialogs
-    if (showSettingsDialog) {
+    val isSettingsOpen = showSettingsDialogLocal || uiState.showSettingsDialog
+    if (isSettingsOpen) {
         SettingsDialog(
             currentLanguage = uiState.language,
             onLanguageChange = { viewModel.setLanguage(it) },
@@ -415,8 +516,64 @@ fun BlindSightScreen(
             onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
             onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
             onReadHelp = { viewModel.speakHardwareStatus() },
-            onDismiss = { showSettingsDialog = false }
+            onDismiss = {
+                showSettingsDialogLocal = false
+                viewModel.setShowSettingsDialog(false)
+            }
         )
+    }
+
+    if (uiState.showHistoryDialog) {
+        Dialog(onDismissRequest = { viewModel.setShowHistoryDialog(false) }) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = DeepObsidianCanvas),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Conversation History",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        IconButton(onClick = { viewModel.setShowHistoryDialog(false) }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close history",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ConversationHistoryView(
+                        messages = history,
+                        onClearHistory = { viewModel.clearConversationHistory() },
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { viewModel.setShowHistoryDialog(false) },
+                        colors = ButtonDefaults.buttonColors(containerColor = AllyCyan),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Close", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 
     if (showMemoryDialog) {

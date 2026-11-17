@@ -39,7 +39,7 @@ data class UiState(
     val appState: AppState = AppState.IDLE,
     val selectedTab: AppTab = AppTab.COMPANION,
     val language: SupportedLanguage = SupportedLanguage.ENGLISH,
-    val statusText: String = "BlindSight active. Say \"Hey BlindSight\" or tap the center button.",
+    val statusText: String = "BlindSight active. Tap anywhere on the lower glass to speak.",
     val heardText: String = "",
     val speechInput: String = "",
     val isAutoSweeping: Boolean = false,
@@ -51,7 +51,10 @@ data class UiState(
     val latestFrameSource: CameraSource = CameraSource.NONE,
     val isPhoneCameraFallbackEnabled: Boolean = true,
     val isHardwareGlassesConnected: Boolean = false,
-    val voicePersona: VoicePersona = VoicePersona.AUTO
+    val voicePersona: VoicePersona = VoicePersona.AUTO,
+    val showSettingsDialog: Boolean = false,
+    val showHistoryDialog: Boolean = false,
+    val showTelemetryModal: Boolean = false
 )
 
 class BlindSightViewModel(application: Application) : AndroidViewModel(application) {
@@ -570,6 +573,18 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun setShowSettingsDialog(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showSettingsDialog = show)
+    }
+
+    fun setShowHistoryDialog(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showHistoryDialog = show)
+    }
+
+    fun setShowTelemetryModal(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showTelemetryModal = show)
+    }
+
     private fun handleAiResponseWithActions(rawReply: String) {
         var text = rawReply
 
@@ -593,9 +608,80 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // 2. Flashlight Action: [ACTION:TORCH ON] or [ACTION:TORCH OFF]
-        val torchOnRegex = Regex("\\[ACTION:TORCH\\s+ON\\]", RegexOption.IGNORE_CASE)
-        val torchOffRegex = Regex("\\[ACTION:TORCH\\s+OFF\\]", RegexOption.IGNORE_CASE)
+        // 2. Settings Action: [ACTION:GO_TO_SETTINGS]
+        val settingsRegex = Regex("\\[ACTION:GO_TO_SETTINGS\\]", RegexOption.IGNORE_CASE)
+        if (settingsRegex.containsMatchIn(rawReply)) {
+            text = text.replace(settingsRegex, "").trim()
+            _uiState.value = _uiState.value.copy(showSettingsDialog = true)
+            triggerConfirmEmotion()
+        }
+
+        // 3. Home Action: [ACTION:GO_TO_HOME]
+        val homeRegex = Regex("\\[ACTION:GO_TO_HOME\\]", RegexOption.IGNORE_CASE)
+        if (homeRegex.containsMatchIn(rawReply)) {
+            text = text.replace(homeRegex, "").trim()
+            _uiState.value = _uiState.value.copy(
+                showSettingsDialog = false,
+                showHistoryDialog = false,
+                showTelemetryModal = false
+            )
+            triggerConfirmEmotion()
+        }
+
+        // 4. History Action: [ACTION:SHOW_HISTORY]
+        val historyRegex = Regex("\\[ACTION:SHOW_HISTORY\\]", RegexOption.IGNORE_CASE)
+        if (historyRegex.containsMatchIn(rawReply)) {
+            text = text.replace(historyRegex, "").trim()
+            _uiState.value = _uiState.value.copy(showHistoryDialog = true)
+            triggerConfirmEmotion()
+        }
+
+        // 5. Telemetry Action: [ACTION:SHOW_TELEMETRY]
+        val telemetryRegex = Regex("\\[ACTION:SHOW_TELEMETRY\\]", RegexOption.IGNORE_CASE)
+        if (telemetryRegex.containsMatchIn(rawReply)) {
+            text = text.replace(telemetryRegex, "").trim()
+            _uiState.value = _uiState.value.copy(showTelemetryModal = true)
+            triggerConfirmEmotion()
+        }
+
+        // 6. Clear History Action: [ACTION:CLEAR_HISTORY]
+        val clearHistoryRegex = Regex("\\[ACTION:CLEAR_HISTORY\\]", RegexOption.IGNORE_CASE)
+        if (clearHistoryRegex.containsMatchIn(rawReply)) {
+            text = text.replace(clearHistoryRegex, "").trim()
+            clearConversationHistory()
+            triggerConfirmEmotion()
+        }
+
+        // 7. Pause Action: [ACTION:PAUSE]
+        val pauseRegex = Regex("\\[ACTION:PAUSE\\]", RegexOption.IGNORE_CASE)
+        if (pauseRegex.containsMatchIn(rawReply)) {
+            text = text.replace(pauseRegex, "").trim()
+            speechRecognizerHelper?.pauseListening()
+            triggerConfirmEmotion()
+        }
+
+        // 8. Resume Action: [ACTION:RESUME]
+        val resumeRegex = Regex("\\[ACTION:RESUME\\]", RegexOption.IGNORE_CASE)
+        if (resumeRegex.containsMatchIn(rawReply)) {
+            text = text.replace(resumeRegex, "").trim()
+            speechRecognizerHelper?.resumeListening(_uiState.value.language.code)
+            triggerConfirmEmotion()
+        }
+
+        // 9. Repeat Action: [ACTION:REPEAT]
+        val repeatRegex = Regex("\\[ACTION:REPEAT\\]", RegexOption.IGNORE_CASE)
+        if (repeatRegex.containsMatchIn(rawReply)) {
+            text = text.replace(repeatRegex, "").trim()
+            val lastAssistantMsg = repository.history.value.lastOrNull { !it.isUser }?.text
+            if (!lastAssistantMsg.isNullOrBlank()) {
+                deliverSpokenReply(lastAssistantMsg)
+                return
+            }
+        }
+
+        // 10. Flashlight Action: [ACTION:TORCH_ON] or [ACTION:TORCH ON] / [ACTION:TORCH_OFF] or [ACTION:TORCH OFF]
+        val torchOnRegex = Regex("\\[ACTION:TORCH_?ON\\]|\\[ACTION:TORCH\\s+ON\\]", RegexOption.IGNORE_CASE)
+        val torchOffRegex = Regex("\\[ACTION:TORCH_?OFF\\]|\\[ACTION:TORCH\\s+OFF\\]", RegexOption.IGNORE_CASE)
         if (torchOnRegex.containsMatchIn(rawReply)) {
             text = text.replace(torchOnRegex, "").trim()
             repository.setTorch(true)
@@ -606,7 +692,33 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             triggerConfirmEmotion()
         }
 
-        // 3. Text Reading Action: [ACTION:READ_TEXT]
+        // 11. Switch Camera: [ACTION:SWITCH_CAMERA]
+        val switchCamRegex = Regex("\\[ACTION:SWITCH_CAMERA\\]", RegexOption.IGNORE_CASE)
+        if (switchCamRegex.containsMatchIn(rawReply)) {
+            text = text.replace(switchCamRegex, "").trim()
+            val isFront = repository.switchCamera()
+            val camNotice = if (isFront) "Switched to front camera." else "Switched to back camera."
+            text = if (text.isNotBlank()) "$text $camNotice" else camNotice
+            triggerConfirmEmotion()
+        }
+
+        // 12. Language Action: [ACTION:SET_LANGUAGE <en|hi|pa|bn>]
+        val langRegex = Regex("\\[ACTION:SET_LANGUAGE\\s+([a-zA-Z]+)\\]", RegexOption.IGNORE_CASE)
+        val langMatch = langRegex.find(rawReply)
+        if (langMatch != null) {
+            val code = langMatch.groupValues[1].lowercase().trim()
+            text = text.replace(langMatch.value, "").trim()
+            val targetLang = when {
+                code.startsWith("hi") -> SupportedLanguage.HINDI
+                code.startsWith("pa") -> SupportedLanguage.PUNJABI
+                code.startsWith("bn") -> SupportedLanguage.BENGALI
+                else -> SupportedLanguage.ENGLISH
+            }
+            setLanguage(targetLang)
+            triggerConfirmEmotion()
+        }
+
+        // 13. Text Reading Action: [ACTION:READ_TEXT]
         val readTextRegex = Regex("\\[ACTION:READ_TEXT\\]", RegexOption.IGNORE_CASE)
         if (readTextRegex.containsMatchIn(rawReply)) {
             text = text.replace(readTextRegex, "").trim()
@@ -614,7 +726,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // 4. Surroundings / Describe Scene Action: [ACTION:DESCRIBE_SCENE]
+        // 14. Surroundings / Describe Scene Action: [ACTION:DESCRIBE_SCENE]
         val describeRegex = Regex("\\[ACTION:DESCRIBE_SCENE\\]", RegexOption.IGNORE_CASE)
         if (describeRegex.containsMatchIn(rawReply)) {
             text = text.replace(describeRegex, "").trim()

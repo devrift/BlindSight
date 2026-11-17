@@ -138,11 +138,11 @@ export const ReflexTelemetryModal: React.FC<ReflexTelemetryModalProps> = ({
             {/* Status Alert Badge */}
             <div className="reflex-box" style={{ background: 'rgba(22, 27, 34, 0.75)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }}>
               <div className={`reflex-status-badge ${alertBadgeClass}`}>
-                {telemetry.alert === 'stop' && '🔴 CRITICAL OBSTACLE — STOP'}
-                {telemetry.alert === 'steer_left' && '⚠️ OBSTACLE RIGHT — STEER LEFT'}
-                {telemetry.alert === 'steer_right' && '⚠️ OBSTACLE LEFT — STEER RIGHT'}
-                {telemetry.alert === 'careful' && '🟡 OBSTACLE AHEAD — PROCEED CAREFULLY'}
-                {telemetry.alert === 'clear' && '🟢 PATH CLEAR — SAFE TO PROCEED'}
+                {telemetry.alert === 'stop' && '[CRITICAL] STOP IMMEDIATELY'}
+                {telemetry.alert === 'steer_left' && '[STEER LEFT] OBSTACLE RIGHT'}
+                {telemetry.alert === 'steer_right' && '[STEER RIGHT] OBSTACLE LEFT'}
+                {telemetry.alert === 'careful' && '[CAUTION] PROCEED CAREFULLY'}
+                {telemetry.alert === 'clear' && '[CLEAR] SAFE TO PROCEED'}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>

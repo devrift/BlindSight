@@ -34,3 +34,8 @@ val BlindSightFocus = Color(0xFFFDE68A)
 
 // Yellow-on-black mode (widely favored for severe low vision & cataracts)
 val BlindSightYellow = Color(0xFFFFD600)
+
+// Liquid Glass Frosted Layer & Obsidian Canvas
+val LiquidGlassBackground = Color(0x73121826) // rgba(18, 24, 38, 0.45)
+val LiquidGlassBorder = Color(0x1FFFFFFF) // rgba(255, 255, 255, 0.12)
+val DeepObsidianCanvas = Color(0xFF080B10)
