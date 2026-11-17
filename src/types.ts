@@ -1,10 +1,10 @@
-export type AppState = 'idle' | 'wake' | 'listen' | 'think' | 'speak';
+export type AppState = 'idle' | 'wake' | 'listen' | 'think' | 'speak' | 'confirming' | 'caution';
 
 export type ListenMode = 'wake' | 'handsfree' | 'button';
 
 export type TextSize = 'md' | 'lg' | 'xl';
 
-export type LanguageCode = 'en' | 'hi' | 'bn' | 'ta' | 'te' | 'es' | 'fr';
+export type LanguageCode = 'en' | 'hi' | 'pa' | 'bn';
 
 export interface LanguageOption {
   code: LanguageCode;

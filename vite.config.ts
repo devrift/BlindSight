@@ -35,6 +35,14 @@ function apkMimePlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), apkMimePlugin()],
   envPrefix: ['VITE_', 'GEMINI_'],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(process.cwd(), 'index.html'),
+        app: path.resolve(process.cwd(), 'app.html')
+      }
+    }
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,

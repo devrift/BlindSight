@@ -298,9 +298,21 @@ class SpeechRecognizerHelper(
         }
     }
 
+    fun sanitizeLocale(raw: String): String {
+        val low = raw.lowercase()
+        return when {
+            low.startsWith("hi") || low.startsWith("ur") -> "hi-IN"
+            low.startsWith("pa") -> "pa-IN"
+            low.startsWith("bn") -> "bn-IN"
+            low.startsWith("en") && low.contains("us") -> "en-US"
+            else -> "en-IN"
+        }
+    }
+
     fun startListening(languageCode: String = currentLanguageCode, forceRestart: Boolean = false) {
         mainHandler.post {
-            currentLanguageCode = languageCode
+            val lockedLocale = sanitizeLocale(languageCode)
+            currentLanguageCode = lockedLocale
             isPaused = false
 
             if (!hasAudioPermission()) {
@@ -339,8 +351,8 @@ class SpeechRecognizerHelper(
 
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (languageCode.isNotBlank()) languageCode else java.util.Locale.getDefault().toLanguageTag())
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, if (languageCode.isNotBlank()) languageCode else java.util.Locale.getDefault().toLanguageTag())
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lockedLocale)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lockedLocale)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)

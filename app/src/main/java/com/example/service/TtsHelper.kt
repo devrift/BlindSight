@@ -201,15 +201,12 @@ class TtsHelper(
             .replace(Regex("\\s+"), " ")
             .trim()
 
-        // 1 Single Professional, Easy-to-Understand Neural Voice per Language
+        // 1 Single Professional, Easy-to-Understand Neural Voice per Supported Language
         val voiceParam = when (currentLanguage) {
             SupportedLanguage.HINDI -> "hi-IN-SwaraNeural"
+            SupportedLanguage.PUNJABI -> "pa-IN-OjasNeural"
             SupportedLanguage.BENGALI -> "bn-IN-TanishaaNeural"
-            SupportedLanguage.TAMIL -> "ta-IN-PallaviNeural"
-            SupportedLanguage.TELUGU -> "te-IN-ShrutiNeural"
-            SupportedLanguage.SPANISH -> "es-ES-AlvaroNeural"
-            SupportedLanguage.FRENCH -> "fr-FR-HenriNeural"
-            else -> "en-US-AriaNeural"
+            SupportedLanguage.ENGLISH -> "en-IN-NeerjaNeural"
         }
         val langParam = currentLanguage.code.split("-").first().lowercase()
 

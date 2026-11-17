@@ -69,12 +69,9 @@ fun LanguageSelectorRow(
 
             val displayName = when (lang) {
                 SupportedLanguage.ENGLISH -> "English"
-                SupportedLanguage.HINDI -> "हिंदी"
+                SupportedLanguage.HINDI -> "हिंदी-उर्दू"
+                SupportedLanguage.PUNJABI -> "ਪੰਜਾਬੀ"
                 SupportedLanguage.BENGALI -> "বাংলা"
-                SupportedLanguage.TAMIL -> "தமிழ்"
-                SupportedLanguage.TELUGU -> "తెలుగు"
-                SupportedLanguage.SPANISH -> "Español"
-                SupportedLanguage.FRENCH -> "Français"
             }
 
             Box(

@@ -250,4 +250,26 @@ class PhoneCameraHelper(private val context: Context) {
             return jpegBytes
         }
     }
+
+    /**
+     * Toggles phone flashlight on or off
+     */
+    fun setTorch(enabled: Boolean): Boolean {
+        return try {
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return false
+            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                hasFlash && facing == CameraCharacteristics.LENS_FACING_BACK
+            } ?: cameraManager.cameraIdList.firstOrNull() ?: return false
+
+            cameraManager.setTorchMode(cameraId, enabled)
+            Log.d(tag, "Torch mode set to $enabled on camera $cameraId")
+            true
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to toggle torch mode: ${e.message}")
+            false
+        }
+    }
 }

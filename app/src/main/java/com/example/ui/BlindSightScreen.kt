@@ -1,6 +1,10 @@
 package com.example.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,24 +16,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +34,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,244 +48,357 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AppState
 import com.example.service.UpdateDownloadState
-import com.example.ui.components.BlindSightTopBar
-import com.example.ui.components.ConversationHistoryView
-import com.example.ui.components.GiantMicButton
-import com.example.ui.components.HardwareStatusStrip
+import com.example.ui.components.AllyFaceOrb
 import com.example.ui.components.MemoryBankDialog
-import com.example.ui.components.ObstacleRadarView
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.UpdateDialog
-import com.example.ui.components.VisionHelperView
-import com.example.ui.theme.BlindSightAmber
-import com.example.ui.theme.BlindSightBackground
-import com.example.ui.theme.BlindSightCard
-import com.example.ui.theme.BlindSightCardEdge
-import com.example.ui.theme.BlindSightTextMuted
-import com.example.ui.theme.BlindSightTextPrimary
-import com.example.ui.theme.BlindSightYellow
+import com.example.ui.theme.AllyAmber
+import com.example.ui.theme.AllyBackground
+import com.example.ui.theme.AllyBorder
+import com.example.ui.theme.AllyCyan
+import com.example.ui.theme.AllySurface
+import com.example.ui.theme.AllyTextPrimary
+import com.example.ui.theme.AllyTextSecondary
+import com.example.ui.theme.AllyWarning
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
+/**
+ * BlindSight "Ally" Experience: Serene, accessible, and expressive conversational companion.
+ *
+ * Full tactile interaction designed specifically for blind & low-vision ergonomics:
+ * - Single tap anywhere on lower 60%: Toggle voice listening / speak to BlindSight
+ * - Double tap anywhere: Instantly capture & describe scene
+ * - Two-finger tap anywhere: Instantly silence speech
+ */
 @Composable
 fun BlindSightScreen(
     viewModel: BlindSightViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val telemetry by viewModel.telemetry.collectAsState()
-    val history by viewModel.history.collectAsState()
-    val facts by viewModel.facts.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showMemoryDialog by remember { mutableStateOf(false) }
-    var typedPrompt by remember { mutableStateOf("") }
 
-    val activePrimaryColor = if (uiState.highContrastYellow) BlindSightYellow else BlindSightAmber
+    val coroutineScope = rememberCoroutineScope()
 
-    Box(
+    Scaffold(
         modifier = Modifier
             .fillMaxSize()
+            // Global Gesture Detector for Blind Ergonomics:
+            // 2 fingers = Silence speech
+            // Double tap = Describe camera scene
+            // Single tap = Talk / Mic
             .pointerInput(Unit) {
-                var tapCount = 0
                 var lastTapTime = 0L
+                var singleTapJob: Job? = null
+
                 awaitPointerEventScope {
                     while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val isDown = event.changes.any { it.changedToDown() }
-                        if (isDown) {
+                        val event = awaitPointerEvent(PointerEventPass.Main)
+                        val pressedPointers = event.changes.filter { it.pressed }
+                        val downChanges = event.changes.filter { it.changedToDown() }
+
+                        // 1. Two-finger tap: instantly silence speech
+                        if (pressedPointers.size >= 2 || downChanges.size >= 2) {
+                            singleTapJob?.cancel()
+                            lastTapTime = 0L
+                            event.changes.forEach { it.consume() }
+                            viewModel.stopSpeaking()
+                        } else if (downChanges.size == 1) {
                             val now = System.currentTimeMillis()
-                            if (now - lastTapTime < 450) {
-                                tapCount++
+                            if (now - lastTapTime < 380L) {
+                                // 2. Double-tap detected: describe scene immediately
+                                singleTapJob?.cancel()
+                                lastTapTime = 0L
+                                event.changes.forEach { it.consume() }
+                                viewModel.describeScene()
                             } else {
-                                tapCount = 1
-                            }
-                            lastTapTime = now
-
-                            if (tapCount >= 3) {
-                                tapCount = 0
-                                viewModel.onTripleTapTriggered()
+                                // Potential single tap: launch delayed job
+                                lastTapTime = now
+                                singleTapJob?.cancel()
+                                singleTapJob = coroutineScope.launch {
+                                    delay(340L)
+                                    if (lastTapTime == now) {
+                                        viewModel.onTactileSingleTap()
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
-    ) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-        containerColor = BlindSightBackground,
-        topBar = {
-            BlindSightTopBar(
-                language = uiState.language,
-                hasUpdateAvailable = updateState is UpdateDownloadState.Available,
-                onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
-                onStopClick = { viewModel.stopSpeaking() },
-                onSettingsClick = { showSettingsDialog = true }
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = BlindSightCard,
-                tonalElevation = 8.dp
-            ) {
-                AppTab.entries.forEach { tab ->
-                    val isSelected = uiState.selectedTab == tab
-                    val tabIcon = when (tab) {
-                        AppTab.COMPANION -> Icons.Default.Mic
-                        AppTab.RADAR -> Icons.Default.Security
-                        AppTab.VISION -> Icons.Default.CameraAlt
-                        AppTab.MEMORIES -> Icons.Default.Bookmark
-                    }
-
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { viewModel.selectTab(tab) },
-                        icon = {
-                            Icon(
-                                imageVector = tabIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = tab.title,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.Black,
-                            selectedTextColor = activePrimaryColor,
-                            indicatorColor = activePrimaryColor,
-                            unselectedIconColor = BlindSightTextMuted,
-                            unselectedTextColor = BlindSightTextMuted
-                        ),
-                        modifier = Modifier.semantics {
-                            role = Role.Tab
-                            contentDescription = "${tab.title} tab. ${if (isSelected) "Active" else "Double tap to switch"}"
-                        }
-                    )
-                }
-            }
-        }
+            },
+        containerColor = AllyBackground
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 14.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .background(AllyBackground),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // High-Visibility Hardware & Sensor Status Strip (Indicates what's in use & what's not)
-            Spacer(modifier = Modifier.height(2.dp))
-            HardwareStatusStrip(
-                isHardwareGlassesConnected = uiState.isHardwareGlassesConnected,
-                latestFrameSource = uiState.latestFrameSource,
-                isCameraScanning = uiState.isCameraScanning,
-                isPhoneCameraFallbackEnabled = uiState.isPhoneCameraFallbackEnabled,
-                onStatusClick = { viewModel.speakHardwareStatus() }
-            )
-
-            when (uiState.selectedTab) {
-                AppTab.COMPANION -> {
-                    // Giant Mic Button (Firm, non-floppy, stable touch bounds)
-                    Spacer(modifier = Modifier.height(10.dp))
-                    GiantMicButton(
-                        appState = uiState.appState,
-                        statusText = uiState.statusText,
-                        onClick = { viewModel.onGiantMicClick() }
+            // =================================================================
+            // 1. TOP HEADER: Subtle Battery/GPS Status Pill & Language Badge
+            // =================================================================
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Subtle Battery / GPS Status Pill
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(AllySurface)
+                        .border(1.dp, AllyBorder, RoundedCornerShape(20.dp))
+                        .clickable { viewModel.speakHardwareStatus() }
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Battery and GPS status. Tap to hear hardware report."
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BatteryFull,
+                        contentDescription = null,
+                        tint = AllyCyan,
+                        modifier = Modifier.size(16.dp)
                     )
-
-                    // Quick Command Chips for Blind Users
-                    QuickCommandRow(
-                        onCommand = { viewModel.onSpeechResult(it) }
+                    Text(
+                        text = "READY",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AllyTextPrimary,
+                        letterSpacing = 0.5.sp
                     )
-
-                    // Text fallback entry for typing
-                    TextPromptInputRow(
-                        text = typedPrompt,
-                        onTextChange = { typedPrompt = it },
-                        onSubmit = {
-                            if (typedPrompt.isNotBlank()) {
-                                viewModel.onSpeechResult(typedPrompt)
-                                typedPrompt = ""
-                            }
-                        }
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "•",
+                        fontSize = 12.sp,
+                        color = AllyTextSecondary
                     )
-
-                    // Conversation history
-                    ConversationHistoryView(
-                        messages = history,
-                        onClearHistory = { viewModel.clearConversationHistory() }
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = AllyAmber,
+                        modifier = Modifier.size(15.dp)
                     )
-                }
-
-                AppTab.RADAR -> {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    ObstacleRadarView(
-                        telemetry = telemetry,
-                        isAutoSweeping = uiState.isAutoSweeping,
-                        onToggleAutoSweep = { viewModel.toggleAutoSweep() }
-                    )
-                }
-
-                AppTab.VISION -> {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    VisionHelperView(
-                        isScanning = uiState.isCameraScanning,
-                        latestFrameBytes = uiState.latestFrameBytes,
-                        latestFrameSource = uiState.latestFrameSource,
-                        onDescribeScene = { viewModel.describeScene() }
+                    Text(
+                        text = if (telemetry.isHardwareConnected) "RADAR ACTIVE" else "GPS READY",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AllyTextSecondary
                     )
                 }
 
-                AppTab.MEMORIES -> {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(BlindSightCard)
-                            .padding(16.dp)
+                // Right Actions: Stop Button (if speaking), Language Badge, Settings
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Stop Speech button visible when speaking
+                    AnimatedVisibility(
+                        visible = uiState.appState == AppState.SPEAKING,
+                        enter = fadeIn(),
+                        exit = fadeOut()
                     ) {
-                        Text(
-                            text = "Memory Bank (${facts.size}/20 facts)",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = BlindSightTextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Teach facts like \"remember that my meeting room is on the 3rd floor\". They stay stored on-device.",
-                            fontSize = 13.sp,
-                            color = BlindSightTextMuted
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Button(
-                            onClick = { showMemoryDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = activePrimaryColor),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        IconButton(
+                            onClick = { viewModel.stopSpeaking() },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(AllyWarning.copy(alpha = 0.18f))
+                                .border(1.dp, AllyWarning, CircleShape)
+                                .semantics {
+                                    role = Role.Button
+                                    contentDescription = "Stop speaking."
+                                }
                         ) {
-                            Text(
-                                text = "Manage Memories",
-                                color = Color.Black,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
+                            Icon(
+                                imageVector = Icons.Default.StopCircle,
+                                contentDescription = "Silence audio",
+                                tint = AllyWarning,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
+
+                    // Active Language Badge (Strictly locked to 4 languages: EN, HI, PA, BN)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(AllySurface)
+                            .border(1.dp, AllyBorder, RoundedCornerShape(20.dp))
+                            .clickable { viewModel.cycleLanguage() }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "Current language: ${uiState.language.label}. Tap to switch language."
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = uiState.language.shortCode,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = AllyAmber,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    // Quick Settings Icon
+                    IconButton(
+                        onClick = { showSettingsDialog = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(AllySurface)
+                            .border(1.dp, AllyBorder, CircleShape)
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "Open Settings."
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = AllyTextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            // =================================================================
+            // 2. THE LIVING "ALLY" FACE / MORPHING EXPRESSION ORB (Top 40%)
+            // =================================================================
+            Spacer(modifier = Modifier.weight(0.12f))
+
+            AllyFaceOrb(
+                appState = uiState.appState,
+                onClick = { viewModel.onTactileSingleTap() },
+                modifier = Modifier
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Ally face presence. Current state: ${uiState.appState.label}. Tap to talk."
+                    }
+            )
+
+            Spacer(modifier = Modifier.weight(0.12f))
+
+            // =================================================================
+            // 3. FULL-SCREEN TACTILE CANVAS & LARGE ACCESSIBILITY TYPOGRAPHY (Lower 60%)
+            // =================================================================
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.76f)
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .background(AllySurface.copy(alpha = 0.5f))
+                    .border(1.dp, AllyBorder.copy(alpha = 0.6f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .padding(horizontal = 24.dp, vertical = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Conversational State Headline (28sp–32sp Inter / SF Pro)
+                val stateHeadline = when (uiState.appState) {
+                    AppState.IDLE -> "Tap Anywhere to Talk"
+                    AppState.WAKE_LISTENING, AppState.COMMAND_LISTENING -> "Listening to you…"
+                    AppState.THINKING -> "Thinking…"
+                    AppState.SPEAKING -> "BlindSight Guiding…"
+                    AppState.CONFIRMING -> "Understood"
+                    AppState.CAUTION -> "Obstacle Warning"
+                }
+
+                val headlineColor = when (uiState.appState) {
+                    AppState.CAUTION -> AllyWarning
+                    AppState.CONFIRMING -> AllyAmber
+                    AppState.WAKE_LISTENING, AppState.COMMAND_LISTENING -> AllyCyan
+                    else -> AllyTextPrimary
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stateHeadline,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = headlineColor,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Prominent Spoken Text / Assistant Response (24sp–26sp, high contrast #FFFFFF)
+                    val primaryGuidanceText = if (uiState.statusText.isNotBlank()) {
+                        uiState.statusText
+                    } else {
+                        "Directly ahead is clear. Proceed with confidence."
+                    }
+
+                    Text(
+                        text = "\"$primaryGuidanceText\"",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = AllyTextPrimary,
+                        lineHeight = 32.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp)
+                    )
+                }
+
+                // Blind Ergonomics Gesture Anchors
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(AllyBackground)
+                            .border(1.dp, AllyBorder, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = null,
+                            tint = AllyAmber,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Double-tap: Describe Scene  •  2 fingers: Silence",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = AllyTextSecondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
         }
     }
 
+    // Modal Dialogs
     if (showSettingsDialog) {
         SettingsDialog(
             currentLanguage = uiState.language,
@@ -300,18 +411,16 @@ fun BlindSightScreen(
             onToggleHighContrast = { viewModel.toggleHighContrastYellow() },
             isPhoneCameraFallbackEnabled = uiState.isPhoneCameraFallbackEnabled,
             onTogglePhoneCameraFallback = { viewModel.togglePhoneCameraFallback() },
-            currentGatewayUrl = viewModel.getGatewayUrl(),
+            currentGatewayUrl = uiState.gatewayUrl,
             onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
             onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
-            onReadHelp = {
-                viewModel.onSpeechResult("help")
-                showSettingsDialog = false
-            },
+            onReadHelp = { viewModel.speakHardwareStatus() },
             onDismiss = { showSettingsDialog = false }
         )
     }
 
     if (showMemoryDialog) {
+        val facts by viewModel.facts.collectAsState()
         MemoryBankDialog(
             facts = facts,
             onAddFact = { viewModel.addMemoryFact(it) },
@@ -321,105 +430,13 @@ fun BlindSightScreen(
         )
     }
 
-    if (updateState !is UpdateDownloadState.Idle) {
+    if (updateState is UpdateDownloadState.Available) {
         UpdateDialog(
             updateState = updateState,
-            onStartDownload = { info -> viewModel.startUpdateDownload(info) },
+            onStartDownload = { info ->
+                viewModel.startUpdateDownload(info)
+            },
             onDismiss = { viewModel.dismissUpdateDialog() }
         )
-    }
-}
-}
-
-@Composable
-private fun QuickCommandRow(
-    onCommand: (String) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Quick Spoken Commands",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = BlindSightTextMuted,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val commands = listOf(
-                "where am i" to "Where Am I",
-                "open google maps" to "Google Maps",
-                "what is the weather" to "Weather",
-                "describe" to "Look Ahead"
-            )
-            commands.forEach { (cmd, label) ->
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF0F172A))
-                        .semantics {
-                            role = Role.Button
-                            contentDescription = "Quick action: $label"
-                        }
-                        .padding(vertical = 10.dp)
-                        .clickable { onCommand(cmd) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = BlindSightTextPrimary
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TextPromptInputRow(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onSubmit: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = onTextChange,
-            placeholder = { Text("Or type question here…", color = BlindSightTextMuted) },
-            modifier = Modifier.weight(1f),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = BlindSightAmber,
-                unfocusedBorderColor = BlindSightCardEdge,
-                focusedTextColor = BlindSightTextPrimary,
-                unfocusedTextColor = BlindSightTextPrimary
-            ),
-            shape = RoundedCornerShape(12.dp)
-        )
-
-        IconButton(
-            onClick = onSubmit,
-            modifier = Modifier
-                .size(54.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(BlindSightAmber)
-                .semantics {
-                    role = Role.Button
-                    contentDescription = "Submit question to BlindSight."
-                }
-        ) {
-            Icon(
-                imageVector = Icons.Default.Send,
-                contentDescription = null,
-                tint = Color.Black
-            )
-        }
     }
 }

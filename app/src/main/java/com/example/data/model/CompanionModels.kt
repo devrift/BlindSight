@@ -7,7 +7,9 @@ enum class AppState(val label: String) {
     WAKE_LISTENING("Listening for wake word"),
     COMMAND_LISTENING("Listening to command"),
     THINKING("Processing…"),
-    SPEAKING("Speaking answer")
+    SPEAKING("Speaking answer"),
+    CONFIRMING("Understood"),
+    CAUTION("Caution")
 }
 
 enum class ListenMode(val displayName: String, val hint: String) {
@@ -49,17 +51,16 @@ data class ReflexTelemetry(
 
 enum class SupportedLanguage(
     val code: String,
+    val bcp47: String,
     val label: String,
+    val shortCode: String,
     val locale: Locale,
     val confirmation: String
 ) {
-    ENGLISH("en", "English", Locale.ENGLISH, "Language set to English."),
-    HINDI("hi", "हिंदी (Hindi)", Locale("hi", "IN"), "भाषा हिंदी पर सेट हो गई।"),
-    BENGALI("bn", "বাংলা (Bengali)", Locale("bn", "IN"), "ভাষা বাংলায় সেট করা হয়েছে।"),
-    TAMIL("ta", "தமிழ் (Tamil)", Locale("ta", "IN"), "மொழி தமிழக்கு அமைக்கப்பட்டது."),
-    TELUGU("te", "తెలుగు (Telugu)", Locale("te", "IN"), "భాష తెలుగుకు సెట్ చేయబడింది."),
-    SPANISH("es", "Español (Spanish)", Locale("es", "ES"), "Idioma cambiado a español."),
-    FRENCH("fr", "Français (French)", Locale.FRENCH, "Langue réglée sur le français.")
+    ENGLISH("en", "en-IN", "English", "EN", Locale("en", "IN"), "Language set to English."),
+    HINDI("hi", "hi-IN", "हिंदी-उर्दू", "HI", Locale("hi", "IN"), "भाषा हिंदी-उर्दू पर सेट हो गई।"),
+    PUNJABI("pa", "pa-IN", "ਪੰਜਾਬੀ", "PA", Locale("pa", "IN"), "ਭਾਸ਼ਾ ਪੰਜਾਬੀ ਵਿੱਚ ਸੈੱਟ ਕੀਤੀ ਗਈ ਹੈ।"),
+    BENGALI("bn", "bn-IN", "বাংলা", "BN", Locale("bn", "IN"), "ভাষা বাংলায় সেট করা হয়েছে।")
 }
 
 data class ChatMessage(

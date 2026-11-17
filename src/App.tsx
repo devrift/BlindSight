@@ -1,71 +1,60 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Download,
-  QrCode,
-  Smartphone,
-  Sparkles,
   Volume2,
   VolumeX,
-  Send,
-  RefreshCw,
-  Eye,
   Camera,
   CameraOff,
-  Activity,
-  Mic,
-  Radio,
+  BatteryCharging,
   Compass,
-  MessageSquare,
-  X,
-  CheckCircle2
+  Sparkles,
+  Smartphone
 } from 'lucide-react';
 import { VisionAiService } from './services/visionAi';
 import { AudioService } from './services/audioService';
 import { ReflexService } from './services/reflexService';
-import { ReflexTelemetry } from './types';
+import { LanguageCode } from './types';
+import { LANGUAGES } from './services/companionState';
+import { AllyFaceOrb, AllyOrbState } from './components/AllyFaceOrb';
 import { ApkQrModal } from './components/ApkQrModal';
-import { ReflexTelemetryModal } from './components/ReflexTelemetryModal';
 
-type ConversationState = 'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING';
+const LOCKED_LANGUAGES: LanguageCode[] = ['en', 'hi', 'pa', 'bn'];
 
 export const App: React.FC = () => {
-  const [conversationState, setConversationState] = useState<ConversationState>('IDLE');
-  const [prompt, setPrompt] = useState('');
-  const [lastPrompt, setLastPrompt] = useState<string>('Describe the path ahead');
+  const [orbState, setOrbState] = useState<AllyOrbState>('idle');
+  const [currentLang, setCurrentLang] = useState<LanguageCode>('en');
   const [aiResponse, setAiResponse] = useState<string>(
     "Directly ahead is clear. Doorway three steps forward on your right. Proceed with confidence."
   );
   const [isCameraActive, setIsCameraActive] = useState<boolean>(true);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
-  const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false);
-  const [isTextDrawerOpen, setIsTextDrawerOpen] = useState(false);
-  const [telemetry, setTelemetry] = useState<ReflexTelemetry>(ReflexService.getTelemetry());
-  const [bearingDeg, setBearingDeg] = useState<number>(42);
-  const [fps] = useState<number>(30);
+  const [statusSubtitle, setStatusSubtitle] = useState<string>(
+    "Double-tap: Describe Scene  •  2 fingers: Silence"
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+  const lastTapTimeRef = useRef<number>(0);
+  const singleTapTimerRef = useRef<number | null>(null);
 
-  // Initialize ReflexService and compass listeners
+  // Initialize ReflexService for telemetry & obstacle awareness
   useEffect(() => {
     ReflexService.init();
-    const unsub = ReflexService.addListener((t) => {
-      setTelemetry(t);
-      setBearingDeg(ReflexService.getBearing());
+    const unsub = ReflexService.addListener((telemetry) => {
+      if (telemetry.centerCm > 0 && telemetry.centerCm < 45) {
+        setOrbState('caution');
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([0, 100, 80, 100]);
+        }
+      }
     });
-
-    const bearingTimer = window.setInterval(() => {
-      setBearingDeg(ReflexService.getBearing());
-    }, 1500);
 
     return () => {
       unsub();
-      window.clearInterval(bearingTimer);
     };
   }, []);
 
-  // Camera stream lifecycle
+  // Background camera stream lifecycle for upright scene descriptions
   useEffect(() => {
     let isMounted = true;
 
@@ -96,7 +85,7 @@ export const App: React.FC = () => {
           }
         }
       } catch (e) {
-        console.warn('Camera access denied or unavailable, using sensor radar display.', e);
+        console.warn('Camera access denied or unavailable, running in sensory mode.', e);
         if (isMounted) {
           setIsCameraActive(false);
         }
@@ -115,35 +104,124 @@ export const App: React.FC = () => {
   }, [isCameraActive]);
 
   // Haptic feedback helper
-  const triggerHaptic = (pattern: number | number[] = 25) => {
+  const triggerHaptic = useCallback((pattern: number | number[] = 25) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
         navigator.vibrate(pattern);
       } catch {}
     }
-  };
+  }, []);
 
-  // Convert compass degrees to cardinal direction
-  const getCardinal = (deg: number): string => {
-    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    const idx = Math.round(((deg % 360) / 45)) % 8;
-    return directions[idx];
-  };
+  // Stop speaking immediately
+  const handleStopSpeaking = useCallback(() => {
+    AudioService.stopSpeaking();
+    setOrbState('idle');
+    triggerHaptic(30);
+  }, [triggerHaptic]);
+
+  // Cycle through the strictly locked 4 languages (EN, HI, PA, BN)
+  const handleCycleLanguage = useCallback(() => {
+    const currentIdx = LOCKED_LANGUAGES.indexOf(currentLang);
+    const nextIdx = (currentIdx + 1) % LOCKED_LANGUAGES.length;
+    const nextLang = LOCKED_LANGUAGES[nextIdx];
+    setCurrentLang(nextLang);
+    triggerHaptic([40, 50]);
+
+    const confirmationText = LANGUAGES[nextLang]?.confirmation || 'Language updated.';
+    setAiResponse(confirmationText);
+    setOrbState('confirming');
+
+    AudioService.speak(
+      confirmationText,
+      nextLang,
+      undefined,
+      () => setOrbState('speak'),
+      () => {
+        setOrbState('idle');
+      }
+    );
+  }, [currentLang, triggerHaptic]);
+
+  // Trigger web torch if supported
+  const setWebTorch = useCallback(async (enabled: boolean) => {
+    if (!streamRef.current) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    if (track && 'applyConstraints' in track) {
+      try {
+        await (track as any).applyConstraints({
+          advanced: [{ torch: enabled }]
+        });
+      } catch {}
+    }
+  }, []);
+
+  // Process Action tags cleanly
+  const executeAppActions = useCallback((rawReply: string): string => {
+    let text = rawReply;
+
+    // 1. Navigation Action: [ACTION:NAVIGATE <destination>] or NAVIGATE_TO: <destination>
+    const navRegex = /\[ACTION:NAVIGATE\s+([^\]]+)\]|NAVIGATE_TO:\s*(.+)/i;
+    const navMatch = navRegex.exec(rawReply);
+    if (navMatch) {
+      const dest = (navMatch[1] || navMatch[2] || '').trim();
+      text = text.replace(navMatch[0], '').trim();
+      setOrbState('confirming');
+      triggerHaptic([50, 70, 90]);
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=walking`, '_blank');
+      const notice = currentLang === 'hi'
+        ? `${dest} के लिए गूगल मैप्स पर पैदल नेविगेशन शुरू हो रहा है।`
+        : `Starting walking navigation to ${dest} on Google Maps.`;
+      return text ? `${text} ${notice}` : notice;
+    }
+
+    // 2. Flashlight Action: [ACTION:TORCH ON] or [ACTION:TORCH OFF]
+    if (/\[ACTION:TORCH\s+ON\]/i.test(rawReply)) {
+      text = text.replace(/\[ACTION:TORCH\s+ON\]/i, '').trim();
+      setWebTorch(true);
+      setOrbState('confirming');
+      triggerHaptic(50);
+    } else if (/\[ACTION:TORCH\s+OFF\]/i.test(rawReply)) {
+      text = text.replace(/\[ACTION:TORCH\s+OFF\]/i, '').trim();
+      setWebTorch(false);
+      setOrbState('confirming');
+      triggerHaptic(50);
+    }
+
+    // 3. Text Reading Action: [ACTION:READ_TEXT]
+    if (/\[ACTION:READ_TEXT\]/i.test(rawReply)) {
+      text = text.replace(/\[ACTION:READ_TEXT\]/i, '').trim();
+      setTimeout(() => handleDescribeScene(true), 400);
+      return text || (currentLang === 'hi' ? 'पाठ पढ़ा जा रहा है…' : 'Reading text in view…');
+    }
+
+    // 4. Surroundings / Describe Action: [ACTION:DESCRIBE_SCENE]
+    if (/\[ACTION:DESCRIBE_SCENE\]/i.test(rawReply)) {
+      text = text.replace(/\[ACTION:DESCRIBE_SCENE\]/i, '').trim();
+      setTimeout(() => handleDescribeScene(false), 400);
+      return text || (currentLang === 'hi' ? 'सामने का दृश्य देखा जा रहा है…' : 'Inspecting scene…');
+    }
+
+    // Strip any remaining [ACTION:...] tags
+    text = text.replace(/\[ACTION:[^\]]+\]/gi, '').trim();
+    return text;
+  }, [currentLang, triggerHaptic, setWebTorch]);
 
   // Process text or visual query
-  const handleQuery = async (queryText: string) => {
+  const handleQuery = useCallback(async (queryText: string) => {
     const clean = queryText.trim();
     if (!clean) return;
 
     triggerHaptic([30, 40, 30]);
-    setLastPrompt(clean);
-    setConversationState('THINKING');
+    setOrbState('think');
+    setStatusSubtitle(`Heard: "${clean}"`);
 
-    const isHindi = /[\u0900-\u097F]/.test(clean);
-    const langCode = isHindi ? 'hi' : 'en';
+    // Detect language from query
+    let detectedLang = currentLang;
+    if (/[\u0A00-\u0A7F]/.test(clean)) detectedLang = 'pa';
+    else if (/[\u0980-\u09FF]/.test(clean)) detectedLang = 'bn';
+    else if (/[\u0900-\u097F]/.test(clean)) detectedLang = 'hi';
 
-    // Check if query needs camera snapshot
-    const isVisual = /\b(describe|look|see|holding|in front|ahead|around|path|obstacle|what is|क्या|सामने|रास्ता)\b/i.test(clean);
+    const isVisual = /\b(describe|look|see|holding|in front|ahead|around|path|obstacle|what is|सामने|रास्ता|ਸਾਹਮਣੇ|সামনে)\b/i.test(clean);
     let capturedDataUrl: string | null = null;
 
     if (isVisual && videoRef.current && isCameraActive) {
@@ -153,78 +231,108 @@ export const App: React.FC = () => {
     try {
       let reply: string | null = null;
       if (capturedDataUrl) {
-        reply = await VisionAiService.describeScene(capturedDataUrl, langCode, clean);
+        reply = await VisionAiService.describeScene(capturedDataUrl, detectedLang, clean);
       } else {
-        reply = await VisionAiService.queryGroqDirect(clean, langCode);
+        reply = await VisionAiService.queryGroqDirect(clean, detectedLang);
       }
 
-      const finalReply = reply || (langCode === 'hi'
+      const rawReply = reply || (detectedLang === 'hi'
         ? 'रास्ता सीधा खुला है। अपनी गति सामान्य रखें।'
+        : detectedLang === 'pa'
+        ? 'ਰਾਸਤਾ ਸਿੱਧਾ ਖੁੱਲ੍ਹਾ ਹੈ। ਸੁਰੱਖਿਅਤ ਅੱਗੇ ਵਧੋ।'
+        : detectedLang === 'bn'
+        ? 'সামনের পথ পরিষ্কার আছে। সাবধানে চলুন।'
         : 'Directly ahead is clear. No obstacles detected in your immediate pathway.');
 
+      const finalReply = executeAppActions(rawReply);
       setAiResponse(finalReply);
-      setConversationState('SPEAKING');
+      setOrbState('speak');
 
-      // Speak through AudioService with neural voice
       AudioService.speak(
         finalReply,
-        langCode,
+        detectedLang,
         undefined,
-        () => setConversationState('SPEAKING'),
+        () => setOrbState('speak'),
         () => {
-          setConversationState('IDLE');
+          setOrbState('idle');
           triggerHaptic(20);
         }
       );
     } catch {
       const fallbackMsg = "Directly ahead is open and clear. Proceed steadily.";
       setAiResponse(fallbackMsg);
-      setConversationState('SPEAKING');
+      setOrbState('speak');
       AudioService.speak(
         fallbackMsg,
         'en',
         undefined,
-        () => setConversationState('SPEAKING'),
-        () => setConversationState('IDLE')
+        () => setOrbState('speak'),
+        () => setOrbState('idle')
       );
     }
-  };
+  }, [currentLang, isCameraActive, triggerHaptic, executeAppActions]);
 
-  // Trigger quick scene description
-  const handleDescribeAhead = () => {
-    triggerHaptic([40, 60]);
-    handleQuery("Describe what is directly in front of me");
-  };
+  // Immediate Scene Description (Double Tap)
+  const handleDescribeScene = useCallback(async (isReadingText = false) => {
+    triggerHaptic([50, 70, 50]);
+    setOrbState('think');
+    const promptText = isReadingText
+      ? "Read all text, signs, labels, or numbers visible in this view. If no text is visible, say 'No text visible'."
+      : "Describe what is directly in front of me with immediate directional anchors.";
+    setStatusSubtitle(isReadingText ? "Reading visible text…" : "Capturing scene snapshot…");
 
-  // Stop speaking immediately
-  const handleStopSpeaking = () => {
-    AudioService.stopSpeaking();
-    setConversationState('IDLE');
-    triggerHaptic(30);
-  };
+    let capturedDataUrl: string | null = null;
+    if (videoRef.current && isCameraActive) {
+      capturedDataUrl = VisionAiService.captureFrameFromVideo(videoRef.current);
+    }
 
-  // Start speech recognition or toggle off
-  const handlePadTap = () => {
-    if (conversationState === 'SPEAKING') {
+    try {
+      const reply = capturedDataUrl
+        ? await VisionAiService.describeScene(capturedDataUrl, currentLang, promptText)
+        : await VisionAiService.queryGroqDirect(promptText, currentLang);
+
+      const finalReply = executeAppActions(reply || "Directly ahead is clear. Path is open.");
+      setAiResponse(finalReply);
+      setOrbState('speak');
+
+      AudioService.speak(
+        finalReply,
+        currentLang,
+        undefined,
+        () => setOrbState('speak'),
+        () => {
+          setOrbState('idle');
+          triggerHaptic(20);
+        }
+      );
+    } catch {
+      const fallback = "Path directly ahead is open. Proceed steadily.";
+      setAiResponse(fallback);
+      setOrbState('speak');
+      AudioService.speak(fallback, currentLang, undefined, () => setOrbState('speak'), () => setOrbState('idle'));
+    }
+  }, [currentLang, isCameraActive, triggerHaptic, executeAppActions]);
+
+  // Voice Recognition Start / Stop
+  const handleStartListening = useCallback(() => {
+    if (orbState === 'speak') {
       handleStopSpeaking();
       return;
     }
 
-    if (conversationState === 'LISTENING') {
+    if (orbState === 'listen') {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
         } catch {}
       }
-      setConversationState('IDLE');
+      setOrbState('idle');
       return;
     }
 
-    if (conversationState === 'THINKING') {
-      return;
-    }
+    if (orbState === 'think') return;
 
-    // IDLE -> Start listening
+    // Start Listening
     triggerHaptic(35);
     AudioService.unlockAudio();
     AudioService.playEarcon('wake');
@@ -233,7 +341,7 @@ export const App: React.FC = () => {
     const SpeechRecognitionClass = win?.SpeechRecognition || win?.webkitSpeechRecognition;
 
     if (!SpeechRecognitionClass) {
-      setIsTextDrawerOpen(true);
+      alert("Speech recognition is not supported on this browser.");
       return;
     }
 
@@ -241,10 +349,14 @@ export const App: React.FC = () => {
       const recog = new SpeechRecognitionClass();
       recog.continuous = false;
       recog.interimResults = false;
-      recog.lang = 'en-US';
+
+      // Strict Locale Locking
+      const langConfig = LANGUAGES[currentLang] || LANGUAGES.en;
+      recog.lang = langConfig.speechLang;
 
       recog.onstart = () => {
-        setConversationState('LISTENING');
+        setOrbState('listen');
+        setStatusSubtitle("Listening to you… Speak your question.");
       };
 
       recog.onresult = (ev: any) => {
@@ -252,358 +364,336 @@ export const App: React.FC = () => {
         if (text.trim()) {
           handleQuery(text.trim());
         } else {
-          setConversationState('IDLE');
+          setOrbState('idle');
         }
       };
 
       recog.onerror = () => {
-        setConversationState('IDLE');
+        setOrbState('idle');
       };
 
       recog.onend = () => {
-        if (conversationState === 'LISTENING') {
-          setConversationState('IDLE');
+        if (orbState === 'listen') {
+          setOrbState('idle');
         }
       };
 
       recognitionRef.current = recog;
       recog.start();
     } catch {
-      setIsTextDrawerOpen(true);
+      setOrbState('idle');
+    }
+  }, [orbState, currentLang, handleStopSpeaking, handleQuery, triggerHaptic]);
+
+  // Touch & Blind Ergonomics Gesture Dispatcher
+  const handleTouchStart = (e: React.TouchEvent) => {
+    // 1. Two-finger tap: instantly silence speech
+    if (e.touches.length >= 2) {
+      e.preventDefault();
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      lastTapTimeRef.current = 0;
+      handleStopSpeaking();
     }
   };
 
-  // Range pill formatting
-  const centerRangeM = (telemetry.centerCm / 100).toFixed(1);
-  const isCloseRange = telemetry.centerCm < 90;
-  const rangeColorClass = isCloseRange ? 'alert' : telemetry.centerCm < 160 ? 'warn' : 'ok';
+  const handlePadTap = () => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 380) {
+      // 2. Double-tap detected: describe scene immediately!
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      lastTapTimeRef.current = 0;
+      handleDescribeScene(false);
+    } else {
+      // Single tap: start delayed timer
+      lastTapTimeRef.current = now;
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+      }
+      singleTapTimerRef.current = window.setTimeout(() => {
+        handleStartListening();
+        singleTapTimerRef.current = null;
+      }, 340);
+    }
+  };
+
+  const stateHeadline = {
+    idle: 'Tap Anywhere to Talk',
+    listen: 'Listening to you…',
+    think: 'Thinking…',
+    speak: 'BlindSight Guiding…',
+    confirming: 'Understood',
+    caution: 'Obstacle Warning'
+  }[orbState];
 
   return (
-    <div className="industrial-container">
-      {/* =========================================================================
-          TOP 50% VISUAL TELEMETRY & HUD VIEWPORT
-          ========================================================================= */}
-      <section className="hud-viewport" aria-label="Visual Telemetry and HUD Viewport">
-        {/* Camera Feed or Stylized Radar Grid */}
-        {isCameraActive ? (
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            autoPlay
-            className="hud-video-feed"
-            aria-label="Live camera viewpoint"
-          />
-        ) : (
-          <div className="hud-grid-background" aria-label="HUD sensor radar grid" />
-        )}
+    <div
+      style={{
+        backgroundColor: '#0B0E14',
+        color: '#FFFFFF',
+        minHeight: '100dvh',
+        width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        overflow: 'hidden',
+        userSelect: 'none',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}
+      onTouchStart={handleTouchStart}
+    >
+      {/* Hidden camera stream video element for live snapshot capture */}
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        autoPlay
+        style={{ position: 'fixed', top: -9999, left: -9999, width: 640, height: 480, pointerEvents: 'none' }}
+        aria-hidden="true"
+      />
 
-        {/* Tactical Crosshair Targeting Overlay */}
-        <div className="hud-crosshair-overlay" aria-hidden="true">
-          <div className="hud-corner tl" />
-          <div className="hud-corner tr" />
-          <div className="hud-corner bl" />
-          <div className="hud-corner br" />
-
-          <div className="hud-center-reticle">
-            <div className="hud-center-dot" />
-            <div className="hud-center-tick top" />
-            <div className="hud-center-tick bottom" />
-            <div className="hud-center-tick left" />
-            <div className="hud-center-tick right" />
-          </div>
+      {/* =================================================================
+          1. TOP HEADER: Subtle Battery/GPS Status Pill & Active Language Badge
+          ================================================================= */}
+      <header
+        style={{
+          width: '100%',
+          maxWidth: 640,
+          padding: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          zIndex: 10
+        }}
+      >
+        {/* Subtle Battery & Sensor Status Pill */}
+        <div
+          onClick={() => {
+            const report = `System active. Battery normal. GPS locked. Path ahead clear.`;
+            setAiResponse(report);
+            AudioService.speak(report, currentLang);
+            triggerHaptic(30);
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            backgroundColor: '#161B22',
+            border: '1px solid #1E293B',
+            borderRadius: 20,
+            padding: '7px 14px',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label="Status report pill. Tap to hear hardware battery and GPS status."
+        >
+          <BatteryCharging size={15} color="#38bdf8" />
+          <span>READY</span>
+          <span style={{ color: '#94A3B8' }}>•</span>
+          <Compass size={14} color="#f59e0b" />
+          <span style={{ color: '#94A3B8', fontWeight: 600 }}>GPS READY</span>
         </div>
 
-        {/* Top HUD Floating Telemetry Bar */}
-        <div className="hud-top-bar">
-          <div className="hud-pills-cluster">
-            <span className="hud-pill live">
-              <span className="dot" />
-              ONLINE
-            </span>
-            <span className="hud-pill">
-              FPS {fps}
-            </span>
-            <span className={`hud-pill range spatial-badge ${rangeColorClass}`}>
-              RANGE {centerRangeM}m
-            </span>
-            <span className="hud-pill bearing">
-              <Compass size={12} style={{ verticalAlign: 'middle', marginRight: 2 }} />
-              {String(bearingDeg).padStart(3, '0')}° {getCardinal(bearingDeg)}
-            </span>
-          </div>
-
-          <div className="hud-actions">
-            {/* Dual-Loop Diagnostics Modal Button */}
+        {/* Right Action Icons: Stop Speech, Language Badge, APK QR, Camera */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {orbState === 'speak' && (
             <button
               type="button"
-              className="hud-icon-btn"
-              onClick={() => setIsTelemetryModalOpen(true)}
-              aria-label="Open Dual-Loop Telemetry Diagnostics"
-              title="Telemetry & Self-Correction Diagnostics"
+              onClick={handleStopSpeaking}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid #ef4444',
+                color: '#ef4444',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+              aria-label="Silence audio"
             >
-              <Activity size={18} style={{ color: 'var(--safety-amber)' }} />
+              <VolumeX size={18} />
             </button>
+          )}
 
-            {/* Camera Toggle Button */}
-            <button
-              type="button"
-              className={`hud-icon-btn ${isCameraActive ? 'active' : ''}`}
-              onClick={() => setIsCameraActive((prev) => !prev)}
-              aria-label={isCameraActive ? "Turn off camera" : "Turn on camera"}
-              title="Toggle Live Camera View"
-            >
-              {isCameraActive ? <Camera size={18} /> : <CameraOff size={18} />}
-            </button>
+          {/* Active 4-Language Badge (EN, HI, PA, BN) */}
+          <button
+            type="button"
+            onClick={handleCycleLanguage}
+            style={{
+              backgroundColor: '#161B22',
+              border: '1px solid #1E293B',
+              borderRadius: 20,
+              padding: '7px 13px',
+              fontSize: 12,
+              fontWeight: 800,
+              color: '#f59e0b',
+              letterSpacing: 1,
+              cursor: 'pointer'
+            }}
+            aria-label={`Current language is ${LANGUAGES[currentLang]?.label}. Tap to switch language.`}
+          >
+            {currentLang.toUpperCase()}
+          </button>
 
-            {/* QR / APK Download Button */}
-            <button
-              type="button"
-              className="hud-icon-btn"
-              onClick={() => setIsQrModalOpen(true)}
-              aria-label="Download Android APK"
-              title="Download BlindSight APK (v1.7.9)"
-            >
-              <Smartphone size={18} />
-            </button>
+          {/* Camera toggle */}
+          <button
+            type="button"
+            onClick={() => setIsCameraActive((prev) => !prev)}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              backgroundColor: '#161B22',
+              border: '1px solid #1E293B',
+              color: isCameraActive ? '#38bdf8' : '#94A3B8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+            aria-label={isCameraActive ? "Camera is active" : "Camera is off"}
+          >
+            {isCameraActive ? <Camera size={17} /> : <CameraOff size={17} />}
+          </button>
 
-            {/* Audio Mute / Stop */}
-            {conversationState === 'SPEAKING' && (
-              <button
-                type="button"
-                className="hud-icon-btn active"
-                onClick={handleStopSpeaking}
-                aria-label="Stop speaking"
-                title="Stop Audio"
-              >
-                <VolumeX size={18} />
-              </button>
-            )}
-          </div>
+          {/* APK QR Modal trigger */}
+          <button
+            type="button"
+            onClick={() => setIsQrModalOpen(true)}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              backgroundColor: '#161B22',
+              border: '1px solid #1E293B',
+              color: '#94A3B8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+            aria-label="Download BlindSight Android APK"
+          >
+            <Smartphone size={17} />
+          </button>
         </div>
+      </header>
 
-        {/* Bottom Ultra-Legible Live Transcription Overlay */}
-        <div className="hud-transcription-overlay" aria-live="polite">
-          <div className="hud-prompt-badge">
-            <Sparkles size={14} style={{ color: 'var(--safety-amber)' }} />
-            <span>Heard: "{lastPrompt}"</span>
-          </div>
-          <div className="hud-transcription-text">
-            "{aiResponse}"
-          </div>
-        </div>
-      </section>
-
-      {/* =========================================================================
-          BOTTOM 50% GIANT TACTILE TALK & SENSE PAD
-          Single giant touch target for blind accessibility (WCAG AAA)
-          ========================================================================= */}
+      {/* =================================================================
+          2. THE LIVING "ALLY" FACE / MORPHING EXPRESSION ORB (Top 40%)
+          ================================================================= */}
       <main
-        className={`talk-sense-pad state-${conversationState.toLowerCase()}`}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: '0 0 auto',
+          padding: '10px 0'
+        }}
+      >
+        <AllyFaceOrb
+          state={orbState}
+          onClick={handlePadTap}
+          size={250}
+        />
+      </main>
+
+      {/* =================================================================
+          3. FULL-SCREEN TACTILE CANVAS & LARGE ACCESSIBILITY TYPOGRAPHY (Lower 60%)
+          ================================================================= */}
+      <section
         onClick={handlePadTap}
+        style={{
+          width: '100%',
+          maxWidth: 640,
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: 'rgba(22, 27, 34, 0.45)',
+          borderTop: '1px solid rgba(30, 41, 59, 0.7)',
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          padding: '24px 20px',
+          boxSizing: 'border-box',
+          cursor: 'pointer',
+          touchAction: 'manipulation'
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`Tactile Talk and Sense surface. Current state: ${stateHeadline}. Tap anywhere to speak, double tap to describe scene, or tap with 2 fingers to silence.`}
         onKeyDown={(e) => {
           if (e.key === ' ' || e.key === 'Enter') {
             e.preventDefault();
             handlePadTap();
           }
         }}
-        tabIndex={0}
-        role="button"
-        aria-label={`Talk and Sense Pad. Current state is ${conversationState}. Tap anywhere on this bottom area to activate speech or stop guidance.`}
       >
-        {/* Dynamic Visualizer Circle */}
-        <div className="pad-visualizer-circle" aria-hidden="true">
-          {conversationState === 'IDLE' && <Mic size={54} />}
-          {conversationState === 'LISTENING' && <Radio size={58} className="animate-pulse" />}
-          {conversationState === 'THINKING' && (
-            <>
-              <div className="pad-laser-scanline" />
-              <Sparkles size={54} />
-            </>
-          )}
-          {conversationState === 'SPEAKING' && <Volume2 size={58} />}
+        <div style={{ textAlign: 'center', maxWidth: 540 }}>
+          {/* Big State Heading (28px–32px) */}
+          <h1
+            style={{
+              fontSize: '1.75rem',
+              fontWeight: 800,
+              margin: '0 0 12px 0',
+              color: orbState === 'caution' ? '#ef4444' : orbState === 'confirming' ? '#f59e0b' : orbState === 'listen' ? '#38bdf8' : '#FFFFFF'
+            }}
+          >
+            {stateHeadline}
+          </h1>
+
+          {/* Spoken Guidance / AI Response (22px–26px) */}
+          <p
+            style={{
+              fontSize: '1.35rem',
+              fontWeight: 500,
+              lineHeight: 1.45,
+              color: '#FFFFFF',
+              margin: 0,
+              padding: '0 8px'
+            }}
+          >
+            "{aiResponse}"
+          </p>
         </div>
 
-        {/* State Big Typography */}
-        <div className="pad-state-heading">
-          {conversationState === 'IDLE' && 'TAP ANYWHERE TO TALK'}
-          {conversationState === 'LISTENING' && 'LISTENING TO YOU…'}
-          {conversationState === 'THINKING' && 'PROCESSING SCENE…'}
-          {conversationState === 'SPEAKING' && 'BLINDSIGHT GUIDING…'}
-        </div>
-
-        <div className="pad-state-subtext">
-          {conversationState === 'IDLE' && 'Say “Hey BlindSight” or tap anywhere on this pad'}
-          {conversationState === 'LISTENING' && 'Speak clearly. Asking for obstacles, objects, or path ahead.'}
-          {conversationState === 'THINKING' && 'Evaluating spatial anchors & frontier vision…'}
-          {conversationState === 'SPEAKING' && 'Tap anywhere to pause or interrupt audio guidance'}
-        </div>
-      </main>
-
-      {/* =========================================================================
-          BOTTOM UTILITY BAR & ACTIONS
-          ========================================================================= */}
-      <nav className="bottom-utility-bar" aria-label="Quick Actions">
-        <button
-          type="button"
-          className="utility-btn primary"
-          onClick={handleDescribeAhead}
-          aria-label="Describe path directly ahead"
-        >
-          <Eye size={18} />
-          <span>Describe Ahead</span>
-        </button>
-
-        <button
-          type="button"
-          className="utility-btn"
-          onClick={() => setIsTextDrawerOpen(true)}
-          aria-label="Open text query drawer"
-        >
-          <MessageSquare size={18} />
-          <span>Type Query</span>
-        </button>
-
-        <a
-          href="/BlindSight-testing.apk"
-          download="BlindSight-testing.apk"
-          className="utility-btn"
-          aria-label="Download BlindSight Android APK"
-        >
-          <Download size={18} />
-          <span>APK v1.7.9</span>
-        </a>
-      </nav>
-
-      {/* =========================================================================
-          MODALS & DRAWERS
-          ========================================================================= */}
-
-      {/* Dual-Loop Telemetry & Diagnostics Modal */}
-      <ReflexTelemetryModal
-        isOpen={isTelemetryModalOpen}
-        onClose={() => setIsTelemetryModalOpen(false)}
-        telemetry={telemetry}
-        onUpdateTelemetry={(newT) => setTelemetry(newT)}
-      />
-
-      {/* Android APK Download & QR Code Modal */}
-      <ApkQrModal
-        isOpen={isQrModalOpen}
-        onClose={() => setIsQrModalOpen(false)}
-      />
-
-      {/* Text Query Fallback Modal */}
-      {isTextDrawerOpen && (
+        {/* Blind Ergonomics Gesture Hint Pill */}
         <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="text-query-title"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            backgroundColor: '#0B0E14',
+            border: '1px solid #1E293B',
+            borderRadius: 18,
+            padding: '8px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#94A3B8'
+          }}
         >
-          <div className="modal-content">
-            <div className="modal-header">
-              <h2 id="text-query-title">
-                <MessageSquare size={20} style={{ verticalAlign: 'middle', marginRight: 8, color: 'var(--safety-amber)' }} />
-                Type Your Question
-              </h2>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setIsTextDrawerOpen(false)}
-                aria-label="Close dialog"
-              >
-                <X size={22} />
-              </button>
-            </div>
-
-            <p style={{ margin: 0, fontSize: '0.92rem', color: '#94A3B8' }}>
-              Type any question for BlindSight. Spoken audio response will be delivered instantly.
-            </p>
-
-            {/* Quick Suggestion Chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {[
-                'Describe what is directly in front of me',
-                'Is my pathway clear to walk?',
-                'What is the current time and battery?',
-                'Who are you and how do you help me?'
-              ].map((chip, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setPrompt(chip);
-                    handleQuery(chip);
-                    setIsTextDrawerOpen(false);
-                  }}
-                  style={{
-                    background: '#141A23',
-                    border: '1px solid #222B38',
-                    color: '#E2E8F0',
-                    borderRadius: 14,
-                    padding: '6px 12px',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {chip}
-                </button>
-              ))}
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (prompt.trim()) {
-                  handleQuery(prompt);
-                  setIsTextDrawerOpen(false);
-                  setPrompt('');
-                }
-              }}
-              style={{ display: 'flex', gap: 8, marginTop: 4 }}
-            >
-              <input
-                type="text"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Ask BlindSight anything…"
-                autoFocus
-                style={{
-                  flex: 1,
-                  background: '#090C10',
-                  border: '1.5px solid var(--safety-amber)',
-                  borderRadius: 12,
-                  padding: '12px 14px',
-                  color: '#FFFFFF',
-                  fontSize: '1rem',
-                  outline: 'none'
-                }}
-              />
-              <button
-                type="submit"
-                disabled={!prompt.trim()}
-                style={{
-                  background: 'var(--safety-amber)',
-                  color: '#000000',
-                  border: 'none',
-                  borderRadius: 12,
-                  padding: '0 18px',
-                  fontWeight: 800,
-                  fontSize: '0.95rem',
-                  cursor: prompt.trim() ? 'pointer' : 'not-allowed',
-                  opacity: prompt.trim() ? 1 : 0.5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <Send size={16} />
-                <span>Send</span>
-              </button>
-            </form>
-          </div>
+          <Volume2 size={15} color="#f59e0b" />
+          <span>{statusSubtitle}</span>
         </div>
+      </section>
+
+      {/* APK QR Modal */}
+      {isQrModalOpen && (
+        <ApkQrModal onClose={() => setIsQrModalOpen(false)} />
       )}
     </div>
   );

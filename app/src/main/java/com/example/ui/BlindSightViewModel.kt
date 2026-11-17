@@ -292,19 +292,43 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun detectSpokenLanguage(text: String): SupportedLanguage {
-        // 1. Devanagari script: Unicode range \u0900 to \u097F
+        // 1. Script checks for the 4 strictly locked languages
+        if (text.any { it in '\u0A00'..'\u0A7F' }) {
+            return SupportedLanguage.PUNJABI
+        }
+        if (text.any { it in '\u0980'..'\u09FF' }) {
+            return SupportedLanguage.BENGALI
+        }
         if (text.any { it in '\u0900'..'\u097F' }) {
             return SupportedLanguage.HINDI
         }
-        // 2. Common Hindi phonetic / Hinglish words
+
+        // 2. Phonetic / Transliterated keyword matching
         val low = text.lowercase()
+        val punjabiKeywords = Regex(
+            "\\b(kivein|kiddan|kithe|daso|dasso|aaho|hanji|sat sri akal|tusi|tuhada|saamne|agay|chalo|veere|paji|hor)\\b",
+            RegexOption.IGNORE_CASE
+        )
+        if (punjabiKeywords.containsMatchIn(low)) {
+            return SupportedLanguage.PUNJABI
+        }
+
+        val bengaliKeywords = Regex(
+            "\\b(kemon|kothay|bolo|shunun|dorkar|amake|amar|thik|dhonnobad|namaskar|samne|aage)\\b",
+            RegexOption.IGNORE_CASE
+        )
+        if (bengaliKeywords.containsMatchIn(low)) {
+            return SupportedLanguage.BENGALI
+        }
+
         val hindiKeywords = Regex(
-            "\\b(kya|kaise|kahan|kidhar|batao|dekho|mera|meri|mere|mujhe|aage|samne|hai|hain|ho|nahi|mat|chalo|rasta|kripya|namaste|shukriya|kaun|kab|kyun|chahiye|aur|pe|par|yeh|woh|karo|bataiye|dikhaye|ruko|bhai)\\b",
+            "\\b(kya|kaise|kahan|kidhar|batao|dekho|mera|meri|mere|mujhe|aage|samne|hai|hain|ho|nahi|mat|chalo|rasta|seedhe|kripya|namaste|shukriya|kaun|kab|kyun|chahiye|aur|pe|par|yeh|woh|karo|bataiye|dikhaye|ruko|bhai)\\b",
             RegexOption.IGNORE_CASE
         )
         if (hindiKeywords.containsMatchIn(low)) {
             return SupportedLanguage.HINDI
         }
+
         return SupportedLanguage.ENGLISH
     }
 
@@ -482,31 +506,143 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
-        // 5. Check if LLM requested navigation to destination
-        val navToMatch = Regex("NAVIGATE_TO:\\s*(.+)", RegexOption.IGNORE_CASE).find(reply)
-        if (navToMatch != null) {
-            val destination = navToMatch.groupValues[1].replace(Regex("[*._#`\n\r]"), "").trim()
-            repository.openGoogleMaps(destination)
-            val spokenNotice = if (_uiState.value.language == SupportedLanguage.HINDI) {
-                "$destination के लिए गूगल मैप्स पर पैदल नेविगेशन शुरू हो रहा है।"
-            } else {
-                "Starting walking navigation to $destination on Google Maps."
+        // Process actions and deliver response
+        handleAiResponseWithActions(reply)
+    }
+
+    fun triggerConfirmEmotion() {
+        hapticHelper.vibrateConfirm()
+        _uiState.value = _uiState.value.copy(appState = AppState.CONFIRMING)
+        viewModelScope.launch {
+            delay(1200L)
+            if (_uiState.value.appState == AppState.CONFIRMING) {
+                _uiState.value = _uiState.value.copy(appState = AppState.IDLE)
             }
-            repository.addMessage(isUser = false, text = spokenNotice)
+        }
+    }
+
+    fun triggerCautionEmotion() {
+        hapticHelper.vibrateWarning()
+        _uiState.value = _uiState.value.copy(appState = AppState.CAUTION)
+    }
+
+    fun cycleLanguage() {
+        val all = SupportedLanguage.entries
+        val nextIdx = (all.indexOf(_uiState.value.language) + 1) % all.size
+        setLanguage(all[nextIdx])
+    }
+
+    fun onTactileSingleTap() {
+        val currentState = _uiState.value.appState
+        if (currentState == AppState.SPEAKING) {
+            stopSpeaking()
+            return
+        }
+        if (currentState == AppState.COMMAND_LISTENING) {
+            finishListeningAndProcess()
+            return
+        }
+        if (currentState == AppState.THINKING) {
+            return
+        }
+        onGiantMicClick()
+    }
+
+    fun readVisibleText() {
+        viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
-                appState = AppState.SPEAKING,
-                statusText = spokenNotice
+                appState = AppState.THINKING,
+                statusText = "Reading text in view…"
             )
-            speak(spokenNotice)
+            hapticHelper.vibrateConfirm()
+            ttsHelper?.playEarcon(TtsHelper.EarconType.WAKE)
+
+            val frameData = repository.captureFreshFrameWithSource()
+            val imageBase64 = frameData.bytes?.let { bytes ->
+                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            }
+            val prompt = "Read all text, signs, labels, or numbers visible in this view clearly. If no text is visible, say 'No text visible'."
+            val reply = repository.queryGemini(prompt, imageBase64, _uiState.value.language)
+                ?: repository.queryGroq(prompt, _uiState.value.language)
+                ?: "No text detected."
+
+            handleAiResponseWithActions(reply)
+        }
+    }
+
+    private fun handleAiResponseWithActions(rawReply: String) {
+        var text = rawReply
+
+        // 1. Navigation Action: [ACTION:NAVIGATE <destination>] or NAVIGATE_TO: <destination>
+        val navRegex = Regex("\\[ACTION:NAVIGATE\\s+([^\\]]+)\\]|NAVIGATE_TO:\\s*(.+)", RegexOption.IGNORE_CASE)
+        val navMatch = navRegex.find(rawReply)
+        if (navMatch != null) {
+            val destination = (navMatch.groupValues[1].ifBlank { navMatch.groupValues[2] })
+                .replace(Regex("[*._#`\n\r]"), "").trim()
+            text = text.replace(navMatch.value, "").trim()
+            repository.openGoogleMaps(destination)
+            triggerConfirmEmotion()
+            val navNotice = when (_uiState.value.language) {
+                SupportedLanguage.HINDI -> "$destination के लिए गूगल मैप्स पर पैदल नेविगेशन शुरू हो रहा है।"
+                SupportedLanguage.PUNJABI -> "$destination ਲਈ ਗੂਗਲ ਮੈਪਸ 'ਤੇ ਪੈਦਲ ਨੇਵੀਗੇਸ਼ਨ ਸ਼ੁਰੂ ਹੋ ਰਹੀ ਹੈ।"
+                SupportedLanguage.BENGALI -> "$destination এর জন্য গুগল ম্যাপে হাঁটার নেভিগেশন শুরু হচ্ছে।"
+                else -> "Starting walking navigation to $destination on Google Maps."
+            }
+            val combined = if (text.isNotBlank()) "$text $navNotice" else navNotice
+            deliverSpokenReply(combined)
             return
         }
 
-        repository.addMessage(isUser = false, text = reply)
+        // 2. Flashlight Action: [ACTION:TORCH ON] or [ACTION:TORCH OFF]
+        val torchOnRegex = Regex("\\[ACTION:TORCH\\s+ON\\]", RegexOption.IGNORE_CASE)
+        val torchOffRegex = Regex("\\[ACTION:TORCH\\s+OFF\\]", RegexOption.IGNORE_CASE)
+        if (torchOnRegex.containsMatchIn(rawReply)) {
+            text = text.replace(torchOnRegex, "").trim()
+            repository.setTorch(true)
+            triggerConfirmEmotion()
+        } else if (torchOffRegex.containsMatchIn(rawReply)) {
+            text = text.replace(torchOffRegex, "").trim()
+            repository.setTorch(false)
+            triggerConfirmEmotion()
+        }
+
+        // 3. Text Reading Action: [ACTION:READ_TEXT]
+        val readTextRegex = Regex("\\[ACTION:READ_TEXT\\]", RegexOption.IGNORE_CASE)
+        if (readTextRegex.containsMatchIn(rawReply)) {
+            text = text.replace(readTextRegex, "").trim()
+            readVisibleText()
+            return
+        }
+
+        // 4. Surroundings / Describe Scene Action: [ACTION:DESCRIBE_SCENE]
+        val describeRegex = Regex("\\[ACTION:DESCRIBE_SCENE\\]", RegexOption.IGNORE_CASE)
+        if (describeRegex.containsMatchIn(rawReply)) {
+            text = text.replace(describeRegex, "").trim()
+            describeScene()
+            return
+        }
+
+        // Strip any other stray [ACTION:...] tags
+        text = text.replace(Regex("\\[ACTION:.*?\\]"), "").trim()
+        if (text.isBlank()) {
+            text = when (_uiState.value.language) {
+                SupportedLanguage.HINDI -> "रास्ता सीधा खुला है। सुरक्षित आगे बढ़ें।"
+                SupportedLanguage.PUNJABI -> "ਰਾਸਤਾ ਸਿੱਧਾ ਖੁੱਲ੍ਹਾ ਹੈ। ਸੁਰੱਖਿਅਤ ਅੱਗੇ ਵਧੋ।"
+                SupportedLanguage.BENGALI -> "সামনের পথ খোলা আছে। সাবধানে এগিয়ে চলুন।"
+                else -> "Directly ahead is clear. Proceed with confidence."
+            }
+        }
+
+        deliverSpokenReply(text)
+    }
+
+    private fun deliverSpokenReply(text: String) {
+        repository.addMessage(isUser = false, text = text)
         _uiState.value = _uiState.value.copy(
             appState = AppState.SPEAKING,
-            statusText = reply
+            statusText = text
         )
-        speak(reply)
+        speak(text)
     }
 
     private fun buildConversationalAnswer(prompt: String): String {
@@ -565,13 +701,13 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
         return when (_uiState.value.language) {
             SupportedLanguage.HINDI ->
-                "${memPrefix}यह बहुत अच्छा विचार है! मैं हर कदम पर आपकी मदद और सुरक्षा के लिए तैयार हूँ। आप मुझसे समय, बैटरी, गणित, या आगे देखने के लिए कह सकते हैं।"
-            SupportedLanguage.SPANISH ->
-                "${memPrefix}¡Buena pregunta! Estoy aquí contigo para ayudarte a navegar, calcular números o responder tus dudas."
-            SupportedLanguage.FRENCH ->
-                "${memPrefix}Excellente question ! Je suis là pour vous aider à vous orienter, calculer ou répondre à vos questions."
+                "${memPrefix}यह बहुत अच्छा विचार है! मैं हर कदम पर आपकी मदद और सुरक्षा के लिए तैयार हूँ। आप मुझसे समय, बैटरी, या आगे देखने के लिए कह सकते हैं।"
+            SupportedLanguage.PUNJABI ->
+                "${memPrefix}ਇਹ ਬਹੁਤ ਵਧੀਆ ਸਵਾਲ ਹੈ! ਮੈਂ ਹਰ ਕਦਮ 'ਤੇ ਤੁਹਾਡੀ ਮਦਦ ਲਈ ਤਿਆਰ ਹਾਂ। ਤੁਸੀਂ ਮੈਨੂੰ ਰਸਤਾ, ਸਮਾਂ, ਬੈਟਰੀ ਜਾਂ ਸਾਹਮਣੇ ਦੇਖਣ ਲਈ ਕਹਿ ਸਕਦੇ ਹੋ।"
+            SupportedLanguage.BENGALI ->
+                "${memPrefix}খুব সুন্দর প্রশ্ন! আমি প্রতিটি পদক্ষেপে আপনাকে সাহায্য করার জন্য প্রস্তুত। আপনি সময়, ব্যাটারি, বা সামনের দৃশ্য বর্ণনা করতে বলতে পারেন।"
             else ->
-                "${memPrefix}That is a thoughtful question! I am right here walking with you. You can ask me to calculate, check your battery or time, tell a joke, or say 'describe the scene' anytime."
+                "${memPrefix}That is a thoughtful question! I am right here walking with you. You can ask me for directions, check your battery or time, or say 'describe the scene' anytime."
         }
     }
 

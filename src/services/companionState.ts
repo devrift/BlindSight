@@ -11,51 +11,27 @@ export const LANGUAGES: Record<LanguageCode, LanguageOption> = {
   },
   hi: {
     code: 'hi',
-    label: 'Hindi',
+    label: 'हिंदी-उर्दू',
     espeakVoice: 'hi',
     neuralVoice: 'hi-IN-SwaraNeural',
     speechLang: 'hi-IN',
-    confirmation: 'भाषा हिंदी पर सेट हो गई।'
+    confirmation: 'भाषा हिंदी-उर्दू पर सेट हो गई।'
+  },
+  pa: {
+    code: 'pa',
+    label: 'ਪੰਜਾਬੀ',
+    espeakVoice: 'pa',
+    neuralVoice: 'pa-IN-OjasNeural',
+    speechLang: 'pa-IN',
+    confirmation: 'ਭਾਸ਼ਾ ਪੰਜਾਬੀ ਵਿੱਚ ਸੈੱਟ ਕੀਤੀ ਗਈ ਹੈ।'
   },
   bn: {
     code: 'bn',
-    label: 'Bengali',
+    label: 'বাংলা',
     espeakVoice: 'bn',
     neuralVoice: 'bn-IN-TanishaaNeural',
     speechLang: 'bn-IN',
-    confirmation: 'भाषा বাংলায় সেট করা হয়েছে।'
-  },
-  ta: {
-    code: 'ta',
-    label: 'Tamil',
-    espeakVoice: 'ta',
-    neuralVoice: 'ta-IN-PallaviNeural',
-    speechLang: 'ta-IN',
-    confirmation: 'மொழி தமிழக்கு அமைக்கப்பட்டது.'
-  },
-  te: {
-    code: 'te',
-    label: 'Telugu',
-    espeakVoice: 'te',
-    neuralVoice: 'te-IN-ShrutiNeural',
-    speechLang: 'te-IN',
-    confirmation: 'భాష తెలుగుకు సెట్ చేయబడింది.'
-  },
-  es: {
-    code: 'es',
-    label: 'Spanish',
-    espeakVoice: 'es',
-    neuralVoice: 'es-ES-ElviraNeural',
-    speechLang: 'es-ES',
-    confirmation: 'Idioma cambiado a español.'
-  },
-  fr: {
-    code: 'fr',
-    label: 'French',
-    espeakVoice: 'fr',
-    neuralVoice: 'fr-FR-DeniseNeural',
-    speechLang: 'fr-FR',
-    confirmation: 'Langue réglée sur le français.'
+    confirmation: 'ভাষা বাংলায় সেট করা হয়েছে।'
   }
 };
 
