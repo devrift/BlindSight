@@ -419,6 +419,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             appState = AppState.THINKING,
             statusText = "Processing: \"$promptToProcess\""
         )
+        // Hard mute mic during thinking to enforce atomic IDLE -> THINKING -> SPEAKING mutex
+        speechRecognizerHelper?.pauseListening()
+        directAudioRecorder?.stopRecording()
         ttsHelper?.playEarcon(TtsHelper.EarconType.OK)
 
         viewModelScope.launch {

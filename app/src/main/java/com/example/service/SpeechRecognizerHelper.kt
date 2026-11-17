@@ -263,17 +263,13 @@ class SpeechRecognizerHelper(
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
-                // Instant sub-150ms wake word detection during active speaking!
+                // Keep recognizing full user sentence without premature cut-off.
+                // Aborting here truncates the utterance ("Hey BlindSight what's ahead?")
+                // and drops the user's question before they finish speaking.
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
-                for (cand in matches) {
-                    val normalized = normalizePhonetics(cand)
-                    if (isWakeWordTrigger(normalized)) {
-                        Log.i(tag, "Fast wake word detected in onPartialResults: \"$normalized\"")
-                        isListening = false
-                        try { speechRecognizer?.stopListening() } catch (_: Exception) {}
-                        onResult(normalized)
-                        break
-                    }
+                if (matches.isNotEmpty()) {
+                    val cand = matches[0]
+                    Log.v(tag, "Partial speech: \"$cand\"")
                 }
             }
 

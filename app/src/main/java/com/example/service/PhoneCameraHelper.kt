@@ -181,10 +181,12 @@ class PhoneCameraHelper(private val context: Context) {
 
     /**
      * Inspects EXIF and hardware sensor orientation, rotating the JPEG bytes
-     * to guaranteed 0-degree upright portrait orientation.
+     * to guaranteed 0-degree upright portrait orientation and downscaling to 640x480 (0.65 quality).
      */
     private fun ensureUprightJpeg(jpegBytes: ByteArray, defaultSensorOrientation: Int): ByteArray {
         try {
+            val originalBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return jpegBytes
+            
             var rotationDegrees = 0
             try {
                 val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
@@ -200,26 +202,47 @@ class PhoneCameraHelper(private val context: Context) {
                 }
             } catch (_: Exception) {}
 
-            // If EXIF metadata was missing or unrotated while sensor is rotated:
-            if (rotationDegrees == 0 && defaultSensorOrientation != 0) {
-                rotationDegrees = defaultSensorOrientation
+            // If the camera delivers landscape (width > height) for a handheld portrait shot, rotate upright
+            if (originalBitmap.width > originalBitmap.height && rotationDegrees == 0) {
+                rotationDegrees = if (defaultSensorOrientation != 0) defaultSensorOrientation else 90
             }
 
-            if (rotationDegrees == 0) return jpegBytes
+            val matrix = Matrix()
+            if (rotationDegrees != 0) {
+                matrix.postRotate(rotationDegrees.toFloat())
+            }
 
-            val originalBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return jpegBytes
-            val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-            val rotatedBitmap = Bitmap.createBitmap(
-                originalBitmap, 0, 0,
-                originalBitmap.width, originalBitmap.height,
-                matrix, true
-            )
+            val rotatedBitmap = if (rotationDegrees != 0) {
+                Bitmap.createBitmap(
+                    originalBitmap, 0, 0,
+                    originalBitmap.width, originalBitmap.height,
+                    matrix, true
+                )
+            } else {
+                originalBitmap
+            }
+
+            // Downscale to 640x480 max bounds to preserve token budget
+            val maxBound = 640
+            val scaledBitmap = if (rotatedBitmap.width > maxBound || rotatedBitmap.height > maxBound) {
+                val scale = minOf(maxBound.toFloat() / rotatedBitmap.width, maxBound.toFloat() / rotatedBitmap.height)
+                Bitmap.createScaledBitmap(
+                    rotatedBitmap,
+                    (rotatedBitmap.width * scale).toInt(),
+                    (rotatedBitmap.height * scale).toInt(),
+                    true
+                )
+            } else {
+                rotatedBitmap
+            }
 
             val outputStream = ByteArrayOutputStream()
-            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, outputStream)
+            // Strict 65% quality JPEG downscaling
+            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 65, outputStream)
 
+            if (scaledBitmap != originalBitmap && scaledBitmap != rotatedBitmap) scaledBitmap.recycle()
+            if (rotatedBitmap != originalBitmap) rotatedBitmap.recycle()
             originalBitmap.recycle()
-            rotatedBitmap.recycle()
 
             return outputStream.toByteArray()
         } catch (e: Exception) {

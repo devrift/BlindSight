@@ -34,6 +34,18 @@ export interface SystemHealth {
 
 export type ReflexAlert = 'stop' | 'steer_left' | 'steer_right' | 'careful' | 'clear';
 
+export interface DiagnosticsLog {
+  id: string;
+  timestamp: number;
+  type: 'info' | 'warn' | 'error' | 'fallback' | 'capture';
+  message: string;
+  latencyMs?: number;
+  payloadBytes?: number;
+  tokenCount?: number;
+  modelUsed?: string;
+  bearing?: number;
+}
+
 export interface ReflexTelemetry {
   leftCm: number;
   centerCm: number;
@@ -42,6 +54,12 @@ export interface ReflexTelemetry {
   message: string;
   audioClip?: string;
   timestamp: number;
+  bearing?: number;
+  fps?: number;
+  lastLatencyMs?: number;
+  lastPayloadBytes?: number;
+  lastTokens?: number;
+  recentLogs?: DiagnosticsLog[];
 }
 
 export interface VoiceOption {

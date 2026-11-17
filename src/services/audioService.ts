@@ -313,6 +313,81 @@ export class AudioService {
     return false;
   }
 
+  private static cachedVoices: SpeechSynthesisVoice[] = [];
+  private static selectedVoiceCache: Map<string, SpeechSynthesisVoice> = new Map();
+  private static preferredVoiceNames = [
+    'Google US English',
+    'en-us-x-sfg',
+    'Microsoft Jenny Natural',
+    'Natural',
+    'Samantha',
+    'Google UK English Female',
+    'Google हिन्दी'
+  ];
+
+  static initVoices(): void {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const populate = () => {
+      const v = window.speechSynthesis.getVoices();
+      if (v && v.length > 0) {
+        this.cachedVoices = v;
+        this.selectedVoiceCache.clear();
+      }
+    };
+    populate();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = populate;
+    }
+  }
+
+  static getBestVoice(langCode: LanguageCode, voiceURI?: string): SpeechSynthesisVoice | null {
+    if (this.cachedVoices.length === 0 && typeof window !== 'undefined' && window.speechSynthesis) {
+      this.cachedVoices = window.speechSynthesis.getVoices() || [];
+    }
+    const cacheKey = `${langCode}_${voiceURI || 'default'}`;
+    if (this.selectedVoiceCache.has(cacheKey)) {
+      return this.selectedVoiceCache.get(cacheKey) || null;
+    }
+
+    const voices = this.cachedVoices;
+    if (voices.length === 0) return null;
+
+    if (voiceURI) {
+      const match = voices.find(v => v.voiceURI === voiceURI);
+      if (match) {
+        this.selectedVoiceCache.set(cacheKey, match);
+        return match;
+      }
+    }
+
+    const langConfig = LANGUAGES[langCode] || LANGUAGES.en;
+    const prefix = langConfig.speechLang.split('-')[0].toLowerCase();
+    const langVoices = voices.filter(v => v.lang.toLowerCase().startsWith(prefix));
+
+    let chosen: SpeechSynthesisVoice | null = null;
+    for (const name of this.preferredVoiceNames) {
+      chosen = langVoices.find(v => v.name.toLowerCase().includes(name.toLowerCase())) || null;
+      if (chosen) break;
+    }
+
+    if (!chosen) {
+      chosen = langVoices.find(v => /natural|neural|online|google/i.test(v.name)) || null;
+    }
+
+    if (!chosen && langVoices.length > 0) {
+      chosen = langVoices[0];
+    }
+
+    if (!chosen && voices.length > 0) {
+      chosen = voices.find(v => v.default) || voices[0];
+    }
+
+    if (chosen) {
+      this.selectedVoiceCache.set(cacheKey, chosen);
+    }
+    return chosen;
+  }
+
   // --- Speech Synthesis Router ---
   static speak(
     text: string,
@@ -321,21 +396,29 @@ export class AudioService {
     onStart?: () => void,
     onEnd?: () => void
   ): void {
+    // 1. Forcefully suspend the microphone the exact millisecond TTS speech begins (Mutex)
+    this.stopAdaptiveRecording();
     this.stopSpeaking();
+
+    const wrappedOnEnd = () => {
+      // 2. Mandatory 450ms guard buffer after speech finishes before opening mic
+      window.setTimeout(() => {
+        if (onEnd) onEnd();
+      }, 450);
+    };
 
     // 1. If Svara-TTS is enabled, attempt calling it
     if (this.svaraEnabled) {
-      this.speakWithSvara(text, langCode, onStart, onEnd).then(success => {
+      this.speakWithSvara(text, langCode, onStart, wrappedOnEnd).then(success => {
         if (!success) {
-          // If Svara-TTS endpoint is not running, seamlessly fallback to natural voice
-          this.speakNative(text, langCode, voiceURI, onStart, onEnd);
+          this.speakNative(text, langCode, voiceURI, onStart, wrappedOnEnd);
         }
       });
       return;
     }
 
     // 2. Default browser neural voice
-    this.speakNative(text, langCode, voiceURI, onStart, onEnd);
+    this.speakNative(text, langCode, voiceURI, onStart, wrappedOnEnd);
   }
 
   private static speakNative(
@@ -359,15 +442,9 @@ export class AudioService {
       const langConfig = LANGUAGES[langCode] || LANGUAGES.en;
       utter.lang = langConfig.speechLang;
 
-      const voices = window.speechSynthesis.getVoices();
-      if (voiceURI) {
-        const found = voices.find(v => v.voiceURI === voiceURI);
-        if (found) utter.voice = found;
-      } else {
-        const prefix = langConfig.speechLang.split('-')[0].toLowerCase();
-        const matching = voices.filter(v => v.lang.toLowerCase().startsWith(prefix));
-        const natural = matching.find(v => /natural|neural|online|google/i.test(v.name));
-        utter.voice = natural || matching[0] || null;
+      const bestVoice = this.getBestVoice(langCode, voiceURI);
+      if (bestVoice) {
+        utter.voice = bestVoice;
       }
 
       utter.rate = 1.0;
@@ -773,3 +850,6 @@ export class AudioService {
     }));
   }
 }
+
+// Global eager initialization of high-fidelity voices
+AudioService.initVoices();
