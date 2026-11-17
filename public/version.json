@@ -1,6 +1,6 @@
 {
-  "versionCode": 24,
+  "versionCode": 25,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "v1.0.0 Official Launch: Full autonomous phone controls (direct contact calling with name search, launch any installed phone app, instant alarms, timers, and reminders), Android system default voice assistant, full-screen tactile HUD, and renewed production QR code."
+  "releaseNotes": "v1.0.0 Fix: Whisper language locking & digital gain preamp for quiet whispers. Eliminates foreign language drift/hallucination on low-amplitude speech, locks session language consistency, and enforces strict single-locale acoustic models."
 }

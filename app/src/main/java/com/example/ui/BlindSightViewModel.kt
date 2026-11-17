@@ -379,13 +379,6 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
 
-            // Automatically detect spoken language (Hindi / English) and adapt immediately!
-            val detected = detectSpokenLanguage(recognizedText)
-            if (detected != _uiState.value.language) {
-                _uiState.value = _uiState.value.copy(language = detected)
-                ttsHelper?.setLanguage(detected)
-            }
-
             _uiState.value = _uiState.value.copy(
                 heardText = recognizedText,
                 statusText = "Processing: \"$recognizedText\""

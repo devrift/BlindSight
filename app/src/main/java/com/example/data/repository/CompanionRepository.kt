@@ -609,12 +609,14 @@ class CompanionRepository(private val context: Context) {
         val sysInstruction = """
         You are BlindSight, a warm, observant, and dependable visual guide for a visually impaired user.
 
-        VOICE CADENCE & RECOVERY:
-        - Speak at a natural, lively conversational speed.
+        LANGUAGE CONSISTENCY & RECOVERY:
+        - The user's active session language is strictly: ${lang.label} (${lang.name}).
+        - ALWAYS respond strictly in ${lang.label}.
+        - NEVER translate or switch languages when user input is quiet, whispered, or muffled.
         - If user input is muffled, completely ambiguous, or incomprehensible, say strictly:
-          "Sorry, I'm not clear. Can you speak again?"
+          ${if (lang == SupportedLanguage.HINDI) "\"माफ़ कीजिए, समझ नहीं आया। क्या आप दोबारा बोल सकते हैं?\"" else "\"Sorry, I'm not clear. Can you speak again?\""}
+        - Speak at a natural, lively conversational speed.
         - Never lecture the user about language rules or list supported languages.
-        - Speak naturally in English, natural Hindi-Urdu (Hindustani), Punjabi, or Bengali based on the user's input.
         - Keep observations clear, spatial, and conversational. Describe immediate surroundings, distances, and visible text naturally.
         - Absolutely no robotic lists, bullets, markdown asterisks, or emojis.
 
@@ -728,10 +730,37 @@ class CompanionRepository(private val context: Context) {
                 writer.append("Content-Disposition: form-data; name=\"model\"").append(lineEnd).append(lineEnd)
                 writer.append("whisper-large-v3-turbo").append(lineEnd)
 
-                // Part 2: response_format (Language auto-detected by Whisper)
+                // Part 2: strict language pinning so Whisper NEVER hallucinates foreign languages
+                val langCode = when (lang) {
+                    SupportedLanguage.HINDI -> "hi"
+                    SupportedLanguage.PUNJABI -> "pa"
+                    SupportedLanguage.BENGALI -> "bn"
+                    SupportedLanguage.ENGLISH -> "en"
+                }
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"language\"").append(lineEnd).append(lineEnd)
+                writer.append(langCode).append(lineEnd)
+
+                // Part 3: prompt guidance to prevent hallucinating on quiet / whispered speech
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"prompt\"").append(lineEnd).append(lineEnd)
+                val whisperPrompt = when (lang) {
+                    SupportedLanguage.HINDI -> "ब्लाइंडसाइट वॉइस कमांड, रास्ता, समय, सहायता"
+                    SupportedLanguage.PUNJABI -> "ਬਲਾਇੰਡਸਾਈਟ ਆਵਾਜ਼ ਕਮਾਂਡ"
+                    SupportedLanguage.BENGALI -> "ব্লাইন্ডসাইট ভয়েস কমান্ড"
+                    SupportedLanguage.ENGLISH -> "BlindSight voice command, navigation, call, alarm, timer, app"
+                }
+                writer.append(whisperPrompt).append(lineEnd)
+
+                // Part 4: response_format
                 writer.append(twoHyphens).append(boundary).append(lineEnd)
                 writer.append("Content-Disposition: form-data; name=\"response_format\"").append(lineEnd).append(lineEnd)
                 writer.append("json").append(lineEnd)
+
+                // Part 5: temperature (0.0 = greedy deterministic decoding, eliminates foreign language drift)
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"temperature\"").append(lineEnd).append(lineEnd)
+                writer.append("0.0").append(lineEnd)
 
                 // Part 4: file
                 writer.append(twoHyphens).append(boundary).append(lineEnd)
@@ -789,12 +818,14 @@ class CompanionRepository(private val context: Context) {
         val sysInstruction = """
         You are BlindSight, a warm, observant, and dependable visual guide for a visually impaired user.
 
-        VOICE CADENCE & RECOVERY:
-        - Speak at a natural, lively conversational speed.
+        LANGUAGE CONSISTENCY & RECOVERY:
+        - The user's active session language is strictly: ${lang.label} (${lang.name}).
+        - ALWAYS respond strictly in ${lang.label}.
+        - NEVER translate or switch languages when user input is quiet, whispered, or muffled.
         - If user input is muffled, completely ambiguous, or incomprehensible, say strictly:
-          "Sorry, I'm not clear. Can you speak again?"
+          ${if (lang == SupportedLanguage.HINDI) "\"माफ़ कीजिए, समझ नहीं आया। क्या आप दोबारा बोल सकते हैं?\"" else "\"Sorry, I'm not clear. Can you speak again?\""}
+        - Speak at a natural, lively conversational speed.
         - Never lecture the user about language rules or list supported languages.
-        - Speak naturally in English, natural Hindi-Urdu (Hindustani), Punjabi, or Bengali based on the user's input.
         - Keep observations clear, spatial, and conversational. Describe immediate surroundings, distances, and visible text naturally.
         - Absolutely no robotic lists, bullets, markdown asterisks, or emojis.
 

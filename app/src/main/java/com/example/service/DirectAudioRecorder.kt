@@ -255,8 +255,8 @@ class DirectAudioRecorder(
                             }
                         }
 
-                        val speechThreshold = max(ambientNoiseFloor * 1.35f + 50f, 200f)
-                        val silenceThreshold = max(ambientNoiseFloor * 1.10f + 25f, 160f)
+                        val speechThreshold = max(ambientNoiseFloor * 1.15f + 20f, 90f)
+                        val silenceThreshold = max(ambientNoiseFloor * 1.05f + 10f, 65f)
 
                         // Do NOT trigger confirmed speech during the 450ms startup grace period
                         val isSpeechNow = elapsedMs >= 450f && rawRms >= speechThreshold
@@ -278,8 +278,8 @@ class DirectAudioRecorder(
                                     break
                                 }
                             }
-                            // Smoothly close gate (soft release to prevent audio clipping)
-                            gateOpenness = max(0.04f, gateOpenness - 0.15f)
+                            // Soft release: preserve quiet speech and whispers, never crush below 0.35
+                            gateOpenness = max(0.35f, gateOpenness - 0.08f)
                         } else {
                             if (hasConfirmedSpeech && elapsedMs >= 1200f) {
                                 silenceFrames++
@@ -289,7 +289,7 @@ class DirectAudioRecorder(
                                     break
                                 }
                             }
-                            gateOpenness = max(0.12f, gateOpenness - 0.12f)
+                            gateOpenness = max(0.40f, gateOpenness - 0.06f)
                         }
 
                         // Step 3: Apply Bandpass Filtering + Noise Gate + Voice Enhancement to PCM samples
@@ -369,7 +369,33 @@ class DirectAudioRecorder(
         }
 
         if (pcmBytes.isEmpty()) return ByteArray(0)
-        return convertPcmToWav(pcmBytes, sampleRate, 1, 16)
+
+        // Digital Normalizer / Preamp for quiet speech and whispers:
+        // Automatically boosts low-amplitude speech to clear conversational volume
+        val pcmShorts = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        var maxSample = 0
+        while (pcmShorts.hasRemaining()) {
+            val s = Math.abs(pcmShorts.get().toInt())
+            if (s > maxSample) maxSample = s
+        }
+
+        val processedPcm = if (maxSample in 400..15000) {
+            val targetPeak = 24000f
+            val gain = (targetPeak / maxSample.toFloat()).coerceIn(1.2f, 5.0f)
+            Log.d(tag, "Quiet speech detected (peak=$maxSample). Applying digital gain $gain.")
+            val outBuf = ByteBuffer.allocate(pcmBytes.size).order(ByteOrder.LITTLE_ENDIAN)
+            val inShorts = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+            while (inShorts.hasRemaining()) {
+                val sample = inShorts.get()
+                val boosted = (sample * gain).toInt().coerceIn(-32767, 32767).toShort()
+                outBuf.putShort(boosted)
+            }
+            outBuf.array()
+        } else {
+            pcmBytes
+        }
+
+        return convertPcmToWav(processedPcm, sampleRate, 1, 16)
     }
 
     private fun convertPcmToWav(pcmData: ByteArray, sampleRate: Int, channels: Int, bitsPerSample: Int): ByteArray {

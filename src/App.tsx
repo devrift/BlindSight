@@ -332,11 +332,22 @@ export const App: React.FC = () => {
     setOrbState('think');
     setStatusSubtitle(`Heard: "${clean}"`);
 
-    // Detect language from query
+    // Keep user's explicitly selected language strictly locked; do not flip on quiet speech
     let detectedLang = currentLang;
-    if (/[\u0A00-\u0A7F]/.test(clean)) detectedLang = 'pa';
-    else if (/[\u0980-\u09FF]/.test(clean)) detectedLang = 'bn';
-    else if (/[\u0900-\u097F]/.test(clean)) detectedLang = 'hi';
+    const lowerClean = clean.toLowerCase();
+    if (lowerClean.includes('switch language to hindi') || lowerClean.includes('speak in hindi')) {
+      detectedLang = 'hi';
+      setCurrentLang('hi');
+    } else if (lowerClean.includes('switch language to english') || lowerClean.includes('speak in english')) {
+      detectedLang = 'en';
+      setCurrentLang('en');
+    } else if (lowerClean.includes('switch language to punjabi')) {
+      detectedLang = 'pa';
+      setCurrentLang('pa');
+    } else if (lowerClean.includes('switch language to bengali')) {
+      detectedLang = 'bn';
+      setCurrentLang('bn');
+    }
 
     const isVisual = /\b(describe|look|see|holding|in front|ahead|around|path|obstacle|what is|सामने|रास्ता|ਸਾਹਮਣੇ|সামনে)\b/i.test(clean);
     let capturedDataUrl: string | null = null;
