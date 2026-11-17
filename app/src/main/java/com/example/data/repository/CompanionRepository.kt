@@ -406,6 +406,61 @@ class CompanionRepository(private val context: Context) {
             return LocalCommandResult(reply)
         }
 
+        // 2b. Phone Controls - Calls: "call mom", "dial 9876543210", "call rahul", "phone maa"
+        val callMatch = Regex("^(?:call|dial|phone)\\s+(.+)", RegexOption.IGNORE_CASE).find(clean)
+        if (callMatch != null) {
+            val target = callMatch.groupValues[1].replace(Regex("[?!.]"), "").trim()
+            if (target.isNotBlank()) {
+                val callResult = com.example.service.PhoneControlHelper.makeCall(context, target)
+                return LocalCommandResult(callResult)
+            }
+        }
+
+        // 2c. Phone Controls - Launch App: "open discord", "open whatsapp", "launch spotify", "open settings"
+        val openMatch = Regex("^(?:open|launch|start)\\s+(.+)", RegexOption.IGNORE_CASE).find(clean)
+        if (openMatch != null) {
+            val appTarget = openMatch.groupValues[1].replace(Regex("[?!.]"), "").trim()
+            val launched = com.example.service.PhoneControlHelper.launchApp(context, appTarget)
+            if (launched != null) {
+                val reply = if (currentLang == SupportedLanguage.HINDI) "$launched खोला जा रहा है।" else "Opening $launched."
+                return LocalCommandResult(reply)
+            }
+        }
+
+        // 2d. Phone Controls - Timer: "set timer for 5 minutes", "timer 30 seconds"
+        val timerMatch = Regex("^(?:set\\s+)?timer(?:\\s+for)?\\s+(\\d+)\\s*(second|seconds|sec|minute|minutes|min|hour|hours|hr|hrs)?", RegexOption.IGNORE_CASE).find(clean)
+        if (timerMatch != null) {
+            val value = timerMatch.groupValues[1].toIntOrNull() ?: 60
+            val unit = timerMatch.groupValues.getOrNull(2)?.lowercase() ?: "minute"
+            val seconds = when {
+                unit.startsWith("sec") -> value
+                unit.startsWith("hour") || unit.startsWith("hr") -> value * 3600
+                else -> value * 60
+            }
+            val success = com.example.service.PhoneControlHelper.setTimer(context, seconds, "BlindSight Timer")
+            if (success) {
+                val unitStr = if (seconds >= 3600) "${seconds / 3600} hours" else if (seconds >= 60) "${seconds / 60} minutes" else "$seconds seconds"
+                val reply = if (currentLang == SupportedLanguage.HINDI) "$unitStr का टाइमर सेट कर दिया गया है।" else "Timer set for $unitStr."
+                return LocalCommandResult(reply)
+            }
+        }
+
+        // 2e. Phone Controls - Alarm: "set alarm for 7:30 am", "set alarm for 8 am", "alarm 7 pm"
+        val alarmMatch = Regex("^(?:set\\s+)?(?:an\\s+)?alarm(?:\\s+for|\\s+at)?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?", RegexOption.IGNORE_CASE).find(clean)
+        if (alarmMatch != null) {
+            var hour = alarmMatch.groupValues[1].toIntOrNull() ?: 7
+            val min = alarmMatch.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
+            val ampm = alarmMatch.groupValues.getOrNull(3)?.lowercase()
+            if (ampm == "pm" && hour < 12) hour += 12
+            if (ampm == "am" && hour == 12) hour = 0
+            val success = com.example.service.PhoneControlHelper.setAlarm(context, hour, min, "BlindSight Alarm")
+            if (success) {
+                val timeLabel = String.format(Locale.getDefault(), "%02d:%02d", hour, min)
+                val reply = if (currentLang == SupportedLanguage.HINDI) "$timeLabel का अलार्म सेट कर दिया गया है।" else "Alarm set for $timeLabel."
+                return LocalCommandResult(reply)
+            }
+        }
+
         // 3. Where Am I & Live Spatial QA (1-sentence street landmark answer)
         val isWhereAmI = clean in listOf(
             "where am i", "what is my location", "where am i right now", "my location",
@@ -575,9 +630,9 @@ class CompanionRepository(private val context: Context) {
         - Walking navigation: [ACTION:NAVIGATE <destination>]
         - Set Alarm: [ACTION:SET_ALARM:hour:minute:label] (e.g. [ACTION:SET_ALARM:7:30:Wake up])
         - Set Timer: [ACTION:SET_TIMER:seconds:label] (e.g. [ACTION:SET_TIMER:300:Tea])
-        - Make Call: [ACTION:CALL:number_or_name] (e.g. [ACTION:CALL:9876543210])
+        - Make Call: [ACTION:CALL:number_or_name] (e.g. [ACTION:CALL:Mom] or [ACTION:CALL:9876543210])
         - Set Reminder: [ACTION:SET_REMINDER:text] (e.g. [ACTION:SET_REMINDER:Take medicine at 8pm])
-        - Open App: [ACTION:OPEN_APP:name] (e.g. [ACTION:OPEN_APP:whatsapp])
+        - Open App: [ACTION:OPEN_APP:name] (e.g. [ACTION:OPEN_APP:discord], [ACTION:OPEN_APP:whatsapp], [ACTION:OPEN_APP:spotify])
 
         $envContext$factsBlock
         """.trimIndent()
@@ -755,9 +810,9 @@ class CompanionRepository(private val context: Context) {
         - Walking navigation: [ACTION:NAVIGATE <destination>]
         - Set Alarm: [ACTION:SET_ALARM:hour:minute:label] (e.g. [ACTION:SET_ALARM:7:30:Wake up])
         - Set Timer: [ACTION:SET_TIMER:seconds:label] (e.g. [ACTION:SET_TIMER:300:Tea])
-        - Make Call: [ACTION:CALL:number_or_name] (e.g. [ACTION:CALL:9876543210])
+        - Make Call: [ACTION:CALL:number_or_name] (e.g. [ACTION:CALL:Mom] or [ACTION:CALL:9876543210])
         - Set Reminder: [ACTION:SET_REMINDER:text] (e.g. [ACTION:SET_REMINDER:Take medicine at 8pm])
-        - Open App: [ACTION:OPEN_APP:name] (e.g. [ACTION:OPEN_APP:whatsapp])
+        - Open App: [ACTION:OPEN_APP:name] (e.g. [ACTION:OPEN_APP:discord], [ACTION:OPEN_APP:whatsapp], [ACTION:OPEN_APP:spotify])
 
         $envContext$factsBlock
         """.trimIndent()

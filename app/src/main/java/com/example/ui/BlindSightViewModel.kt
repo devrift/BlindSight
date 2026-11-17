@@ -798,19 +798,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             val min = alarmMatch.groupValues[2].toIntOrNull() ?: 0
             val label = alarmMatch.groupValues.getOrNull(3)?.trim() ?: "BlindSight Alarm"
             text = text.replace(alarmMatch.value, "").trim()
-            try {
-                val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                    putExtra(AlarmClock.EXTRA_HOUR, hour)
-                    putExtra(AlarmClock.EXTRA_MINUTES, min)
-                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
-                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                getApplication<Application>().startActivity(intent)
-                triggerConfirmEmotion()
-            } catch (e: Exception) {
-                android.util.Log.w("BlindSight", "Failed to set alarm: ${e.message}")
-            }
+            com.example.service.PhoneControlHelper.setAlarm(getApplication(), hour, min, label)
+            triggerConfirmEmotion()
         }
 
         // 16. Safe Phone Control: Set Timer [ACTION:SET_TIMER:seconds:label]
@@ -820,18 +809,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             val seconds = timerMatch.groupValues[1].toIntOrNull() ?: 60
             val label = timerMatch.groupValues.getOrNull(2)?.trim() ?: "BlindSight Timer"
             text = text.replace(timerMatch.value, "").trim()
-            try {
-                val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                    putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
-                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                getApplication<Application>().startActivity(intent)
-                triggerConfirmEmotion()
-            } catch (e: Exception) {
-                android.util.Log.w("BlindSight", "Failed to set timer: ${e.message}")
-            }
+            com.example.service.PhoneControlHelper.setTimer(getApplication(), seconds, label)
+            triggerConfirmEmotion()
         }
 
         // 17. Safe Phone Control: Call Contact or Number [ACTION:CALL:target]
@@ -840,22 +819,11 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         if (callMatch != null) {
             val target = callMatch.groupValues[1].trim()
             text = text.replace(callMatch.value, "").trim()
-            try {
-                val cleanDigits = target.filter { it.isDigit() || it == '+' }
-                val intent = if (cleanDigits.isNotEmpty()) {
-                    Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanDigits")).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                } else {
-                    Intent(Intent.ACTION_DIAL).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                }
-                getApplication<Application>().startActivity(intent)
-                triggerConfirmEmotion()
-            } catch (e: Exception) {
-                android.util.Log.w("BlindSight", "Failed to open phone dialer: ${e.message}")
+            val callResult = com.example.service.PhoneControlHelper.makeCall(getApplication(), target)
+            if (text.isBlank()) {
+                text = callResult
             }
+            triggerConfirmEmotion()
         }
 
         // 18. Safe Phone Control: Set Reminder [ACTION:SET_REMINDER:text]
@@ -864,47 +832,21 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         if (reminderMatch != null) {
             val reminderContent = reminderMatch.groupValues[1].trim()
             text = text.replace(reminderMatch.value, "").trim()
-            try {
-                val intent = Intent(Intent.ACTION_INSERT).apply {
-                    data = CalendarContract.Events.CONTENT_URI
-                    putExtra(CalendarContract.Events.TITLE, reminderContent)
-                    putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, System.currentTimeMillis() + 3600000L)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                getApplication<Application>().startActivity(intent)
-                triggerConfirmEmotion()
-            } catch (e: Exception) {
-                android.util.Log.w("BlindSight", "Failed to launch reminder: ${e.message}")
-            }
+            com.example.service.PhoneControlHelper.setReminder(getApplication(), reminderContent)
+            triggerConfirmEmotion()
         }
 
         // 19. Safe Phone Control: Open App [ACTION:OPEN_APP:app_name]
         val openAppRegex = Regex("\\[ACTION:OPEN_APP:([^\\]]+)\\]", RegexOption.IGNORE_CASE)
         val openAppMatch = openAppRegex.find(rawReply)
         if (openAppMatch != null) {
-            val appQuery = openAppMatch.groupValues[1].trim().lowercase()
+            val appQuery = openAppMatch.groupValues[1].trim()
             text = text.replace(openAppMatch.value, "").trim()
-            try {
-                val pm = getApplication<Application>().packageManager
-                val pkgName = when {
-                    appQuery.contains("whatsapp") -> "com.whatsapp"
-                    appQuery.contains("map") -> "com.google.android.apps.maps"
-                    appQuery.contains("youtube") -> "com.google.android.youtube"
-                    appQuery.contains("chrome") -> "com.android.chrome"
-                    appQuery.contains("message") || appQuery.contains("sms") -> "com.google.android.apps.messaging"
-                    appQuery.contains("clock") || appQuery.contains("alarm") -> "com.google.android.deskclock"
-                    appQuery.contains("setting") -> "com.android.settings"
-                    else -> null
-                }
-                val launchIntent = if (pkgName != null) pm.getLaunchIntentForPackage(pkgName) else null
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    getApplication<Application>().startActivity(launchIntent)
-                    triggerConfirmEmotion()
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("BlindSight", "Failed to launch app: ${e.message}")
+            val launchedName = com.example.service.PhoneControlHelper.launchApp(getApplication(), appQuery)
+            if (launchedName != null && text.isBlank()) {
+                text = "Opening $launchedName."
             }
+            triggerConfirmEmotion()
         }
 
         // Strip any other stray [ACTION:...] tags

@@ -295,6 +295,29 @@ export const App: React.FC = () => {
       return text || (currentLang === 'hi' ? 'सामने का दृश्य देखा जा रहा है…' : 'Inspecting scene…');
     }
 
+    // 7. Make Call: [ACTION:CALL:target]
+    const callMatch = /\[ACTION:CALL:([^\]]+)\]/i.exec(rawReply);
+    if (callMatch) {
+      const target = callMatch[1].trim();
+      text = text.replace(callMatch[0], '').trim();
+      const digits = target.replace(/[^0-9+]/g, '');
+      if (digits) {
+        window.location.href = `tel:${digits}`;
+      }
+    }
+
+    // 8. Open App: [ACTION:OPEN_APP:name]
+    const openAppMatch = /\[ACTION:OPEN_APP:([^\]]+)\]/i.exec(rawReply);
+    if (openAppMatch) {
+      const appName = openAppMatch[1].trim().toLowerCase();
+      text = text.replace(openAppMatch[0], '').trim();
+      if (appName.includes('whatsapp')) {
+        window.open('https://api.whatsapp.com', '_blank');
+      } else if (appName.includes('map')) {
+        window.open('https://maps.google.com', '_blank');
+      }
+    }
+
     // Strip any remaining [ACTION:...] tags
     text = text.replace(/\[ACTION:[^\]]+\]/gi, '').trim();
     return text;

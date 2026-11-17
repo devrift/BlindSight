@@ -51,13 +51,25 @@ class MainActivity : ComponentActivity() {
                         Manifest.permission.CAMERA
                     ) == PackageManager.PERMISSION_GRANTED
 
-                    if (!hasAudio || !hasLocation || !hasCamera) {
+                    val hasContacts = ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.READ_CONTACTS
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    val hasCall = ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.CALL_PHONE
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    if (!hasAudio || !hasLocation || !hasCamera || !hasContacts || !hasCall) {
                         permissionLauncher.launch(
                             arrayOf(
                                 Manifest.permission.RECORD_AUDIO,
                                 Manifest.permission.CAMERA,
                                 Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                                Manifest.permission.READ_CONTACTS,
+                                Manifest.permission.CALL_PHONE
                             )
                         )
                     } else {
