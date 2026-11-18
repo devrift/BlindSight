@@ -255,6 +255,27 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         val announcement = "Found nearby glasses: ${device.name}. Connecting via ${device.medium.label}."
         _uiState.value = _uiState.value.copy(statusText = announcement)
         speak(announcement)
+        viewModelScope.launch {
+            val connected = repository.checkHardwareConnection()
+            if (connected) {
+                _uiState.value = _uiState.value.copy(
+                    isHardwareGlassesConnected = true,
+                    gatewayUrl = repository.getGatewayUrl()
+                )
+                hapticHelper.vibrateConfirm()
+                speak("Smart glasses connected successfully.")
+            } else {
+                val found = repository.autoDiscoverGlasses()
+                if (found != null) {
+                    _uiState.value = _uiState.value.copy(
+                        isHardwareGlassesConnected = true,
+                        gatewayUrl = found
+                    )
+                    hapticHelper.vibrateConfirm()
+                    speak("Smart glasses found and connected at $found.")
+                }
+            }
+        }
     }
 
     fun autoScanGlasses() {

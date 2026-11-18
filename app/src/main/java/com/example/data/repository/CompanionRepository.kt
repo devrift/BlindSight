@@ -73,16 +73,28 @@ class CompanionRepository(private val context: Context) {
         try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             if (cm != null) {
-                // When connected to local Wi-Fi (such as blindsight-setup), route hardware requests explicitly via Wi-Fi
+                val host = url.host ?: ""
                 val wifiNet = cm.allNetworks.firstOrNull { net ->
                     val caps = cm.getNetworkCapabilities(net)
                     caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
                 }
                 if (wifiNet != null) {
-                    return wifiNet.openConnection(url) as HttpURLConnection
+                    val linkProps = cm.getLinkProperties(wifiNet)
+                    val wifiIps = linkProps?.linkAddresses?.mapNotNull { it.address?.hostAddress } ?: emptyList()
+                    val isWifiApMode = host.startsWith("192.168.4.") || host == "blindsight.local"
+                    val isSameSubnet = wifiIps.any { wifiIp ->
+                        val prefix = wifiIp.substringBeforeLast(".")
+                        host.startsWith("$prefix.")
+                    }
+
+                    // Bind to wifiNet ONLY if target is on blindsight-setup AP (192.168.4.x) or on the same subnet as wifiNet
+                    if (isWifiApMode || isSameSubnet) {
+                        return wifiNet.openConnection(url) as HttpURLConnection
+                    }
                 }
             }
         } catch (_: Exception) {}
+        // For hotspot clients, loopback/virtual IPs, or when wifiNet is not on the same subnet, use standard kernel routing
         return url.openConnection() as HttpURLConnection
     }
 
@@ -190,12 +202,14 @@ class CompanionRepository(private val context: Context) {
             list.add("$urlWithScheme/capture")
             list.add(urlWithScheme)
         } else {
-            // Port omitted: probe Python Hub (:5000) and direct ESP32-CAM
+            // Port omitted: probe Python Hub (:5000) and direct ESP32-CAM (:80 / :8080)
             list.add("$urlWithScheme:5000/health")
             list.add("$urlWithScheme:5000/api/health")
             list.add("$urlWithScheme:5000/api/latest-frame")
             list.add("$urlWithScheme:5000/latest_frame")
             list.add("$urlWithScheme/capture")
+            list.add("$urlWithScheme:8080/capture")
+            list.add("$urlWithScheme:8080/health")
             list.add("$urlWithScheme/health")
             list.add("$urlWithScheme:5000")
             list.add(urlWithScheme)
@@ -230,17 +244,26 @@ class CompanionRepository(private val context: Context) {
         subnets.add("192.168.0.")  // Common LAN
         subnets.add("192.168.29.") // JioFiber / Airtel
         subnets.add("172.20.10.")  // iOS Personal Hotspot
+        subnets.add("127.0.0.")    // Local loopback virtual testing
+        subnets.add("127.0.4.")    // Virtual SoftAP
         return subnets.toList()
     }
 
     suspend fun autoDiscoverGlasses(): String? = withContext(Dispatchers.IO) {
-        // 1. Probe mDNS and 192.168.4.1 (ESP blindsight-setup / Pi AP) first with fast timeout
+        // 1. Probe mDNS, AP, and virtual IP / emulator loopback endpoints first
         val priorityEndpoints = listOf(
             "http://blindsight.local:5000/health",
             "http://blindsight.local/capture",
+            "http://blindsight.local:8080/capture",
             "http://192.168.4.1:5000/health",
             "http://192.168.4.1/capture",
-            "http://192.168.4.1:5000/api/latest-frame"
+            "http://192.168.4.1:8080/capture",
+            "http://192.168.4.1:5000/api/latest-frame",
+            "http://10.0.2.2:5000/health",
+            "http://10.0.2.2:8080/capture",
+            "http://127.0.0.1:5000/health",
+            "http://127.0.0.1:8080/capture",
+            "http://127.0.0.1/capture"
         )
         for (ep in priorityEndpoints) {
             try {
@@ -252,7 +275,13 @@ class CompanionRepository(private val context: Context) {
                 conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
                 try {
                     if (conn.responseCode in 200..399) {
-                        val base = if (ep.contains(":5000")) "http://192.168.4.1:5000" else "http://192.168.4.1"
+                        val base = if (ep.contains(":5000")) {
+                            ep.substringBefore("/health").substringBefore("/api/latest-frame")
+                        } else if (ep.contains(":8080")) {
+                            ep.substringBefore("/capture")
+                        } else {
+                            ep.substringBefore("/capture")
+                        }
                         setGatewayUrl(base)
                         _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
                         return@withContext base
@@ -274,6 +303,7 @@ class CompanionRepository(private val context: Context) {
                 val ip = "$prefix$suffix"
                 candidateUrls.add("http://$ip:5000/health")
                 candidateUrls.add("http://$ip/capture")
+                candidateUrls.add("http://$ip:8080/capture")
             }
         }
 

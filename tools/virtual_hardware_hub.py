@@ -5,16 +5,23 @@ Simulates:
 1. Raspberry Pi Open.Jarvis Edge Gateway (Port 5000):
    - GET /health
    - GET /api/health
+   - GET /api/status
    - GET /api/latest-frame
    - GET /latest_frame
-   - POST /analyse
-   - POST /api/chat
-   - GET /api/tts
-2. ESP32-CAM Standalone Node (Port 8080 / 80):
    - GET /capture
-   - GET /status
+   - POST /analyse
+   - POST /api/upload-frame
+   - POST /api/chat
+   - POST /chat
+   - GET /audio/<filename>
 
-Permits full-stack end-to-end integration testing against real working virtual IPs.
+2. ESP32-CAM Standalone Nodes (Port 80 and Port 8080):
+   - GET /capture
+   - GET /
+   - GET /status
+   - GET /health
+
+Permits full-stack end-to-end integration testing against real working virtual IPs (127.0.0.1, 127.0.4.1, 127.0.43.15, LAN IP).
 """
 from __future__ import annotations
 
@@ -26,10 +33,7 @@ import threading
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Generate a minimal valid 64x64 baseline JPEG image in pure Python (no PIL needed)
 def make_minimal_jpeg() -> bytes:
-    # Standard JPEG header + SOF0 + SOS markers for a 1x1 or minimal valid JPEG stream
-    # Fallback to test_frame.jpg if exists
     test_file = Path(__file__).resolve().parent.parent / "runtime" / "test_frame.jpg"
     if test_file.is_file():
         try:
@@ -44,7 +48,6 @@ def make_minimal_jpeg() -> bytes:
         except Exception:
             pass
 
-    # Pure minimal JPEG bytes (valid JPEG JFIF)
     return bytes([
         0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
         0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
@@ -65,7 +68,7 @@ SAMPLE_FRAME = make_minimal_jpeg()
 
 class VirtualPiGatewayHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        pass  # Quiet logs for clean testing
+        pass
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -85,7 +88,7 @@ class VirtualPiGatewayHandler(BaseHTTPRequestHandler):
                 b'"device":"Raspberry Pi 3B+ / 4B","yolo_model":"ready","fps":15}'
             )
             self.wfile.write(payload)
-        elif self.path in ("/api/latest-frame", "/latest_frame"):
+        elif self.path in ("/api/latest-frame", "/latest_frame", "/capture"):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -131,10 +134,16 @@ class VirtualPiGatewayHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-
 class VirtualEsp32CamHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, User-Agent")
+        self.end_headers()
 
     def do_GET(self):
         if self.path in ("/capture", "/"):
@@ -144,15 +153,15 @@ class VirtualEsp32CamHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(SAMPLE_FRAME)))
             self.end_headers()
             self.wfile.write(SAMPLE_FRAME)
-        elif self.path == "/status":
+        elif self.path in ("/status", "/health"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"camera":"OV2640","resolution":"QVGA","status":"active"}')
         else:
             self.send_response(404)
             self.end_headers()
-
 
 def get_local_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -165,38 +174,50 @@ def get_local_ip() -> str:
         s.close()
     return ip
 
-
 def run_servers():
     local_ip = get_local_ip()
-    print(f"Starting BlindSight Virtual Hardware Hub...")
+    print("Starting BlindSight Virtual Hardware Hub...")
     print(f"Detected Host IP: {local_ip}")
 
-    # Start Virtual Pi on port 5000 (bind to 0.0.0.0 so both localhost and host IP work)
+    # 1. Start Virtual Pi on port 5000
     try:
         pi_server = HTTPServer(("0.0.0.0", 5000), VirtualPiGatewayHandler)
         pi_thread = threading.Thread(target=pi_server.serve_forever, daemon=True)
         pi_thread.start()
-        print(f"Virtual Raspberry Pi Server running on:")
+        print(f"Virtual Raspberry Pi Server running on port 5000:")
         print(f"  - http://127.0.0.1:5000/health")
+        print(f"  - http://127.0.4.1:5000/health")
         print(f"  - http://{local_ip}:5000/health")
     except Exception as e:
         print(f"Port 5000 busy or error: {e}")
 
-    # Start Virtual ESP32-CAM on port 8080
+    # 2. Start Virtual ESP32-CAM on port 8080
     try:
-        cam_server = HTTPServer(("0.0.0.0", 8080), VirtualEsp32CamHandler)
-        cam_thread = threading.Thread(target=cam_server.serve_forever, daemon=True)
-        cam_thread.start()
-        print(f"Virtual ESP32-CAM Server running on:")
+        cam_8080 = HTTPServer(("0.0.0.0", 8080), VirtualEsp32CamHandler)
+        cam_8080_thread = threading.Thread(target=cam_8080.serve_forever, daemon=True)
+        cam_8080_thread.start()
+        print(f"Virtual ESP32-CAM Server running on port 8080:")
         print(f"  - http://127.0.0.1:8080/capture")
+        print(f"  - http://127.0.43.50:8080/capture")
         print(f"  - http://{local_ip}:8080/capture")
     except Exception as e:
         print(f"Port 8080 busy or error: {e}")
 
-    print("Virtual Hardware Hub ready for testing.")
+    # 3. Start Virtual ESP32-CAM on standard port 80 (if permitted)
+    try:
+        cam_80 = HTTPServer(("0.0.0.0", 80), VirtualEsp32CamHandler)
+        cam_80_thread = threading.Thread(target=cam_80.serve_forever, daemon=True)
+        cam_80_thread.start()
+        print(f"Virtual ESP32-CAM Server running on port 80 (standard HTTP):")
+        print(f"  - http://127.0.0.1/capture")
+        print(f"  - http://127.0.4.1/capture")
+        print(f"  - http://{local_ip}/capture")
+    except Exception as e:
+        print(f"Port 80 optional bind note: {e}")
+
+    print("Virtual Hardware Hub ready for continuous testing.")
     while True:
         time.sleep(1)
-
 
 if __name__ == "__main__":
     run_servers()

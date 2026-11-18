@@ -73,15 +73,17 @@ class BleScannerHelper(
             if (bonded != null) {
                 for (dev in bonded) {
                     val name = dev.name ?: "Unknown Bluetooth Device"
-                    if (isBlindSightDevice(name)) {
+                    val address = dev.address ?: ""
+                    if (isGlassesOrEspDevice(name, address)) {
+                        val resolvedName = if (name.isNotBlank()) name else "BlindSight Smart Glasses"
                         val device = NearbyDiscoveredDevice(
-                            name = name,
-                            identifier = dev.address,
+                            name = resolvedName,
+                            identifier = "Serial: $address",
                             targetUrl = "http://192.168.4.1:5000",
                             medium = DiscoveryMedium.BLUETOOTH_BLE,
-                            rssi = -40
+                            rssi = -45
                         )
-                        discoveredMacs.add(dev.address)
+                        discoveredMacs.add(address)
                         mainHandler.post { onDeviceFound(device) }
                     }
                 }
@@ -139,12 +141,24 @@ class BleScannerHelper(
                 ""
             }
 
-            if (isBlindSightDevice(devName)) {
+            val isGlasses = isGlassesOrEspDevice(devName, devAddress)
+            if (isGlasses) {
                 discoveredMacs.add(devAddress)
                 val resolvedName = if (devName.isNotBlank()) devName else "BlindSight Smart Glasses"
                 val found = NearbyDiscoveredDevice(
                     name = resolvedName,
-                    identifier = devAddress,
+                    identifier = "Serial: $devAddress",
+                    targetUrl = "http://192.168.4.1:5000",
+                    medium = DiscoveryMedium.BLUETOOTH_BLE,
+                    rssi = result.rssi
+                )
+                mainHandler.post { onDeviceFound(found) }
+            } else if (devName.isNotBlank() && !isKnownIrrelevantPeripheral(devName)) {
+                // Surface other nearby named Bluetooth peripherals
+                discoveredMacs.add(devAddress)
+                val found = NearbyDiscoveredDevice(
+                    name = devName,
+                    identifier = "Serial: $devAddress",
                     targetUrl = "http://192.168.4.1:5000",
                     medium = DiscoveryMedium.BLUETOOTH_BLE,
                     rssi = result.rssi
@@ -160,13 +174,37 @@ class BleScannerHelper(
         }
     }
 
-    private fun isBlindSightDevice(name: String): Boolean {
+    private fun isGlassesOrEspDevice(name: String, address: String): Boolean {
+        val low = name.lowercase().trim()
+        val keywords = listOf(
+            "blindsight", "blind sight", "smart glasses", "glasses",
+            "esp32", "esp-", "esp_", "ai-thinker",
+            "raspberry", "raspberrypi", "pi", "jarvis", "openjarvis",
+            "camera", "vision"
+        )
+        if (keywords.any { low.contains(it) }) return true
+
+        // Espressif & Raspberry Pi Bluetooth MAC OUIs
+        val macClean = address.replace(":", "").replace("-", "").uppercase()
+        if (macClean.length >= 6) {
+            val oui = macClean.substring(0, 6)
+            val knownOuis = setOf(
+                "240AC4", "246F28", "30AEA4", "3C6105", "3C71BF", "4022D8", "409151",
+                "4827E2", "4C11AE", "4C7525", "5443B2", "5CCF7F", "600194", "68B6B3",
+                "68C63A", "70039F", "70B8F6", "782184", "7C9EBD", "840D8E", "84F3EB",
+                "8CAAB5", "94A9A8", "94B555", "94B97E", "98CDAC", "A020A6", "A4CF12",
+                "A4E57C", "AC67B2", "B4E62D", "BCDD02", "C44F33", "C4DEE2", "CC50E3",
+                "D8A01D", "DC4F22", "DC5475", "E09806", "E831CD", "E86BEA", "E89F6D",
+                "EC6260", "EC64C9", "F412FA", "F8B3B7",
+                "B827EB", "DCA632", "E45F01", "28CDC1", "D83ADD"
+            )
+            if (knownOuis.contains(oui)) return true
+        }
+        return false
+    }
+
+    private fun isKnownIrrelevantPeripheral(name: String): Boolean {
         val low = name.lowercase()
-        return low.contains("blindsight") ||
-                low.contains("blind sight") ||
-                low.contains("esp32-cam") ||
-                low.contains("esp32_cam") ||
-                low.contains("smart glasses") ||
-                low.contains("esp32-devkit")
+        return low.contains("tv") || low.contains("printer") || low.contains("watch") || low.contains("band")
     }
 }
