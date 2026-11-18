@@ -68,6 +68,7 @@ node_modules/
 dist/
 build/
 .gradle/
+.kotlin/
 app/build/
 local.properties
 *.apk

@@ -96,8 +96,8 @@ class CompanionRepository(private val context: Context) {
 
     // --- Hardware Gateway & Cloud Neural Voice URL ---
     fun getGatewayUrl(): String {
-        val saved = prefs.getString("gateway_url", "") ?: ""
-        if (saved.isNotBlank() && !saved.contains("192.168.29.173") && !saved.contains("blindsightpage.vercel.app") && !saved.contains("blindsightai.vercel.app")) return saved
+        val saved = prefs.getString("gateway_url", "")?.trim() ?: ""
+        if (saved.isNotBlank() && !saved.contains("blindsightpage.vercel.app") && !saved.contains("blindsightai.vercel.app")) return saved
         return ""
     }
 
@@ -106,18 +106,83 @@ class CompanionRepository(private val context: Context) {
         prefs.edit().putString("gateway_url", cleaned).apply()
     }
 
+    fun buildCandidateEndpoints(rawInput: String): List<String> {
+        val list = mutableListOf<String>()
+        val cleaned = rawInput.trim().trimEnd('/')
+        if (cleaned.isBlank() || cleaned.contains("blindsightai.vercel.app") || cleaned.contains("blindsightpage.vercel.app")) {
+            return list
+        }
+
+        val urlWithScheme = if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) cleaned else "http://$cleaned"
+
+        // If user already specified an explicit path (e.g. /capture or /api/latest-frame or /health)
+        if (urlWithScheme.endsWith("/capture") || urlWithScheme.endsWith("/api/latest-frame") || urlWithScheme.endsWith("/latest_frame") || urlWithScheme.endsWith("/health")) {
+            list.add(urlWithScheme)
+            return list
+        }
+
+        // If port specified (e.g. :5000 or :80)
+        if (urlWithScheme.substringAfterLast("/").contains(":")) {
+            list.add("$urlWithScheme/health")
+            list.add("$urlWithScheme/api/health")
+            list.add("$urlWithScheme/api/latest-frame")
+            list.add("$urlWithScheme/latest_frame")
+            list.add("$urlWithScheme/capture")
+            list.add(urlWithScheme)
+        } else {
+            // Port omitted: probe Python Hub (:5000) and direct ESP32-CAM
+            list.add("$urlWithScheme:5000/health")
+            list.add("$urlWithScheme:5000/api/health")
+            list.add("$urlWithScheme:5000/api/latest-frame")
+            list.add("$urlWithScheme:5000/latest_frame")
+            list.add("$urlWithScheme/capture")
+            list.add("$urlWithScheme/health")
+            list.add("$urlWithScheme:5000")
+            list.add(urlWithScheme)
+        }
+        return list
+    }
+
+    suspend fun checkHardwareConnection(): Boolean = withContext(Dispatchers.IO) {
+        val candidates = mutableListOf<String>()
+        candidates.addAll(buildCandidateEndpoints(getGatewayUrl()))
+        candidates.add("http://192.168.4.1:5000/health")
+        candidates.add("http://192.168.4.1/capture")
+        candidates.add("http://192.168.4.2/capture")
+
+        for (endpoint in candidates) {
+            try {
+                val url = URL(endpoint)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 2500
+                conn.readTimeout = 2500
+                conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
+                try {
+                    val code = conn.responseCode
+                    if (code in 200..399) {
+                        _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
+                        return@withContext true
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (_: Exception) {}
+        }
+        _telemetry.value = _telemetry.value.copy(isHardwareConnected = false)
+        return@withContext false
+    }
+
     suspend fun fetchLatestHardwareFrame(): ByteArray? = withContext(Dispatchers.IO) {
         val candidates = mutableListOf<String>()
-        val gateway = getGatewayUrl().trim().trimEnd('/')
-        if (gateway.isNotBlank() && !gateway.contains("blindsightai.vercel.app") && !gateway.contains("blindsightpage.vercel.app")) {
-            val base = if (gateway.startsWith("http://") || gateway.startsWith("https://")) gateway else "http://$gateway"
-            if (base.endsWith("/capture") || base.endsWith("/api/latest-frame")) {
-                candidates.add(base)
-            } else {
-                candidates.add("$base/api/latest-frame")
-                candidates.add("$base/capture")
+        val baseEndpoints = buildCandidateEndpoints(getGatewayUrl())
+        // For image frames, prioritize image-returning endpoints (/api/latest-frame, /capture, etc.)
+        for (ep in baseEndpoints) {
+            if (ep.endsWith("/api/latest-frame") || ep.endsWith("/latest_frame") || ep.endsWith("/capture")) {
+                candidates.add(ep)
             }
         }
+        candidates.addAll(baseEndpoints)
         candidates.add("http://192.168.4.1:5000/api/latest-frame")
         candidates.add("http://192.168.4.1/capture")
         candidates.add("http://192.168.4.2/capture")
@@ -127,14 +192,19 @@ class CompanionRepository(private val context: Context) {
                 val url = URL(endpoint)
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 800
-                conn.readTimeout = 1200
-                conn.setRequestProperty("User-Agent", "BlindSight-Android/1.7")
-                if (conn.responseCode == 200) {
-                    val bytes = conn.inputStream.readBytes()
-                    if (bytes.size > 200 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) {
-                        return@withContext bytes
+                conn.connectTimeout = 2500
+                conn.readTimeout = 3500
+                conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
+                try {
+                    if (conn.responseCode == 200) {
+                        val bytes = conn.inputStream.readBytes()
+                        if (bytes.size > 200 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) {
+                            _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
+                            return@withContext bytes
+                        }
                     }
+                } finally {
+                    conn.disconnect()
                 }
             } catch (_: Exception) {}
         }

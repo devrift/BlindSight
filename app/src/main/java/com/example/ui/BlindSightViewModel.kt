@@ -29,6 +29,7 @@ import com.example.service.UpdateInfo
 import com.example.service.VoicePersona
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -112,6 +113,17 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 _uiState.value = _uiState.value.copy(
                     isHardwareGlassesConnected = tel.isHardwareConnected
                 )
+            }
+        }
+
+        // Active hardware connection monitor (probes glasses / edge gateway)
+        viewModelScope.launch {
+            while (isActive) {
+                val connected = repository.checkHardwareConnection()
+                _uiState.value = _uiState.value.copy(
+                    isHardwareGlassesConnected = connected
+                )
+                delay(if (connected) 5000L else 3500L)
             }
         }
 
@@ -203,7 +215,16 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(gatewayUrl = cleanUrl)
         ttsHelper?.setGatewayUrl(cleanUrl)
         hapticHelper.vibrateConfirm()
-        speak("Glasses Gateway URL updated.")
+        viewModelScope.launch {
+            val connected = repository.checkHardwareConnection()
+            _uiState.value = _uiState.value.copy(isHardwareGlassesConnected = connected)
+            if (connected) {
+                hapticHelper.vibrateConfirm()
+                speak("Glasses Gateway connected successfully.")
+            } else {
+                speak("Glasses Gateway URL saved. Searching for glasses on the network.")
+            }
+        }
     }
 
     fun setVoicePersona(persona: VoicePersona) {
@@ -1061,6 +1082,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 isCameraScanning = false,
                 latestFrameBytes = result.frameBytes,
                 latestFrameSource = result.cameraSource,
+                isHardwareGlassesConnected = (result.cameraSource == CameraSource.HARDWARE_GLASSES) || _uiState.value.isHardwareGlassesConnected,
                 appState = AppState.SPEAKING,
                 statusText = result.description
             )
@@ -1093,20 +1115,24 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun speakHardwareStatus() {
         hapticHelper.vibrateTap()
-        val isGlasses = _uiState.value.isHardwareGlassesConnected
-        val isFallback = _uiState.value.isPhoneCameraFallbackEnabled
-        val lang = _uiState.value.language
-        val status = if (lang == SupportedLanguage.HINDI) {
-            val glasses = if (isGlasses) "स्मार्ट चश्मा कनेक्टेड है।" else "स्मार्ट चश्मा कनेक्ट नहीं है।"
-            val camera = if (isGlasses) "स्मार्ट चश्मे का कैमरा सक्रिय है।" else if (isFallback) "विज़न के लिए मोबाइल का बैक कैमरा उपयोग में है।" else "मोबाइल कैमरा फॉलबैक बंद है।"
-            "हार्डवेयर स्थिति: $glasses $camera अल्ट्रासोनिक रडार ${if (isGlasses) "सक्रिय है।" else "हार्डवेयर कनेक्ट नहीं है।"} माइक्रोफोन चालू है।"
-        } else {
-            val glasses = if (isGlasses) "Smart glasses are connected." else "Smart glasses are disconnected."
-            val camera = if (isGlasses) "Using smart glasses camera." else if (isFallback) "Mobile back camera is in use with spoken privacy notice." else "Mobile camera fallback is disabled."
-            "Hardware status: $glasses $camera Ultrasonic radar is ${if (isGlasses) "active." else "hardware disconnected."} Microphone is active."
+        viewModelScope.launch {
+            val connected = repository.checkHardwareConnection()
+            _uiState.value = _uiState.value.copy(isHardwareGlassesConnected = connected)
+            val isGlasses = connected || _uiState.value.isHardwareGlassesConnected
+            val isFallback = _uiState.value.isPhoneCameraFallbackEnabled
+            val lang = _uiState.value.language
+            val status = if (lang == SupportedLanguage.HINDI) {
+                val glasses = if (isGlasses) "स्मार्ट चश्मा कनेक्टेड है।" else "स्मार्ट चश्मा कनेक्ट नहीं है।"
+                val camera = if (isGlasses) "स्मार्ट चश्मे का कैमरा सक्रिय है।" else if (isFallback) "विज़न के लिए मोबाइल का बैक कैमरा उपयोग में है।" else "मोबाइल कैमरा फॉलबैक बंद है।"
+                "हार्डवेयर स्थिति: $glasses $camera अल्ट्रासोनिक रडार ${if (isGlasses) "सक्रिय है।" else "हार्डवेयर कनेक्ट नहीं है।"} माइक्रोफोन चालू है।"
+            } else {
+                val glasses = if (isGlasses) "Smart glasses are connected." else "Smart glasses are disconnected."
+                val camera = if (isGlasses) "Using smart glasses camera." else if (isFallback) "Mobile back camera is in use with spoken privacy notice." else "Mobile camera fallback is disabled."
+                "Hardware status: $glasses $camera Ultrasonic radar is ${if (isGlasses) "active." else "hardware disconnected."} Microphone is active."
+            }
+            _uiState.value = _uiState.value.copy(statusText = status)
+            speak(status)
         }
-        _uiState.value = _uiState.value.copy(statusText = status)
-        speak(status)
     }
 
     fun setLanguage(lang: SupportedLanguage) {

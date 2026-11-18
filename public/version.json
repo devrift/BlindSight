@@ -1,6 +1,6 @@
 {
-  "versionCode": 29,
+  "versionCode": 30,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 29: Added dedicated Smart Glasses IP configuration in Settings with automatic endpoint detection, gesture dropdown menus, and zero emojis."
+  "releaseNotes": "BlindSight v1.0.0 Build 30: Enabled Android cleartext HTTP traffic for local LAN IPs (192.168.x.x, 10.x.x.x), added live background smart glasses connection monitor, dual ESP32/Python hub probing, and zero emojis."
 }
