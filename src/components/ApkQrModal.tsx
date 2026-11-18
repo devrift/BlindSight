@@ -10,8 +10,8 @@ export const ApkQrModal: React.FC<ApkQrModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const downloadUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/BlindSight-testing.apk`
-    : '/BlindSight-testing.apk';
+    ? `${window.location.origin}/BlindSight-v1.0.0.apk`
+    : '/BlindSight-v1.0.0.apk';
 
   // High-resolution instant QR code endpoint
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=${encodeURIComponent(downloadUrl)}`;
@@ -52,8 +52,8 @@ export const ApkQrModal: React.FC<ApkQrModalProps> = ({ isOpen, onClose }) => {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
           <a
-            href="/BlindSight-testing.apk"
-            download="BlindSight-testing.apk"
+            href="/BlindSight-v1.0.0.apk"
+            download="BlindSight-v1.0.0.apk"
             className="btn btn-primary"
             style={{
               display: 'inline-flex',

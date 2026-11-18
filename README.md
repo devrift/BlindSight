@@ -109,7 +109,7 @@ Configured in `firmware/esp32_main/BlindSight_Main_ESP32.ino`:
 
 ## Sideloading the Android APK
 
-1. **Direct Download:** Download [`BlindSight-testing.apk`](https://blindsightai.vercel.app/BlindSight-testing.apk) (v1.7.9 • 22.5 MB) onto your Android phone (supports Android 7.0 to 16/17).
+1. **Direct Download:** Download [`BlindSight-v1.0.0.apk`](https://blindsightai.vercel.app/BlindSight-v1.0.0.apk) (v1.0.0 • 22.9 MB) onto your Android phone (supports Android 7.0 to 16/17).
 2. **Allow Installation:** When prompted by Android security, allow installation from Unknown Sources for your browser or file manager.
 3. **Launch & Speak:** Grant Microphone and Camera permissions, then tap the center button or say *"BlindSight"* to start navigating.
 

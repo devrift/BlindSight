@@ -5,6 +5,23 @@
   "outputDirectory": "dist",
   "headers": [
     {
+      "source": "/BlindSight-v1.0.0.apk",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.android.package-archive"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"BlindSight-v1.0.0.apk\""
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
       "source": "/BlindSight-testing.apk",
       "headers": [
         {
@@ -13,7 +30,7 @@
         },
         {
           "key": "Content-Disposition",
-          "value": "attachment; filename=\"BlindSight-testing.apk\""
+          "value": "attachment; filename=\"BlindSight-v1.0.0.apk\""
         },
         {
           "key": "Cache-Control",

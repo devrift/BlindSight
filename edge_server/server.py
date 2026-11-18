@@ -398,11 +398,16 @@ def get_audio_clip(filename):
     return jsonify(error="Audio clip not found"), 404
 
 
+@app.route("/BlindSight-v1.0.0.apk", methods=["GET"])
 @app.route("/BlindSight-testing.apk", methods=["GET"])
 @app.route("/download/apk", methods=["GET"])
 def download_apk():
-    """Serves the compiled Android testing APK with strict package MIME headers."""
-    apk_path = ROOT_DIR / "public" / "BlindSight-testing.apk"
+    """Serves the compiled Android APK with strict package MIME headers."""
+    apk_path = ROOT_DIR / "public" / "BlindSight-v1.0.0.apk"
+    if not apk_path.is_file():
+        apk_path = ROOT_DIR / "public" / "BlindSight-testing.apk"
+    if not apk_path.is_file():
+        apk_path = ROOT_DIR / "BlindSight-v1.0.0.apk"
     if not apk_path.is_file():
         apk_path = ROOT_DIR / "BlindSight-testing.apk"
     if not apk_path.is_file():
@@ -412,7 +417,7 @@ def download_apk():
         str(apk_path),
         mimetype="application/vnd.android.package-archive",
         as_attachment=True,
-        download_name="BlindSight-testing.apk"
+        download_name="BlindSight-v1.0.0.apk"
     )
 
 

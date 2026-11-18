@@ -8,13 +8,21 @@ function apkMimePlugin(): Plugin {
     name: 'apk-mime-type',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (req.url && (req.url === '/BlindSight-testing.apk' || req.url.startsWith('/BlindSight-testing.apk?') || req.url.endsWith('.apk'))) {
-          const apkPath = path.resolve(process.cwd(), 'public', 'BlindSight-testing.apk');
+        if (req.url && (req.url.includes('.apk'))) {
+          const reqFileName = req.url.split('?')[0].replace('/', '');
+          let apkPath = path.resolve(process.cwd(), 'public', reqFileName);
+          if (!fs.existsSync(apkPath)) {
+            apkPath = path.resolve(process.cwd(), 'public', 'BlindSight-v1.0.0.apk');
+          }
+          if (!fs.existsSync(apkPath)) {
+            apkPath = path.resolve(process.cwd(), 'public', 'BlindSight-testing.apk');
+          }
           if (fs.existsSync(apkPath)) {
             const stat = fs.statSync(apkPath);
+            const downloadName = reqFileName.endsWith('.apk') ? reqFileName : 'BlindSight-v1.0.0.apk';
             res.writeHead(200, {
               'Content-Type': 'application/vnd.android.package-archive',
-              'Content-Disposition': 'attachment; filename="BlindSight-testing.apk"',
+              'Content-Disposition': `attachment; filename="${downloadName}"`,
               'Content-Length': stat.size,
               'Cache-Control': 'no-cache'
             });

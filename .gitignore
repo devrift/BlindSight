@@ -72,6 +72,7 @@ app/build/
 local.properties
 *.apk
 !public/BlindSight-testing.apk
+!public/BlindSight-v1.0.0.apk
 
 # Signing material: never commit keys
 debug.keystore

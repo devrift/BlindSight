@@ -61,7 +61,7 @@ class AppUpdateHelper(private val context: Context) {
                     val json = JSONObject(rawJson)
                     val remoteVersionCode = json.optInt("versionCode", currentVersionCode)
                     val remoteVersionName = json.optString("versionName", currentVersionName)
-                    val apkUrl = json.optString("apkUrl", "https://blindsightai.vercel.app/BlindSight-testing.apk")
+                    val apkUrl = json.optString("apkUrl", "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk")
                     val releaseNotes = json.optString("releaseNotes", "Bug fixes and performance improvements.")
 
                     if (remoteVersionCode > currentVersionCode) {

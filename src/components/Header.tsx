@@ -86,12 +86,12 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         <a
-          href="/BlindSight-testing.apk"
-          download="BlindSight-testing.apk"
+          href="/BlindSight-v1.0.0.apk"
+          download="BlindSight-v1.0.0.apk"
           className="badge clickable"
           style={{ textDecoration: 'none', color: 'var(--accent)', borderColor: 'var(--accent)' }}
           title="Download BlindSight Android APK"
-          aria-label="Download BlindSight Android testing APK"
+          aria-label="Download BlindSight Android APK v1.0.0"
         >
           <Download size={16} style={{ marginRight: 6 }} aria-hidden="true" />
           <span>Download APK</span>
