@@ -86,6 +86,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkAssistantLaunch(intent)
+        viewModel.checkPendingUpdateInstall()
+        viewModel.refreshInstallPermissionStatus()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

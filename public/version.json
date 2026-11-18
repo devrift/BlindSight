@@ -1,6 +1,6 @@
 {
-  "versionCode": 26,
+  "versionCode": 27,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-testing.apk",
-  "releaseNotes": "v1.0.0 Zero-Defect Release: Zero TypeScript compile errors, 100% type-safe multimodal vision service, clean auto-mirrored icons, strict locale builder, whisper preamp normalizer, and zero foreign language drift."
+  "releaseNotes": "v1.0.0 Official Release: Tactile screen gestures customization, Easy 'Hey Assistant' voice wake word, seamless in-app update permissions, 15s mic oscillation fix, and zero emojis."
 }

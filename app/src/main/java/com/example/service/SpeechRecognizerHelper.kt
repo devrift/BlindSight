@@ -135,7 +135,7 @@ class SpeechRecognizerHelper(
     fun isWakeWordTrigger(text: String): Boolean {
         val low = text.lowercase().trim()
         val wakeRegex = Regex(
-            "\\b(hey|a|ay|ey|hi|hello|ok|okay|the|हे|नमस्ते|सुनो)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|ब्लाइंड\\s*साइट|ब्लाइंडसाइट)\\b",
+            "\\b(hey|a|ay|ey|hi|hello|ok|okay|the|हे|नमस्ते|सुनो)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|have\\s*line\\s*sight|havelinesight|heavy\\s*line\\s*sight|assistant|hey\\s*assistant|ally|hey\\s*ally|buddy|hey\\s*buddy|companion|ब्लाइंड\\s*साइट|ब्लाइंडसाइट|असिस्टेंट)\\b",
             RegexOption.IGNORE_CASE
         )
         return wakeRegex.containsMatchIn(low)
@@ -145,25 +145,49 @@ class SpeechRecognizerHelper(
         var text = raw.trim()
         val low = text.lowercase()
 
-        // Normalize common phonetic slips for wake word ("a blindsight", "blind side", "blind site", etc.)
-        if (low.contains("a blindsight") || low.contains("a blind sight") || low.contains("a blind side") ||
+        // Normalize common phonetic slips for wake word ("a blindsight", "havelinesight", "hey assistant", etc.)
+        if (low.contains("havelinesight") || low.contains("have line sight") || low.contains("heavy line sight") ||
+            low.contains("a blindsight") || low.contains("a blind sight") || low.contains("a blind side") ||
             low.contains("blind site") || low.contains("blind side") || low.contains("bind sight") ||
             low.contains("line sight") || low.contains("ey blindsight") || low.contains("ay blindsight") ||
             low.contains("blindsighted") || low.contains("hey blind")
         ) {
             text = text.replace(
-                Regex("(?i)\\b(a|ay|ey|the|hey)?\\s*(blind\\s*site|blind\\s*side|bind\\s*sight|line\\s*sight|blind\\s*light|blind\\s*sight)\\b"),
+                Regex("(?i)\\b(a|ay|ey|the|hey|have|heavy)?\\s*(havelinesight|have\\s+line\\s+sight|heavy\\s+line\\s+sight|blind\\s*site|blind\\s*side|bind\\s*sight|line\\s*sight|blind\\s*light|blind\\s*sight)\\b"),
+                "BlindSight"
+            )
+        }
+        if (low.contains("hey assistant") || low.startsWith("assistant") || low.contains("hey ally") || low.startsWith("ally") || low.contains("hey buddy") || low.startsWith("buddy")) {
+            text = text.replace(
+                Regex("(?i)\\b(hey|hi|hello|ok|okay)?\\s*(assistant|ally|buddy)\\b"),
                 "BlindSight"
             )
         }
         if (low.startsWith("this tribe") || low.startsWith("the scribe") || low.startsWith("dis tribe") || low.startsWith("the stripe")) {
             text = text.replace(Regex("(?i)^this\\s+tribe|^the\\s+scribe|^dis\\s+tribe|^the\\s+stripe"), "describe")
         }
-        if (low.contains("ब्लाइंड साइट") || low.contains("ब्लाइंड साइड")) {
-            text = text.replace(Regex("ब्लाइंड\\s+साइट|ब्लाइंड\\s+साइड"), "ब्लाइंडसाइट")
+        if (low.contains("ब्लाइंड साइट") || low.contains("ब्लाइंड साइड") || low.contains("असिस्टेंट")) {
+            text = text.replace(Regex("ब्लाइंड\\s+साइट|ब्लाइंड\\s+साइड|असिस्टेंट"), "ब्लाइंडसाइट")
         }
 
         return text
+    }
+
+    private fun buildIntent(languageCode: String): Intent {
+        val lockedLocale = sanitizeLocale(languageCode)
+        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, lockedLocale)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lockedLocale)
+            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, lockedLocale)
+            putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayListOf(lockedLocale))
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+        }
     }
 
     private fun createListener(): RecognitionListener {
@@ -191,21 +215,27 @@ class SpeechRecognizerHelper(
 
             override fun onError(error: Int) {
                 isListening = false
-                onListeningStateChanged?.invoke(false)
 
                 Log.w(tag, "SpeechRecognizer onError: code=$error")
 
-                // 1. Standby timeout (no speech detected) - seamless restart with zero lag!
+                // 1. Standby timeout (no speech detected) - seamless continuous restart without mic state oscillation
                 if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                     if (isContinuousMode && !isPaused && hasAudioPermission()) {
                         mainHandler.postDelayed({
                             if (isContinuousMode && !isPaused && !isListening) {
-                                startListening(currentLanguageCode)
+                                try {
+                                    speechRecognizer?.startListening(buildIntent(currentLanguageCode))
+                                    isListening = true
+                                } catch (_: Exception) {
+                                    startListening(currentLanguageCode, forceRestart = true)
+                                }
                             }
-                        }, 150L)
+                        }, 60L)
                     }
                     return
                 }
+
+                onListeningStateChanged?.invoke(false)
 
                 // 2. Recognizer is busy -> reset and resume quickly
                 if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
@@ -349,19 +379,7 @@ class SpeechRecognizerHelper(
                 Log.w(tag, "Cancel error: ${e.message}")
             }
 
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lockedLocale)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lockedLocale)
-                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, lockedLocale)
-                putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayListOf(lockedLocale))
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-            }
+            val intent = buildIntent(lockedLocale)
 
             try {
                 // Force audio mode to MODE_IN_COMMUNICATION to activate native hardware AEC & NoiseSuppressor

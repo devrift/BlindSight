@@ -33,6 +33,14 @@ enum class CameraSource(val label: String, val spokenAnnouncementEn: String, val
     PHONE_BACK_CAMERA("Mobile Back Camera", "Using your mobile back camera", "आपके मोबाइल के बैक कैमरे का उपयोग करते हुए")
 }
 
+enum class TactileAction(val label: String, val description: String) {
+    START_LISTENING("Speak / Listen", "Start or stop voice conversation"),
+    DESCRIBE_SCENE("Describe View", "Capture and describe the scene ahead"),
+    READ_TEXT("Read Text", "Read text, signs, and labels in view"),
+    SILENCE_SPEECH("Silence / Mute", "Instantly silence assistant voice playback"),
+    ANNOUNCE_STATUS("Time & Battery", "Speak current time and battery percentage")
+}
+
 data class CameraFrameData(
     val bytes: ByteArray?,
     val source: CameraSource,

@@ -30,6 +30,7 @@ sealed class UpdateDownloadState {
     data class Available(val info: UpdateInfo) : UpdateDownloadState()
     data class Downloading(val progressPercent: Int) : UpdateDownloadState()
     data class ReadyToInstall(val apkFile: File) : UpdateDownloadState()
+    data class PermissionRequired(val apkFile: File, val info: UpdateInfo? = null) : UpdateDownloadState()
     data class Error(val message: String) : UpdateDownloadState()
 }
 
@@ -84,9 +85,44 @@ class AppUpdateHelper(private val context: Context) {
         }
     }
 
+    fun canInstallPackages(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
+    }
+
+    fun openInstallPermissionSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settingsIntent)
+            } else {
+                val settingsIntent = Intent(Settings.ACTION_SECURITY_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settingsIntent)
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to open install settings: ${e.message}")
+            try {
+                val appDetailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(appDetailsIntent)
+            } catch (_: Exception) {}
+        }
+    }
+
     fun downloadAndInstall(
         info: UpdateInfo,
         onProgress: (Int) -> Unit,
+        onReady: (File) -> Unit,
         onError: (String) -> Unit
     ) {
         thread(name = "BlindSightApkDownload") {
@@ -128,7 +164,7 @@ class AppUpdateHelper(private val context: Context) {
 
                 if (apkFile.exists() && apkFile.length() > 500000) {
                     mainHandler.post {
-                        triggerInstall(apkFile)
+                        onReady(apkFile)
                     }
                 } else {
                     mainHandler.post { onError("Corrupted APK file downloaded.") }
@@ -140,18 +176,12 @@ class AppUpdateHelper(private val context: Context) {
         }
     }
 
-    fun triggerInstall(apkFile: File) {
+    fun triggerInstall(apkFile: File): Boolean {
         try {
             // Check unknown apps install permission on Android 8+ (Oreo+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!context.packageManager.canRequestPackageInstalls()) {
-                    val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(settingsIntent)
-                    return
-                }
+            if (!canInstallPackages()) {
+                openInstallPermissionSettings()
+                return false
             }
 
             val apkUri: Uri = FileProvider.getUriForFile(
@@ -166,8 +196,10 @@ class AppUpdateHelper(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(installIntent)
+            return true
         } catch (e: Exception) {
             Log.e(tag, "Failed to launch package installer: ${e.message}", e)
+            return false
         }
     }
 }

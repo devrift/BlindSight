@@ -143,7 +143,8 @@ fun BlindSightScreen(
             // Single tap = Talk / Mic / Resume
             .pointerInput(Unit) {
                 var lastTapTime = 0L
-                var singleTapJob: Job? = null
+                var tapCount = 0
+                var tapJob: Job? = null
 
                 awaitPointerEventScope {
                     while (true) {
@@ -153,28 +154,30 @@ fun BlindSightScreen(
 
                         // 1. Two-finger tap: instantly silence speech
                         if (pressedPointers.size >= 2 || downChanges.size >= 2) {
-                            singleTapJob?.cancel()
+                            tapJob?.cancel()
                             lastTapTime = 0L
+                            tapCount = 0
                             event.changes.forEach { it.consume() }
                             viewModel.stopSpeaking()
                         } else if (downChanges.size == 1) {
                             val now = System.currentTimeMillis()
                             if (now - lastTapTime < 380L) {
-                                // 2. Double-tap detected: describe scene immediately
-                                singleTapJob?.cancel()
-                                lastTapTime = 0L
-                                event.changes.forEach { it.consume() }
-                                viewModel.describeScene()
+                                tapCount++
                             } else {
-                                // Potential single tap: launch delayed job
-                                lastTapTime = now
-                                singleTapJob?.cancel()
-                                singleTapJob = coroutineScope.launch {
-                                    delay(340L)
-                                    if (lastTapTime == now) {
-                                        viewModel.onTactileSingleTap()
-                                    }
+                                tapCount = 1
+                            }
+                            lastTapTime = now
+
+                            tapJob?.cancel()
+                            tapJob = coroutineScope.launch {
+                                delay(320L)
+                                when (tapCount) {
+                                    1 -> viewModel.onTactileSingleTap()
+                                    2 -> viewModel.onTactileDoubleTap()
+                                    3 -> viewModel.onTactileTripleTap()
+                                    else -> viewModel.onTactileSingleTap()
                                 }
+                                tapCount = 0
                             }
                         }
                     }
@@ -535,30 +538,8 @@ fun BlindSightScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isDark) Color(0xCC060B14) else Color(0xCCEAF2FF))
-                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(16.dp))
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = null,
-                            tint = ElectricCobalt,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "Single-tap: Speak  •  Double-tap: Describe  •  2 fingers: Silence",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = textSecondary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
+                    // Bottom notice removed as requested by user
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
@@ -578,8 +559,14 @@ fun BlindSightScreen(
             onToggleDarkMode = { viewModel.toggleDarkMode() },
             isPhoneCameraFallbackEnabled = uiState.isPhoneCameraFallbackEnabled,
             onTogglePhoneCameraFallback = { viewModel.togglePhoneCameraFallback() },
-            currentGatewayUrl = uiState.gatewayUrl,
-            onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
+            singleTapAction = uiState.singleTapAction,
+            onSingleTapActionChange = { viewModel.setSingleTapAction(it) },
+            doubleTapAction = uiState.doubleTapAction,
+            onDoubleTapActionChange = { viewModel.setDoubleTapAction(it) },
+            tripleTapAction = uiState.tripleTapAction,
+            onTripleTapActionChange = { viewModel.setTripleTapAction(it) },
+            canInstallPackages = uiState.canInstallPackages,
+            onOpenInstallSettings = { viewModel.openInstallPermissionSettings() },
             onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
             onReadHelp = { viewModel.speakHardwareStatus() },
             onDismiss = {
@@ -653,11 +640,17 @@ fun BlindSightScreen(
         )
     }
 
-    if (updateState is UpdateDownloadState.Available) {
+    if (updateState !is UpdateDownloadState.Idle) {
         UpdateDialog(
             updateState = updateState,
             onStartDownload = { info ->
                 viewModel.startUpdateDownload(info)
+            },
+            onOpenSettings = {
+                viewModel.openInstallPermissionSettings()
+            },
+            onInstallNow = { apkFile ->
+                viewModel.installDownloadedUpdate(apkFile)
             },
             onDismiss = { viewModel.dismissUpdateDialog() }
         )

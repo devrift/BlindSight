@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
@@ -16,6 +17,7 @@ import com.example.data.model.MemoryFact
 import com.example.data.model.ReflexAlert
 import com.example.data.model.ReflexTelemetry
 import com.example.data.model.SupportedLanguage
+import com.example.data.model.TactileAction
 import com.example.data.repository.CompanionRepository
 import com.example.service.AppUpdateHelper
 import com.example.service.DirectAudioRecorder
@@ -58,6 +60,10 @@ data class UiState(
     val isPhoneCameraFallbackEnabled: Boolean = true,
     val isHardwareGlassesConnected: Boolean = false,
     val voicePersona: VoicePersona = VoicePersona.AUTO,
+    val singleTapAction: TactileAction = TactileAction.START_LISTENING,
+    val doubleTapAction: TactileAction = TactileAction.DESCRIBE_SCENE,
+    val tripleTapAction: TactileAction = TactileAction.READ_TEXT,
+    val canInstallPackages: Boolean = true,
     val showSettingsDialog: Boolean = false,
     val showHistoryDialog: Boolean = false,
     val showTelemetryModal: Boolean = false
@@ -87,8 +93,17 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     private var isUserCommandActive = false
 
     init {
+        val prefs = application.getSharedPreferences("blindsight_app_prefs", Context.MODE_PRIVATE)
+        val sTap = TactileAction.entries.find { it.name == prefs.getString("tactile_single_tap", TactileAction.START_LISTENING.name) } ?: TactileAction.START_LISTENING
+        val dTap = TactileAction.entries.find { it.name == prefs.getString("tactile_double_tap", TactileAction.DESCRIBE_SCENE.name) } ?: TactileAction.DESCRIBE_SCENE
+        val tTap = TactileAction.entries.find { it.name == prefs.getString("tactile_triple_tap", TactileAction.READ_TEXT.name) } ?: TactileAction.READ_TEXT
+
         _uiState.value = _uiState.value.copy(
-            isPhoneCameraFallbackEnabled = repository.isPhoneCameraFallbackEnabled()
+            isPhoneCameraFallbackEnabled = repository.isPhoneCameraFallbackEnabled(),
+            singleTapAction = sTap,
+            doubleTapAction = dTap,
+            tripleTapAction = tTap,
+            canInstallPackages = updateHelper.canInstallPackages()
         )
 
         viewModelScope.launch {
@@ -232,6 +247,15 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             onProgress = { percent ->
                 _updateState.value = UpdateDownloadState.Downloading(percent)
             },
+            onReady = { apkFile ->
+                if (updateHelper.canInstallPackages()) {
+                    _updateState.value = UpdateDownloadState.ReadyToInstall(apkFile)
+                    updateHelper.triggerInstall(apkFile)
+                } else {
+                    _updateState.value = UpdateDownloadState.PermissionRequired(apkFile, info)
+                    speak("Install permission needed. Tap Open Settings to allow BlindSight to install updates.")
+                }
+            },
             onError = { err ->
                 _updateState.value = UpdateDownloadState.Error(err)
                 speak("Update download failed: $err")
@@ -239,8 +263,82 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
+    fun openInstallPermissionSettings() {
+        updateHelper.openInstallPermissionSettings()
+    }
+
+    fun installDownloadedUpdate(apkFile: java.io.File) {
+        if (updateHelper.canInstallPackages()) {
+            _updateState.value = UpdateDownloadState.ReadyToInstall(apkFile)
+            updateHelper.triggerInstall(apkFile)
+        } else {
+            updateHelper.openInstallPermissionSettings()
+        }
+    }
+
+    fun checkPendingUpdateInstall() {
+        val current = _updateState.value
+        if (current is UpdateDownloadState.PermissionRequired) {
+            if (updateHelper.canInstallPackages()) {
+                _updateState.value = UpdateDownloadState.ReadyToInstall(current.apkFile)
+                updateHelper.triggerInstall(current.apkFile)
+            }
+        }
+    }
+
     fun dismissUpdateDialog() {
         _updateState.value = UpdateDownloadState.Idle
+    }
+
+    fun setSingleTapAction(action: TactileAction) {
+        _uiState.value = _uiState.value.copy(singleTapAction = action)
+        getApplication<Application>().getSharedPreferences("blindsight_app_prefs", Context.MODE_PRIVATE)
+            .edit().putString("tactile_single_tap", action.name).apply()
+        hapticHelper.vibrateConfirm()
+        speak("Single tap set to ${action.label}")
+    }
+
+    fun setDoubleTapAction(action: TactileAction) {
+        _uiState.value = _uiState.value.copy(doubleTapAction = action)
+        getApplication<Application>().getSharedPreferences("blindsight_app_prefs", Context.MODE_PRIVATE)
+            .edit().putString("tactile_double_tap", action.name).apply()
+        hapticHelper.vibrateConfirm()
+        speak("Double tap set to ${action.label}")
+    }
+
+    fun setTripleTapAction(action: TactileAction) {
+        _uiState.value = _uiState.value.copy(tripleTapAction = action)
+        getApplication<Application>().getSharedPreferences("blindsight_app_prefs", Context.MODE_PRIVATE)
+            .edit().putString("tactile_triple_tap", action.name).apply()
+        hapticHelper.vibrateConfirm()
+        speak("Triple tap set to ${action.label}")
+    }
+
+    fun refreshInstallPermissionStatus() {
+        _uiState.value = _uiState.value.copy(canInstallPackages = updateHelper.canInstallPackages())
+    }
+
+    fun onTactileDoubleTap() {
+        executeTactileAction(_uiState.value.doubleTapAction)
+    }
+
+    fun onTactileTripleTap() {
+        executeTactileAction(_uiState.value.tripleTapAction)
+    }
+
+    fun executeTactileAction(action: TactileAction) {
+        hapticHelper.vibrateConfirm()
+        when (action) {
+            TactileAction.START_LISTENING -> onTactileSingleTap()
+            TactileAction.DESCRIBE_SCENE -> describeScene()
+            TactileAction.READ_TEXT -> readVisibleText()
+            TactileAction.SILENCE_SPEECH -> stopSpeaking()
+            TactileAction.ANNOUNCE_STATUS -> {
+                val timeStr = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
+                val battery = repository.getBatteryStatus()
+                speak("Current time is $timeStr. $battery.")
+            }
+        }
     }
 
     fun refreshLatestHardwareFrame() {

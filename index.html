@@ -34,7 +34,7 @@
         <a href="#overview" class="active">Overview</a>
         <a href="#quickstart">Quickstart</a>
         <a href="#architecture">Architecture</a>
-        <a href="#hardware-wiring">Hardware &amp; Wiring</a>
+        <a href="#workflow-setup">Setup Guide</a>
         <a href="#voice-commands">Commands</a>
         <a href="#android-app">Android APK</a>
       </nav>
@@ -91,9 +91,9 @@
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72c0 .8.87 1.3 1.56.9l11-6.86a1.05 1.05 0 0 0 0-1.8l-11-6.86A1.05 1.05 0 0 0 8 5.14z"></path></svg>
               <span>Get Started in 3 Steps</span>
             </a>
-            <a class="btn btn-glass" href="#hardware-wiring">
+            <a class="btn btn-glass" href="#workflow-setup">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-              <span>Hardware &amp; Wiring V2</span>
+              <span>Easy Setup Guide</span>
             </a>
             <a class="btn btn-glass" href="#voice-commands">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
@@ -174,7 +174,7 @@
           <a class="toc-link" href="#quickstart">Quickstart (3 Steps)</a>
           <a class="toc-link" href="#android-app">Android APK Download</a>
           <a class="toc-link" href="#architecture">3-Tier Safety System</a>
-          <a class="toc-link" href="#hardware-wiring">Hardware &amp; Wiring V2</a>
+          <a class="toc-link" href="#workflow-setup">Easy Setup Guide</a>
           <a class="toc-link" href="#voice-commands">Voice Commands &amp; Memory</a>
           <a class="toc-link" href="#faq">FAQ &amp; Limitations</a>
         </nav>
@@ -343,74 +343,60 @@ python edge_server/server.py</pre>
           </div>
         </section>
 
-        <!-- ================================================================= 5. Hardware & Wiring -->
-        <section class="doc-section" id="hardware-wiring">
-          <h2>ESP32 Pinout &amp; Wiring Matrix <a class="anchor" href="#hardware-wiring">#</a></h2>
+        <!-- ================================================================= 5. Easy Setup Guide -->
+        <section class="doc-section" id="workflow-setup">
+          <h2>Easy Setup Guide &bull; Connect in 4 Simple Steps <a class="anchor" href="#workflow-setup">#</a></h2>
           <p>
-            Exact GPIO pin mapping configured in <code>firmware/esp32_main/src/main.cpp</code>:
+            You do not need any coding or technical knowledge to get started with BlindSight. Everything connects automatically:
           </p>
 
-          <div class="table-wrap">
-            <table class="api-table">
-              <thead>
-                <tr>
-                  <th>Component</th>
-                  <th>Function / Signal</th>
-                  <th>ESP32 GPIO</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong>Left Sonar</strong> (HC-SR04)</td>
-                  <td>TRIG / ECHO</td>
-                  <td><code>TRIG 13</code> / <code>ECHO 34</code></td>
-                  <td>GPIO 34 is input-only</td>
-                </tr>
-                <tr>
-                  <td><strong>Center Sonar</strong> (HC-SR04)</td>
-                  <td>TRIG / ECHO</td>
-                  <td><code>TRIG 14</code> / <code>ECHO 35</code></td>
-                  <td>GPIO 35 is input-only</td>
-                </tr>
-                <tr>
-                  <td><strong>Right Sonar</strong> (HC-SR04)</td>
-                  <td>TRIG / ECHO</td>
-                  <td><code>TRIG 27</code> / <code>ECHO 39</code></td>
-                  <td>GPIO 39 is input-only</td>
-                </tr>
-                <tr>
-                  <td><strong>PCM5102 I2S DAC</strong></td>
-                  <td>BCK (Bit Clock)</td>
-                  <td><code>GPIO 26</code></td>
-                  <td>Direct 16-bit 44.1kHz audio</td>
-                </tr>
-                <tr>
-                  <td><strong>PCM5102 I2S DAC</strong></td>
-                  <td>WS (Word Select / LRCK)</td>
-                  <td><code>GPIO 25</code></td>
-                  <td>Left / Right audio framing</td>
-                </tr>
-                <tr>
-                  <td><strong>PCM5102 I2S DAC</strong></td>
-                  <td>DIN (Data In)</td>
-                  <td><code>GPIO 22</code></td>
-                  <td>Zero-latency reflex earcons</td>
-                </tr>
-                <tr>
-                  <td><strong>Push-To-Talk Button</strong></td>
-                  <td>Tactile Trigger</td>
-                  <td><code>GPIO 32</code></td>
-                  <td>Active LOW with internal pull-up</td>
-                </tr>
-                <tr>
-                  <td><strong>Status LED</strong></td>
-                  <td>State Indicator</td>
-                  <td><code>GPIO 2</code></td>
-                  <td>Onboard system beacon</td>
-                </tr>
-              </tbody>
-            </table>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 20px 0;">
+            <div class="glass-card" style="padding: 20px; border-radius: 18px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span class="tag tag-tier0" style="font-weight: 800; font-size: 0.85rem;">Step 1</span>
+                <strong style="color: var(--text-bright); font-size: 1.05rem;">Install the App</strong>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+                Download <code>BlindSight-testing.apk</code> directly to your Android phone from this page or by scanning the QR code with your camera.
+              </p>
+            </div>
+
+            <div class="glass-card" style="padding: 20px; border-radius: 18px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span class="tag tag-tier1" style="font-weight: 800; font-size: 0.85rem;">Step 2</span>
+                <strong style="color: var(--text-bright); font-size: 1.05rem;">Allow Permissions</strong>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+                Open BlindSight and grant Microphone and Camera permissions. Tap Settings and allow "Install unknown apps" so the app updates seamlessly in the future.
+              </p>
+            </div>
+
+            <div class="glass-card" style="padding: 20px; border-radius: 18px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span class="tag tag-tier2" style="font-weight: 800; font-size: 0.85rem;">Step 3</span>
+                <strong style="color: var(--text-bright); font-size: 1.05rem;">Say "Hey Assistant"</strong>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+                Speak naturally anytime hands-free. Say <em>"Hey Assistant"</em> or <em>"Hey BlindSight"</em> to ask questions, check time, or inspect what is ahead.
+              </p>
+            </div>
+
+            <div class="glass-card" style="padding: 20px; border-radius: 18px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span class="tag tag-tier0" style="font-weight: 800; font-size: 0.85rem;">Step 4</span>
+                <strong style="color: var(--text-bright); font-size: 1.05rem;">Use Tactile Gestures</strong>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+                Tap once to talk, tap twice to describe your surroundings, or tap three times to read text. All gestures can be customized in the in-app Settings.
+              </p>
+            </div>
+          </div>
+
+          <div class="callout callout-info" style="margin-top: 20px;">
+            <div style="font-weight: 700; color: var(--text-bright); margin-bottom: 6px;">Zero Configuration Required</div>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0;">
+              BlindSight works immediately out of the box using your phone camera and on-device intelligence. No gateway IP setup, complex wiring, or terminal commands are necessary.
+            </p>
           </div>
         </section>
 
@@ -533,9 +519,9 @@ python edge_server/server.py</pre>
         </div>
 
         <div class="footer-col">
-          <h4>Hardware &amp; Code</h4>
+          <h4>Documentation</h4>
           <ul>
-            <li><a href="#hardware-wiring">Wiring Diagram V2</a></li>
+            <li><a href="#workflow-setup">Easy Setup Guide</a></li>
             <li><a href="#android-app">Android APK</a></li>
             <li><a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener">GitHub Project</a></li>
           </ul>
@@ -545,7 +531,7 @@ python edge_server/server.py</pre>
           <h4>Repository</h4>
           <ul>
             <li><a href="https://github.com/devrift/blindsight" target="_blank" rel="noopener">GitHub Project</a></li>
-            <li><a href="/BlindSight-testing.apk" download="BlindSight-testing.apk">Download APK (v1.8.1)</a></li>
+            <li><a href="/BlindSight-testing.apk" download="BlindSight-testing.apk">Download APK (v1.0.0)</a></li>
             <li><a href="https://github.com/devrift/blindsight/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
           </ul>
         </div>
