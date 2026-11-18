@@ -6,6 +6,8 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.util.Log
 import com.example.data.model.ChatMessage
@@ -48,6 +50,42 @@ class CompanionRepository(private val context: Context) {
 
     private val _telemetry = MutableStateFlow(ReflexTelemetry())
     val telemetry: StateFlow<ReflexTelemetry> = _telemetry.asStateFlow()
+
+    fun openHardwareConnection(url: URL): HttpURLConnection {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm != null) {
+                // When connected to local Wi-Fi (such as blindsight-setup), route hardware requests explicitly via Wi-Fi
+                val wifiNet = cm.allNetworks.firstOrNull { net ->
+                    val caps = cm.getNetworkCapabilities(net)
+                    caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                }
+                if (wifiNet != null) {
+                    return wifiNet.openConnection(url) as HttpURLConnection
+                }
+            }
+        } catch (_: Exception) {}
+        return url.openConnection() as HttpURLConnection
+    }
+
+    fun openCloudConnection(url: URL): HttpURLConnection {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm != null) {
+                // Route cloud AI/STT requests over an interface with validated internet or mobile data
+                val internetNet = cm.allNetworks.firstOrNull { net ->
+                    val caps = cm.getNetworkCapabilities(net)
+                    caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                            (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ||
+                             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))
+                }
+                if (internetNet != null) {
+                    return internetNet.openConnection(url) as HttpURLConnection
+                }
+            }
+        } catch (_: Exception) {}
+        return url.openConnection() as HttpURLConnection
+    }
 
     init {
         loadFacts()
@@ -187,7 +225,7 @@ class CompanionRepository(private val context: Context) {
         for (ep in priorityEndpoints) {
             try {
                 val url = URL(ep)
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = openHardwareConnection(url)
                 conn.connectTimeout = 800
                 conn.readTimeout = 800
                 conn.requestMethod = "GET"
@@ -225,7 +263,7 @@ class CompanionRepository(private val context: Context) {
                 async {
                     try {
                         val url = URL(urlStr)
-                        val conn = url.openConnection() as HttpURLConnection
+                        val conn = openHardwareConnection(url)
                         conn.connectTimeout = 700
                         conn.readTimeout = 700
                         conn.requestMethod = "GET"
@@ -271,7 +309,7 @@ class CompanionRepository(private val context: Context) {
         for (endpoint in candidates) {
             try {
                 val url = URL(endpoint)
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = openHardwareConnection(url)
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 1500
                 conn.readTimeout = 1500
@@ -315,7 +353,7 @@ class CompanionRepository(private val context: Context) {
         for (endpoint in candidates) {
             try {
                 val url = URL(endpoint)
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = openHardwareConnection(url)
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 2500
                 conn.readTimeout = 3500
@@ -844,7 +882,7 @@ class CompanionRepository(private val context: Context) {
         for (m in models) {
             try {
                 val url = URL("https://api.groq.com/openai/v1/chat/completions")
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = openCloudConnection(url)
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Authorization", "Bearer $apiKey")
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -915,7 +953,7 @@ class CompanionRepository(private val context: Context) {
             val twoHyphens = "--"
 
             val url = URL("https://api.groq.com/openai/v1/audio/transcriptions")
-            val conn = url.openConnection() as HttpURLConnection
+            val conn = openCloudConnection(url)
             conn.requestMethod = "POST"
             conn.setRequestProperty("Authorization", "Bearer $apiKey")
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
@@ -1085,7 +1123,7 @@ class CompanionRepository(private val context: Context) {
         for (model in candidateModels) {
             try {
                 val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = openCloudConnection(url)
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.connectTimeout = 4000
@@ -1138,7 +1176,7 @@ class CompanionRepository(private val context: Context) {
 
         try {
             val url = URL("https://api.groq.com/openai/v1/chat/completions")
-            val conn = url.openConnection() as HttpURLConnection
+            val conn = openCloudConnection(url)
             conn.requestMethod = "POST"
             conn.setRequestProperty("Authorization", "Bearer $apiKey")
             conn.setRequestProperty("Content-Type", "application/json")

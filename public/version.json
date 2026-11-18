@@ -1,6 +1,6 @@
 {
-  "versionCode": 31,
+  "versionCode": 32,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 31: Auto-detect smart glasses on phone mobile hotspot, parallel subnet discovery, support for both blindsight-setup Wi-Fi (192.168.4.1) and dynamic hotspot IP ranges, and one-tap Auto-Detect button."
+  "releaseNotes": "BlindSight v1.0.0 Build 32: Dual-path network routing. Binds smart glasses hardware connections explicitly to Wi-Fi while routing Cloud AI, Gemini, and updates over Cellular/Mobile Data when Wi-Fi has no internet."
 }
