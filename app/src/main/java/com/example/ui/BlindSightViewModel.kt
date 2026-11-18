@@ -54,7 +54,7 @@ data class UiState(
     val isDarkMode: Boolean = true,
     val isStandbyPaused: Boolean = false,
     val highContrastYellow: Boolean = false,
-    val gatewayUrl: String = "https://blindsightai.vercel.app",
+    val gatewayUrl: String = "",
     val latestFrameBytes: ByteArray? = null,
     val latestFrameSource: CameraSource = CameraSource.NONE,
     val isPhoneCameraFallbackEnabled: Boolean = true,
@@ -103,7 +103,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             singleTapAction = sTap,
             doubleTapAction = dTap,
             tripleTapAction = tTap,
-            canInstallPackages = updateHelper.canInstallPackages()
+            canInstallPackages = updateHelper.canInstallPackages(),
+            gatewayUrl = repository.getGatewayUrl()
         )
 
         viewModelScope.launch {

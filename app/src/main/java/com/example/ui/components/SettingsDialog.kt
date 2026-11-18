@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
@@ -38,6 +39,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -88,6 +91,8 @@ fun SettingsDialog(
     onToggleDarkMode: () -> Unit = {},
     isPhoneCameraFallbackEnabled: Boolean = true,
     onTogglePhoneCameraFallback: () -> Unit = {},
+    currentGatewayUrl: String = "",
+    onGatewayUrlChange: (String) -> Unit = {},
     singleTapAction: TactileAction = TactileAction.START_LISTENING,
     onSingleTapActionChange: (TactileAction) -> Unit = {},
     doubleTapAction: TactileAction = TactileAction.DESCRIBE_SCENE,
@@ -437,6 +442,81 @@ fun SettingsDialog(
                         checkedTrackColor = ElectricCobalt.copy(alpha = 0.5f)
                     )
                 )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // =================================================================
+            // SMART GLASSES GATEWAY IP
+            // =================================================================
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(cardSurface)
+                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(14.dp))
+                    .padding(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sensors,
+                        contentDescription = null,
+                        tint = ElectricCobalt,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Smart Glasses IP / Gateway",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textPrimary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "ESP32 camera or Python hub (e.g. 192.168.1.50 or :5000)",
+                    fontSize = 12.sp,
+                    color = textSecondary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                var gatewayInput by remember(currentGatewayUrl) { mutableStateOf(currentGatewayUrl) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = gatewayInput,
+                        onValueChange = { gatewayInput = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        placeholder = {
+                            Text("192.168.X.X:5000", color = textSecondary.copy(alpha = 0.5f), fontSize = 12.sp)
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0x1A2563EB),
+                            unfocusedContainerColor = Color(0x0D2563EB),
+                            focusedTextColor = textPrimary,
+                            unfocusedTextColor = textPrimary,
+                            focusedBorderColor = ElectricCobalt,
+                            unfocusedBorderColor = LiquidGlassBorder
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Button(
+                        onClick = { onGatewayUrlChange(gatewayInput) },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

@@ -97,8 +97,8 @@ class CompanionRepository(private val context: Context) {
     // --- Hardware Gateway & Cloud Neural Voice URL ---
     fun getGatewayUrl(): String {
         val saved = prefs.getString("gateway_url", "") ?: ""
-        if (saved.isNotBlank() && !saved.contains("192.168.29.173") && !saved.contains("blindsightpage.vercel.app")) return saved
-        return "https://blindsightai.vercel.app"
+        if (saved.isNotBlank() && !saved.contains("192.168.29.173") && !saved.contains("blindsightpage.vercel.app") && !saved.contains("blindsightai.vercel.app")) return saved
+        return ""
     }
 
     fun setGatewayUrl(url: String) {
@@ -110,7 +110,13 @@ class CompanionRepository(private val context: Context) {
         val candidates = mutableListOf<String>()
         val gateway = getGatewayUrl().trim().trimEnd('/')
         if (gateway.isNotBlank() && !gateway.contains("blindsightai.vercel.app") && !gateway.contains("blindsightpage.vercel.app")) {
-            candidates.add(if (gateway.startsWith("http")) "$gateway/api/latest-frame" else "http://$gateway/api/latest-frame")
+            val base = if (gateway.startsWith("http://") || gateway.startsWith("https://")) gateway else "http://$gateway"
+            if (base.endsWith("/capture") || base.endsWith("/api/latest-frame")) {
+                candidates.add(base)
+            } else {
+                candidates.add("$base/api/latest-frame")
+                candidates.add("$base/capture")
+            }
         }
         candidates.add("http://192.168.4.1:5000/api/latest-frame")
         candidates.add("http://192.168.4.1/capture")
