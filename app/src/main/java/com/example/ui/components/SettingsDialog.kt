@@ -93,6 +93,7 @@ fun SettingsDialog(
     onTogglePhoneCameraFallback: () -> Unit = {},
     currentGatewayUrl: String = "",
     onGatewayUrlChange: (String) -> Unit = {},
+    onAutoScanGlasses: () -> Unit = {},
     singleTapAction: TactileAction = TactileAction.START_LISTENING,
     onSingleTapActionChange: (TactileAction) -> Unit = {},
     doubleTapAction: TactileAction = TactileAction.DESCRIBE_SCENE,
@@ -517,6 +518,37 @@ fun SettingsDialog(
                         Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Button(
+                    onClick = { onAutoScanGlasses() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = VividCyan.copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sensors,
+                        contentDescription = null,
+                        tint = VividCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Auto-Detect Glasses on Hotspot",
+                        color = VividCyan,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Hotspot Mode: Your phone assigns a dynamic IP to the Pi/ESP (e.g. 192.168.43.x). Tap Auto-Detect to find it automatically. Use 192.168.4.1 only when connected to blindsight-setup Wi-Fi.",
+                    fontSize = 11.sp,
+                    color = textSecondary.copy(alpha = 0.85f),
+                    lineHeight = 15.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

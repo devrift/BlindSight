@@ -561,6 +561,7 @@ fun BlindSightScreen(
             onTogglePhoneCameraFallback = { viewModel.togglePhoneCameraFallback() },
             currentGatewayUrl = uiState.gatewayUrl,
             onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
+            onAutoScanGlasses = { viewModel.autoScanGlasses() },
             singleTapAction = uiState.singleTapAction,
             onSingleTapActionChange = { viewModel.setSingleTapAction(it) },
             doubleTapAction = uiState.doubleTapAction,

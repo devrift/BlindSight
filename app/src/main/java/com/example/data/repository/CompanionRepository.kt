@@ -16,6 +16,8 @@ import com.example.data.model.ReflexAlert
 import com.example.data.model.ReflexTelemetry
 import com.example.data.model.SupportedLanguage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +25,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -143,9 +147,123 @@ class CompanionRepository(private val context: Context) {
         return list
     }
 
+    fun getLocalSubnetPrefixes(): List<String> {
+        val subnets = LinkedHashSet<String>()
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val iface = interfaces.nextElement()
+                if (!iface.isUp || iface.isLoopback) continue
+                for (addr in iface.interfaceAddresses) {
+                    val ip = addr.address
+                    if (ip is Inet4Address && !ip.isLoopbackAddress) {
+                        val host = ip.hostAddress ?: continue
+                        if (host.contains(".")) {
+                            val prefix = host.substringBeforeLast(".") + "."
+                            subnets.add(prefix)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Common hotspot and fallback subnets
+        subnets.add("192.168.43.") // Standard Android hotspot
+        subnets.add("192.168.4.")  // ESP32 / Pi SoftAP (blindsight-setup)
+        subnets.add("192.168.1.")  // Common LAN
+        subnets.add("192.168.0.")  // Common LAN
+        subnets.add("192.168.29.") // JioFiber / Airtel
+        subnets.add("172.20.10.")  // iOS Personal Hotspot
+        return subnets.toList()
+    }
+
+    suspend fun autoDiscoverGlasses(): String? = withContext(Dispatchers.IO) {
+        // 1. Probe 192.168.4.1 (ESP blindsight-setup / Pi AP) first with fast timeout
+        val priorityEndpoints = listOf(
+            "http://192.168.4.1:5000/health",
+            "http://192.168.4.1/capture",
+            "http://192.168.4.1:5000/api/latest-frame"
+        )
+        for (ep in priorityEndpoints) {
+            try {
+                val url = URL(ep)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 800
+                conn.readTimeout = 800
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
+                try {
+                    if (conn.responseCode in 200..399) {
+                        val base = if (ep.contains(":5000")) "http://192.168.4.1:5000" else "http://192.168.4.1"
+                        setGatewayUrl(base)
+                        _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
+                        return@withContext base
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Scan active hotspot subnets across common DHCP ranges
+        val prefixes = getLocalSubnetPrefixes()
+        val targetHostSuffixes = (2..35).toList() + listOf(43, 50, 52, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 101, 102, 103, 104, 105, 120, 150, 200)
+
+        val candidateUrls = mutableListOf<String>()
+        for (prefix in prefixes) {
+            if (prefix == "192.168.4.") continue // Checked above
+            for (suffix in targetHostSuffixes) {
+                val ip = "$prefix$suffix"
+                candidateUrls.add("http://$ip:5000/health")
+                candidateUrls.add("http://$ip/capture")
+            }
+        }
+
+        // Probe in parallel batches of 20 with 700ms timeout
+        for (chunk in candidateUrls.chunked(20)) {
+            val jobs = chunk.map { urlStr ->
+                async {
+                    try {
+                        val url = URL(urlStr)
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.connectTimeout = 700
+                        conn.readTimeout = 700
+                        conn.requestMethod = "GET"
+                        conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
+                        try {
+                            val code = conn.responseCode
+                            if (code in 200..399) {
+                                return@async urlStr
+                            }
+                        } finally {
+                            conn.disconnect()
+                        }
+                    } catch (_: Exception) {}
+                    null
+                }
+            }
+            val results = jobs.awaitAll()
+            val found = results.firstOrNull { it != null }
+            if (found != null) {
+                val base = if (found.contains(":5000")) {
+                    found.substringBefore("/health")
+                } else {
+                    found.substringBefore("/capture")
+                }
+                setGatewayUrl(base)
+                _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
+                return@withContext base
+            }
+        }
+        return@withContext null
+    }
+
     suspend fun checkHardwareConnection(): Boolean = withContext(Dispatchers.IO) {
         val candidates = mutableListOf<String>()
-        candidates.addAll(buildCandidateEndpoints(getGatewayUrl()))
+        val saved = getGatewayUrl()
+        if (saved.isNotBlank()) {
+            candidates.addAll(buildCandidateEndpoints(saved))
+        }
         candidates.add("http://192.168.4.1:5000/health")
         candidates.add("http://192.168.4.1/capture")
         candidates.add("http://192.168.4.2/capture")
@@ -155,8 +273,8 @@ class CompanionRepository(private val context: Context) {
                 val url = URL(endpoint)
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 2500
-                conn.readTimeout = 2500
+                conn.connectTimeout = 1500
+                conn.readTimeout = 1500
                 conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
                 try {
                     val code = conn.responseCode
@@ -169,6 +287,13 @@ class CompanionRepository(private val context: Context) {
                 }
             } catch (_: Exception) {}
         }
+
+        // If direct candidate checks failed, attempt automatic hotspot discovery
+        val discovered = autoDiscoverGlasses()
+        if (discovered != null) {
+            return@withContext true
+        }
+
         _telemetry.value = _telemetry.value.copy(isHardwareConnected = false)
         return@withContext false
     }

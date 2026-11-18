@@ -1,6 +1,6 @@
 {
-  "versionCode": 30,
+  "versionCode": 31,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 30: Enabled Android cleartext HTTP traffic for local LAN IPs (192.168.x.x, 10.x.x.x), added live background smart glasses connection monitor, dual ESP32/Python hub probing, and zero emojis."
+  "releaseNotes": "BlindSight v1.0.0 Build 31: Auto-detect smart glasses on phone mobile hotspot, parallel subnet discovery, support for both blindsight-setup Wi-Fi (192.168.4.1) and dynamic hotspot IP ranges, and one-tap Auto-Detect button."
 }

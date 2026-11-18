@@ -217,12 +217,44 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         hapticHelper.vibrateConfirm()
         viewModelScope.launch {
             val connected = repository.checkHardwareConnection()
-            _uiState.value = _uiState.value.copy(isHardwareGlassesConnected = connected)
+            val finalUrl = repository.getGatewayUrl()
+            _uiState.value = _uiState.value.copy(
+                isHardwareGlassesConnected = connected,
+                gatewayUrl = finalUrl
+            )
             if (connected) {
                 hapticHelper.vibrateConfirm()
-                speak("Glasses Gateway connected successfully.")
+                speak("Smart glasses connected successfully at $finalUrl.")
             } else {
-                speak("Glasses Gateway URL saved. Searching for glasses on the network.")
+                speak("Smart glasses address saved. Scanning hotspot network for hardware.")
+            }
+        }
+    }
+
+    fun autoScanGlasses() {
+        hapticHelper.vibrateTap()
+        speak("Scanning your phone hotspot network for smart glasses...")
+        viewModelScope.launch {
+            val found = repository.autoDiscoverGlasses()
+            if (found != null) {
+                _uiState.value = _uiState.value.copy(
+                    isHardwareGlassesConnected = true,
+                    gatewayUrl = found
+                )
+                hapticHelper.vibrateConfirm()
+                speak("Smart glasses found and connected at $found.")
+            } else {
+                val current = repository.getGatewayUrl()
+                val connected = repository.checkHardwareConnection()
+                _uiState.value = _uiState.value.copy(
+                    isHardwareGlassesConnected = connected,
+                    gatewayUrl = repository.getGatewayUrl()
+                )
+                if (connected) {
+                    speak("Smart glasses connected at ${repository.getGatewayUrl()}.")
+                } else {
+                    speak("No glasses found yet. If on phone hotspot, check hotspot connected devices, or connect to blindsight-setup Wi-Fi.")
+                }
             }
         }
     }
