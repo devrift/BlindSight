@@ -75,7 +75,7 @@ VOICE_MAP = {
 SVARA_URL = os.getenv("SVARA_URL", "http://localhost:8000/v1/audio/speech")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 
 import unicodedata
@@ -360,11 +360,10 @@ class JarvisVoiceAssistant:
             return ""
         try:
             candidate_models = [
-                "gemini-3.5-transcribe",
                 GEMINI_MODEL,
-                "gemini-3-flash-preview",
-                "gemini-3.5-flash",
-                "gemini-3.8-flash"
+                "gemini-2.0-flash",
+                "gemini-1.5-flash",
+                "gemini-2.0-flash-lite-preview-02-05"
             ]
             seen = set()
             models_to_try = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
@@ -548,12 +547,11 @@ class JarvisVoiceAssistant:
                 print(f"[JarvisVoice] Image attach notice: {e}")
 
         candidate_models = [
-            "gemini-3-flash-preview",
             GEMINI_MODEL,
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-3.8-flash"
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash-lite-preview-02-05",
+            "gemini-1.5-flash-8b"
         ]
         # Deduplicate while preserving order
         seen = set()
@@ -563,10 +561,7 @@ class JarvisVoiceAssistant:
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.7,
-                "maxOutputTokens": 200,
-                "thinkingConfig": {
-                    "thinkingBudget": 0
-                }
+                "maxOutputTokens": 200
             }
         }
 
