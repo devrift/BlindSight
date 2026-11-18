@@ -51,6 +51,24 @@ class CompanionRepository(private val context: Context) {
     private val _telemetry = MutableStateFlow(ReflexTelemetry())
     val telemetry: StateFlow<ReflexTelemetry> = _telemetry.asStateFlow()
 
+    private val _discoveredDevices = MutableStateFlow<List<com.example.data.model.NearbyDiscoveredDevice>>(emptyList())
+    val discoveredDevices: StateFlow<List<com.example.data.model.NearbyDiscoveredDevice>> = _discoveredDevices.asStateFlow()
+
+    fun addDiscoveredDevice(device: com.example.data.model.NearbyDiscoveredDevice) {
+        val current = _discoveredDevices.value.toMutableList()
+        val existingIndex = current.indexOfFirst { it.identifier == device.identifier }
+        if (existingIndex >= 0) {
+            current[existingIndex] = device
+        } else {
+            current.add(device)
+        }
+        _discoveredDevices.value = current
+    }
+
+    fun clearDiscoveredDevices() {
+        _discoveredDevices.value = emptyList()
+    }
+
     fun openHardwareConnection(url: URL): HttpURLConnection {
         try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -216,8 +234,10 @@ class CompanionRepository(private val context: Context) {
     }
 
     suspend fun autoDiscoverGlasses(): String? = withContext(Dispatchers.IO) {
-        // 1. Probe 192.168.4.1 (ESP blindsight-setup / Pi AP) first with fast timeout
+        // 1. Probe mDNS and 192.168.4.1 (ESP blindsight-setup / Pi AP) first with fast timeout
         val priorityEndpoints = listOf(
+            "http://blindsight.local:5000/health",
+            "http://blindsight.local/capture",
             "http://192.168.4.1:5000/health",
             "http://192.168.4.1/capture",
             "http://192.168.4.1:5000/api/latest-frame"

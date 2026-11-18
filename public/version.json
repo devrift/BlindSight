@@ -1,6 +1,6 @@
 {
-  "versionCode": 32,
+  "versionCode": 33,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 32: Dual-path network routing. Binds smart glasses hardware connections explicitly to Wi-Fi while routing Cloud AI, Gemini, and updates over Cellular/Mobile Data when Wi-Fi has no internet."
+  "releaseNotes": "BlindSight v1.0.0 Build 33: Nearby Glasses Discovery engine. Bluetooth Low Energy (BLE) scanning, mDNS ZeroConf (blindsight.local) resolution, and live Nearby Discovered Glasses radar in Settings."
 }

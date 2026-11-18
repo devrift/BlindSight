@@ -19,9 +19,12 @@ import com.example.data.model.ReflexTelemetry
 import com.example.data.model.SupportedLanguage
 import com.example.data.model.TactileAction
 import com.example.data.repository.CompanionRepository
+import com.example.data.model.NearbyDiscoveredDevice
 import com.example.service.AppUpdateHelper
+import com.example.service.BleScannerHelper
 import com.example.service.DirectAudioRecorder
 import com.example.service.HapticHelper
+import com.example.service.NsdHelper
 import com.example.service.SpeechRecognizerHelper
 import com.example.service.TtsHelper
 import com.example.service.UpdateDownloadState
@@ -82,6 +85,21 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     val facts: StateFlow<List<MemoryFact>> = repository.facts
     val history: StateFlow<List<ChatMessage>> = repository.history
     val telemetry: StateFlow<ReflexTelemetry> = repository.telemetry
+    val discoveredDevices: StateFlow<List<NearbyDiscoveredDevice>> = repository.discoveredDevices
+
+    private val bleScannerHelper = BleScannerHelper(application) { device ->
+        repository.addDiscoveredDevice(device)
+        if (!_uiState.value.isHardwareGlassesConnected) {
+            connectToDiscoveredDevice(device)
+        }
+    }
+
+    private val nsdHelper = NsdHelper(application) { device ->
+        repository.addDiscoveredDevice(device)
+        if (!_uiState.value.isHardwareGlassesConnected) {
+            connectToDiscoveredDevice(device)
+        }
+    }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -231,9 +249,20 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun connectToDiscoveredDevice(device: NearbyDiscoveredDevice) {
+        hapticHelper.vibrateConfirm()
+        setGatewayUrl(device.targetUrl)
+        val announcement = "Found nearby glasses: ${device.name}. Connecting via ${device.medium.label}."
+        _uiState.value = _uiState.value.copy(statusText = announcement)
+        speak(announcement)
+    }
+
     fun autoScanGlasses() {
         hapticHelper.vibrateTap()
-        speak("Scanning your phone hotspot network for smart glasses...")
+        speak("Scanning nearby Bluetooth and local hotspot network for smart glasses...")
+        repository.clearDiscoveredDevices()
+        bleScannerHelper.startScan(timeoutMs = 8000L)
+        nsdHelper.startDiscovery(timeoutMs = 8000L)
         viewModelScope.launch {
             val found = repository.autoDiscoverGlasses()
             if (found != null) {
@@ -253,7 +282,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 if (connected) {
                     speak("Smart glasses connected at ${repository.getGatewayUrl()}.")
                 } else {
-                    speak("No glasses found yet. If on phone hotspot, check hotspot connected devices, or connect to blindsight-setup Wi-Fi.")
+                    speak("Scanning in background. Make sure smart glasses are powered on.")
                 }
             }
         }
@@ -1317,6 +1346,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     override fun onCleared() {
         super.onCleared()
         autoSweepJob?.cancel()
+        bleScannerHelper.stopScan()
+        nsdHelper.stopDiscovery()
         ttsHelper?.shutdown()
         speechRecognizerHelper?.destroy()
     }

@@ -110,6 +110,7 @@ fun BlindSightScreen(
     val telemetry by viewModel.telemetry.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
     val history by viewModel.history.collectAsState()
+    val discoveredDevices by viewModel.discoveredDevices.collectAsState()
 
     var showSettingsDialogLocal by remember { mutableStateOf(false) }
     var showMemoryDialog by remember { mutableStateOf(false) }
@@ -562,6 +563,8 @@ fun BlindSightScreen(
             currentGatewayUrl = uiState.gatewayUrl,
             onGatewayUrlChange = { viewModel.setGatewayUrl(it) },
             onAutoScanGlasses = { viewModel.autoScanGlasses() },
+            discoveredDevices = discoveredDevices,
+            onSelectDiscoveredDevice = { viewModel.connectToDiscoveredDevice(it) },
             singleTapAction = uiState.singleTapAction,
             onSingleTapActionChange = { viewModel.setSingleTapAction(it) },
             doubleTapAction = uiState.doubleTapAction,

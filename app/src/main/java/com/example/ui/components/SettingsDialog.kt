@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Gesture
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.model.NearbyDiscoveredDevice
 import com.example.data.model.SupportedLanguage
 import com.example.data.model.TactileAction
 import com.example.service.VoicePersona
@@ -94,6 +96,8 @@ fun SettingsDialog(
     currentGatewayUrl: String = "",
     onGatewayUrlChange: (String) -> Unit = {},
     onAutoScanGlasses: () -> Unit = {},
+    discoveredDevices: List<NearbyDiscoveredDevice> = emptyList(),
+    onSelectDiscoveredDevice: (NearbyDiscoveredDevice) -> Unit = {},
     singleTapAction: TactileAction = TactileAction.START_LISTENING,
     onSingleTapActionChange: (TactileAction) -> Unit = {},
     doubleTapAction: TactileAction = TactileAction.DESCRIBE_SCENE,
@@ -549,6 +553,62 @@ fun SettingsDialog(
                     color = textSecondary.copy(alpha = 0.85f),
                     lineHeight = 15.sp
                 )
+
+                if (discoveredDevices.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Nearby Discovered Smart Glasses:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VividCyan
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    for (dev in discoveredDevices) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0x1A2563EB))
+                                .border(1.dp, ElectricCobalt.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .clickable { onSelectDiscoveredDevice(dev) }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (dev.medium == com.example.data.model.DiscoveryMedium.BLUETOOTH_BLE) Icons.Default.Bluetooth else Icons.Default.Sensors,
+                                        contentDescription = null,
+                                        tint = VividCyan,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = dev.name,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textPrimary
+                                    )
+                                }
+                                Text(
+                                    text = "${dev.identifier} • ${dev.medium.label} • ${dev.rssi} dBm",
+                                    fontSize = 10.sp,
+                                    color = textSecondary
+                                )
+                            }
+                            Button(
+                                onClick = { onSelectDiscoveredDevice(dev) },
+                                colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("Connect", fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

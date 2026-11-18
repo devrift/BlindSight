@@ -84,3 +84,19 @@ data class MemoryFact(
     val text: String,
     val timestamp: Long = System.currentTimeMillis()
 )
+
+enum class DiscoveryMedium(val label: String) {
+    BLUETOOTH_BLE("Bluetooth Low Energy"),
+    MDNS_ZEROCONF("mDNS ZeroConf"),
+    HOTSPOT_SUBNET("Hotspot Network Scan"),
+    MANUAL_IP("Direct Gateway IP")
+}
+
+data class NearbyDiscoveredDevice(
+    val name: String,
+    val identifier: String,
+    val targetUrl: String,
+    val medium: DiscoveryMedium,
+    val rssi: Int = 0,
+    val timestamp: Long = System.currentTimeMillis()
+)
