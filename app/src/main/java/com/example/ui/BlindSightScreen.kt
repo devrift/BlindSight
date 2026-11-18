@@ -565,8 +565,6 @@ fun BlindSightScreen(
             onDoubleTapActionChange = { viewModel.setDoubleTapAction(it) },
             tripleTapAction = uiState.tripleTapAction,
             onTripleTapActionChange = { viewModel.setTripleTapAction(it) },
-            canInstallPackages = uiState.canInstallPackages,
-            onOpenInstallSettings = { viewModel.openInstallPermissionSettings() },
             onCheckUpdates = { viewModel.checkForUpdates(silent = false) },
             onReadHelp = { viewModel.speakHardwareStatus() },
             onDismiss = {

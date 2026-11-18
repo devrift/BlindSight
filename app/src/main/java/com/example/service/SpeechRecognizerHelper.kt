@@ -222,15 +222,16 @@ class SpeechRecognizerHelper(
                 if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                     if (isContinuousMode && !isPaused && hasAudioPermission()) {
                         mainHandler.postDelayed({
-                            if (isContinuousMode && !isPaused && !isListening) {
+                            if (isContinuousMode && !isPaused) {
                                 try {
+                                    speechRecognizer?.cancel()
                                     speechRecognizer?.startListening(buildIntent(currentLanguageCode))
                                     isListening = true
                                 } catch (_: Exception) {
                                     startListening(currentLanguageCode, forceRestart = true)
                                 }
                             }
-                        }, 60L)
+                        }, 80L)
                     }
                     return
                 }
@@ -382,14 +383,14 @@ class SpeechRecognizerHelper(
             val intent = buildIntent(lockedLocale)
 
             try {
-                // Force audio mode to MODE_IN_COMMUNICATION to activate native hardware AEC & NoiseSuppressor
-                audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+                // Ensure audio mode is normal so ambient microphone stream is clear and responsive
+                audioManager?.mode = AudioManager.MODE_NORMAL
                 // Suppress Google Assistant prompt sound effect
                 suppressSystemSoundsTemporarily(320L)
                 speechRecognizer?.startListening(intent)
                 isListening = true
                 onListeningStateChanged?.invoke(true)
-                Log.d(tag, "In-app startListening called successfully with hardware AEC/ENC.")
+                Log.d(tag, "In-app startListening called successfully with clean audio stream.")
             } catch (e: Exception) {
                 try { audioManager?.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
                 Log.e(tag, "Error invoking startListening: ${e.message}", e)

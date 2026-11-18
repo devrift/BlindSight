@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
         checkAssistantLaunch(intent)
         viewModel.checkPendingUpdateInstall()
         viewModel.refreshInstallPermissionStatus()
+        viewModel.resumeWakeWordListening()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

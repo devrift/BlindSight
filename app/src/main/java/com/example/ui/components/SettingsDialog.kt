@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -11,8 +10,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,17 +24,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
@@ -45,7 +43,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,10 +74,8 @@ import com.example.ui.theme.VividCyan
 
 /**
  * Modern Liquid Glass Settings Dialog.
- * Fully customized for BlindSight v1.0.0.
- * Includes Tactile Gestures, Easy Voice Wake Words, Update Permissions, Theme, Text Size.
+ * Clean, accessible settings with elegant dropdown gesture customization.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(
     currentLanguage: SupportedLanguage,
@@ -96,8 +94,6 @@ fun SettingsDialog(
     onDoubleTapActionChange: (TactileAction) -> Unit = {},
     tripleTapAction: TactileAction = TactileAction.READ_TEXT,
     onTripleTapActionChange: (TactileAction) -> Unit = {},
-    canInstallPackages: Boolean = false,
-    onOpenInstallSettings: () -> Unit = {},
     onCheckUpdates: () -> Unit = {},
     onReadHelp: () -> Unit = {},
     onDismiss: () -> Unit
@@ -158,7 +154,7 @@ fun SettingsDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Animated Spring Physics Theme Switch
+            // Theme Switch
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -229,10 +225,10 @@ fun SettingsDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // =================================================================
-            // TACTILE GESTURES CUSTOMIZATION
+            // TACTILE GESTURES DROPDOWNS
             // =================================================================
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -245,7 +241,7 @@ fun SettingsDialog(
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
-                    text = "Tactile Screen Gestures",
+                    text = "Screen Gestures",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = textPrimary
@@ -253,14 +249,14 @@ fun SettingsDialog(
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Choose what happens when you tap the giant touch surface.",
+                text = "Select what each touch gesture on the screen does:",
                 fontSize = 12.sp,
                 color = textSecondary
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 1. Single Tap Selector
-            TactileGestureSelector(
+            // Single Tap Dropdown
+            TactileGestureDropdown(
                 gestureLabel = "Single Tap",
                 selectedAction = singleTapAction,
                 onSelectAction = onSingleTapActionChange,
@@ -269,10 +265,10 @@ fun SettingsDialog(
                 textSecondary = textSecondary
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // 2. Double Tap Selector
-            TactileGestureSelector(
+            // Double Tap Dropdown
+            TactileGestureDropdown(
                 gestureLabel = "Double Tap",
                 selectedAction = doubleTapAction,
                 onSelectAction = onDoubleTapActionChange,
@@ -281,10 +277,10 @@ fun SettingsDialog(
                 textSecondary = textSecondary
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // 3. Triple Tap Selector
-            TactileGestureSelector(
+            // Triple Tap Dropdown
+            TactileGestureDropdown(
                 gestureLabel = "Triple Tap",
                 selectedAction = tripleTapAction,
                 onSelectAction = onTripleTapActionChange,
@@ -296,7 +292,7 @@ fun SettingsDialog(
             Spacer(modifier = Modifier.height(16.dp))
 
             // =================================================================
-            // EASY VOICE WAKE WORDS CARD
+            // VOICE WAKE WORDS CARD
             // =================================================================
             Column(
                 modifier = Modifier
@@ -325,7 +321,7 @@ fun SettingsDialog(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "You can speak naturally anytime to activate BlindSight:",
+                    text = "Say either of these anytime hands-free to begin:",
                     fontSize = 12.sp,
                     color = textSecondary
                 )
@@ -365,96 +361,6 @@ fun SettingsDialog(
                             fontWeight = FontWeight.Bold,
                             color = VividCyan
                         )
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Common pronunciation variations (like 'have line sight') are automatically recognized.",
-                    fontSize = 11.sp,
-                    color = textSecondary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // =================================================================
-            // APP UPDATE & PERMISSION CARD
-            // =================================================================
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(cardSurface)
-                    .border(1.dp, LiquidGlassBorder, RoundedCornerShape(14.dp))
-                    .padding(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = if (canInstallPackages) Color(0xFF10B981) else Color(0xFFF59E0B),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "In-App Updates",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textPrimary
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (canInstallPackages) Color(0x3310B981) else Color(0x33F59E0B)
-                            )
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = if (canInstallPackages) "Permission Granted" else "Permission Needed",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (canInstallPackages) Color(0xFF34D399) else Color(0xFFFBBF24)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (canInstallPackages) {
-                        "BlindSight has permission to install updates directly inside the app without opening a browser."
-                    } else {
-                        "Android requires you to allow 'Install unknown apps' so BlindSight can update automatically."
-                    },
-                    fontSize = 12.sp,
-                    color = textSecondary
-                )
-
-                if (!canInstallPackages) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = onOpenInstallSettings,
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Grant Update Permission", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -578,11 +484,10 @@ fun SettingsDialog(
 }
 
 /**
- * Reusable Tactile Gesture Selector Card.
+ * Dropdown Menu Selector for a Tactile Screen Gesture.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TactileGestureSelector(
+private fun TactileGestureDropdown(
     gestureLabel: String,
     selectedAction: TactileAction,
     onSelectAction: (TactileAction) -> Unit,
@@ -590,13 +495,15 @@ private fun TactileGestureSelector(
     textPrimary: Color,
     textSecondary: Color
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(cardSurface)
             .border(1.dp, LiquidGlassBorder, RoundedCornerShape(14.dp))
-            .padding(12.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -609,43 +516,63 @@ private fun TactileGestureSelector(
                 fontWeight = FontWeight.Bold,
                 color = textPrimary
             )
-            Text(
-                text = selectedAction.label,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = VividCyan
-            )
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            TactileAction.values().forEach { action ->
-                val isSelected = action == selectedAction
-                Box(
+            Box {
+                Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (isSelected) ElectricCobalt else Color(0x1A2563EB)
-                        )
-                        .border(
-                            1.dp,
-                            if (isSelected) VividCyan else Color(0x332563EB),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { onSelectAction(action) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
+                        .background(ElectricCobalt.copy(alpha = 0.2f))
+                        .border(1.dp, ElectricCobalt.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = action.label,
-                        fontSize = 11.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else textPrimary
+                        text = selectedAction.label,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VividCyan
                     )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Select action",
+                        tint = VividCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier
+                        .background(Color(0xFF071224))
+                        .border(1.dp, LiquidGlassBorder, RoundedCornerShape(12.dp))
+                ) {
+                    TactileAction.values().forEach { action ->
+                        val isSelected = action == selectedAction
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = action.label,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) VividCyan else TextPrimaryWhite
+                                    )
+                                    Text(
+                                        text = action.description,
+                                        fontSize = 10.sp,
+                                        color = SlateTextMuted
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onSelectAction(action)
+                                expanded = false
+                            }
+                        )
+                    }
                 }
             }
         }

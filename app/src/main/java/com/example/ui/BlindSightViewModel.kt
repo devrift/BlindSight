@@ -253,7 +253,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                     updateHelper.triggerInstall(apkFile)
                 } else {
                     _updateState.value = UpdateDownloadState.PermissionRequired(apkFile, info)
-                    speak("Install permission needed. Tap Open Settings to allow BlindSight to install updates.")
+                    updateHelper.openInstallPermissionSettings()
+                    speak("Opening Settings to allow BlindSight update installation.")
                 }
             },
             onError = { err ->
@@ -316,6 +317,14 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refreshInstallPermissionStatus() {
         _uiState.value = _uiState.value.copy(canInstallPackages = updateHelper.canInstallPackages())
+    }
+
+    fun resumeWakeWordListening() {
+        if (hasMicrophonePermission()) {
+            if (_uiState.value.appState == AppState.IDLE || _uiState.value.appState == AppState.STANDBY_PAUSED) {
+                speechRecognizerHelper?.startListening(_uiState.value.language.code, forceRestart = true)
+            }
+        }
     }
 
     fun onTactileDoubleTap() {
@@ -503,9 +512,9 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        // Comprehensive phonetic regex for wake word: "hey blindsight", "a blindsight", "a blind sight", "blind side", "blindsight", etc.
+        // Comprehensive phonetic regex for wake word: "hey assistant", "assistant", "hey blindsight", "blindsight", "havelinesight", etc.
         val wakeRegex = Regex(
-            "^(?:hey|a|ay|ey|hi|hello|ok|okay|the|i|हे|नमस्ते)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|ब्लाइंड\\s*साइट|ब्लाइंडसाइट)\\b",
+            "^(?:hey|a|ay|ey|hi|hello|ok|okay|the|i|हे|नमस्ते)?\\s*(?:blind\\s*sight|blind\\s*side|blind\\s*site|blindsight|blind\\s*light|line\\s*sight|have\\s*line\\s*sight|havelinesight|heavy\\s*line\\s*sight|assistant|ally|buddy|ब्लाइंड\\s*साइट|ब्लाइंडसाइट|असिस्टेंट)\\b",
             RegexOption.IGNORE_CASE
         )
 
