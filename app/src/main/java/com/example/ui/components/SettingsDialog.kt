@@ -539,7 +539,7 @@ fun SettingsDialog(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Scan Nearby Glasses (Bluetooth / Hotspot / mDNS)",
+                        text = "Scan for Nearby BlindSight Glasses",
                         color = VividCyan,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
@@ -548,7 +548,7 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Pairing Guide: Tap Scan to search Bluetooth nearbies, hotspot DHCP clients, and blindsight.local. When on Hotspot, your phone assigns a dynamic IP to the glasses. When on blindsight-setup Wi-Fi, use 192.168.4.1.",
+                    text = "Pairing Guide: Tap Scan to automatically discover your glasses on your local hotspot network or blindsight.local. If using Hotspot, your phone assigns a dynamic IP to the glasses. If using blindsight-setup Wi-Fi, enter 192.168.4.1.",
                     fontSize = 11.sp,
                     color = textSecondary.copy(alpha = 0.85f),
                     lineHeight = 15.sp

@@ -1,6 +1,6 @@
 {
-  "versionCode": 35,
+  "versionCode": 36,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 35: Streamlined clean home screen with minimalist Glasses Disconnected status. Integrated nearby Bluetooth BLE, hotspot DHCP, and mDNS discovery scanner directly under Smart Glasses IP settings."
+  "releaseNotes": "BlindSight v1.0.0 Build 36: Eliminated background speech oscillation. Removed automatic connect triggers from background scan callbacks, removed Bluetooth wording in favor of 'Scanning for nearby BlindSight glasses', and tightened device filtering to authentic glasses hardware."
 }

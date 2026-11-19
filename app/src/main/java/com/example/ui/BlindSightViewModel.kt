@@ -89,16 +89,10 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     private val bleScannerHelper = BleScannerHelper(application) { device ->
         repository.addDiscoveredDevice(device)
-        if (!_uiState.value.isHardwareGlassesConnected) {
-            connectToDiscoveredDevice(device)
-        }
     }
 
     private val nsdHelper = NsdHelper(application) { device ->
         repository.addDiscoveredDevice(device)
-        if (!_uiState.value.isHardwareGlassesConnected) {
-            connectToDiscoveredDevice(device)
-        }
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -252,7 +246,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
     fun connectToDiscoveredDevice(device: NearbyDiscoveredDevice) {
         hapticHelper.vibrateConfirm()
         setGatewayUrl(device.targetUrl)
-        val announcement = "Found nearby glasses: ${device.name}. Connecting via ${device.medium.label}."
+        val announcement = "Connecting to ${device.name}..."
         _uiState.value = _uiState.value.copy(statusText = announcement)
         speak(announcement)
         viewModelScope.launch {
@@ -273,6 +267,8 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                     )
                     hapticHelper.vibrateConfirm()
                     speak("Smart glasses found and connected at $found.")
+                } else {
+                    speak("Could not reach glasses. Please verify your glasses are powered on and connected to your hotspot.")
                 }
             }
         }
@@ -280,7 +276,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
 
     fun autoScanGlasses() {
         hapticHelper.vibrateTap()
-        speak("Scanning nearby Bluetooth and local hotspot network for smart glasses...")
+        speak("Scanning for nearby BlindSight glasses...")
         repository.clearDiscoveredDevices()
         bleScannerHelper.startScan(timeoutMs = 8000L)
         nsdHelper.startDiscovery(timeoutMs = 8000L)
@@ -303,7 +299,7 @@ class BlindSightViewModel(application: Application) : AndroidViewModel(applicati
                 if (connected) {
                     speak("Smart glasses connected at ${repository.getGatewayUrl()}.")
                 } else {
-                    speak("Scanning in background. Make sure smart glasses are powered on.")
+                    speak("Glasses not detected. Ensure your smart glasses are powered on and on your hotspot.")
                 }
             }
         }

@@ -153,17 +153,6 @@ class BleScannerHelper(
                     rssi = result.rssi
                 )
                 mainHandler.post { onDeviceFound(found) }
-            } else if (devName.isNotBlank() && !isKnownIrrelevantPeripheral(devName)) {
-                // Surface other nearby named Bluetooth peripherals
-                discoveredMacs.add(devAddress)
-                val found = NearbyDiscoveredDevice(
-                    name = devName,
-                    identifier = "Serial: $devAddress",
-                    targetUrl = "http://192.168.4.1:5000",
-                    medium = DiscoveryMedium.BLUETOOTH_BLE,
-                    rssi = result.rssi
-                )
-                mainHandler.post { onDeviceFound(found) }
             }
         }
 
@@ -201,10 +190,5 @@ class BleScannerHelper(
             if (knownOuis.contains(oui)) return true
         }
         return false
-    }
-
-    private fun isKnownIrrelevantPeripheral(name: String): Boolean {
-        val low = name.lowercase()
-        return low.contains("tv") || low.contains("printer") || low.contains("watch") || low.contains("band")
     }
 }
