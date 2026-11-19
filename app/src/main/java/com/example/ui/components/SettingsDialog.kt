@@ -1,8 +1,15 @@
 package com.example.ui.components
 
+import android.content.Intent
+import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,8 +17,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -62,7 +72,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.NearbyDiscoveredDevice
 import com.example.data.model.SupportedLanguage
 import com.example.data.model.TactileAction
@@ -452,8 +464,14 @@ fun SettingsDialog(
             Spacer(modifier = Modifier.height(14.dp))
 
             // =================================================================
-            // SMART GLASSES GATEWAY IP
+            // SMART GLASSES HARDWARE SETUP (blindsight-setup)
             // =================================================================
+            var showEspWifiPortal by remember { mutableStateOf(false) }
+
+            if (showEspWifiPortal) {
+                EspWifiPortalDialog(onDismiss = { showEspWifiPortal = false })
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -473,7 +491,7 @@ fun SettingsDialog(
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = "Smart Glasses IP / Gateway",
+                        text = "BlindSight Hardware (blindsight-setup)",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = textPrimary
@@ -482,73 +500,87 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "ESP32 camera or Python hub (e.g. 192.168.1.50 or :5000)",
+                    text = "Direct connection to smart glasses on blindsight-setup (192.168.4.1) or hotspot.",
                     fontSize = 12.sp,
                     color = textSecondary
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                var gatewayInput by remember(currentGatewayUrl) { mutableStateOf(currentGatewayUrl) }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = gatewayInput,
-                        onValueChange = { gatewayInput = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        placeholder = {
-                            Text("192.168.X.X:5000", color = textSecondary.copy(alpha = 0.5f), fontSize = 12.sp)
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0x1A2563EB),
-                            unfocusedContainerColor = Color(0x0D2563EB),
-                            focusedTextColor = textPrimary,
-                            unfocusedTextColor = textPrimary,
-                            focusedBorderColor = ElectricCobalt,
-                            unfocusedBorderColor = LiquidGlassBorder
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    Button(
-                        onClick = { onGatewayUrlChange(gatewayInput) },
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Button(
-                    onClick = { onAutoScanGlasses() },
+                    onClick = {
+                        onGatewayUrlChange("http://192.168.4.1:5000")
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = VividCyan.copy(alpha = 0.2f)),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Sensors,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Connect to blindsight-setup (192.168.4.1)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { showEspWifiPortal = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0x1A00F0FF)),
+                    border = BorderStroke(1.dp, VividCyan.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
                         contentDescription = null,
                         tint = VividCyan,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Scan for Nearby BlindSight Glasses",
+                        text = "Open ESP Wi-Fi Setup Page (192.168.4.1)",
                         color = VividCyan,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { onAutoScanGlasses() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = cardSurface),
+                    border = BorderStroke(1.dp, LiquidGlassBorder),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sensors,
+                        contentDescription = null,
+                        tint = textPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Scan Hotspot Network for Glasses",
+                        color = textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Pairing Guide: Tap Scan to automatically discover your glasses on your local hotspot network or blindsight.local. If using Hotspot, your phone assigns a dynamic IP to the glasses. If using blindsight-setup Wi-Fi, enter 192.168.4.1.",
+                    text = "Pairing Guide: If using glasses in AP mode, connect your phone Wi-Fi to 'blindsight-setup'. Tap 'Open ESP Wi-Fi Setup Page' to configure your hotspot credentials. If using phone hotspot, tap 'Scan Hotspot Network'.",
                     fontSize = 11.sp,
                     color = textSecondary.copy(alpha = 0.85f),
                     lineHeight = 15.sp
@@ -557,7 +589,7 @@ fun SettingsDialog(
                 if (discoveredDevices.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Nearby Discovered Smart Glasses:",
+                        text = "Discovered Smart Glasses:",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = VividCyan
@@ -578,7 +610,7 @@ fun SettingsDialog(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = if (dev.medium == com.example.data.model.DiscoveryMedium.BLUETOOTH_BLE) Icons.Default.Bluetooth else Icons.Default.Sensors,
+                                        imageVector = Icons.Default.Sensors,
                                         contentDescription = null,
                                         tint = VividCyan,
                                         modifier = Modifier.size(14.dp)
@@ -592,7 +624,7 @@ fun SettingsDialog(
                                     )
                                 }
                                 Text(
-                                    text = "${dev.identifier} • ${dev.medium.label} • ${dev.rssi} dBm",
+                                    text = "${dev.identifier} • ${dev.medium.label}",
                                     fontSize = 10.sp,
                                     color = textSecondary
                                 )
@@ -747,6 +779,131 @@ private fun TactileGestureDropdown(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * In-app ESP32 Wi-Fi Setup Portal (192.168.4.1) Dialog.
+ */
+@Composable
+fun EspWifiPortalDialog(
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.90f)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xFF071224))
+                .border(1.dp, LiquidGlassBorder, RoundedCornerShape(20.dp))
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "ESP Wi-Fi Setup Portal",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "http://192.168.4.1",
+                        fontSize = 12.sp,
+                        color = VividCyan
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(
+                        onClick = { webViewRef?.reload() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x332563EB)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Reload", fontSize = 11.sp, color = VividCyan)
+                    }
+
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("http://192.168.4.1"))
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x332563EB)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Open Browser", fontSize = 11.sp, color = Color.White)
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            settings.cacheMode = WebSettings.LOAD_NO_CACHE
+                            webViewClient = WebViewClient()
+                            loadUrl("http://192.168.4.1")
+                            webViewRef = this
+                        }
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Note: Ensure your phone Wi-Fi is connected to 'blindsight-setup' before configuring credentials.",
+                fontSize = 11.sp,
+                color = Color(0xFF94A3B8)
+            )
         }
     }
 }

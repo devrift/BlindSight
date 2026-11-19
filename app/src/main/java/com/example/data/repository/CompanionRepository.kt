@@ -6,8 +6,6 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.util.Log
 import com.example.data.model.ChatMessage
@@ -69,54 +67,6 @@ class CompanionRepository(private val context: Context) {
         _discoveredDevices.value = emptyList()
     }
 
-    fun openHardwareConnection(url: URL): HttpURLConnection {
-        try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            if (cm != null) {
-                val host = url.host ?: ""
-                val wifiNet = cm.allNetworks.firstOrNull { net ->
-                    val caps = cm.getNetworkCapabilities(net)
-                    caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-                }
-                if (wifiNet != null) {
-                    val linkProps = cm.getLinkProperties(wifiNet)
-                    val wifiIps = linkProps?.linkAddresses?.mapNotNull { it.address?.hostAddress } ?: emptyList()
-                    val isWifiApMode = host.startsWith("192.168.4.") || host == "blindsight.local"
-                    val isSameSubnet = wifiIps.any { wifiIp ->
-                        val prefix = wifiIp.substringBeforeLast(".")
-                        host.startsWith("$prefix.")
-                    }
-
-                    // Bind to wifiNet ONLY if target is on blindsight-setup AP (192.168.4.x) or on the same subnet as wifiNet
-                    if (isWifiApMode || isSameSubnet) {
-                        return wifiNet.openConnection(url) as HttpURLConnection
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-        // For hotspot clients, loopback/virtual IPs, or when wifiNet is not on the same subnet, use standard kernel routing
-        return url.openConnection() as HttpURLConnection
-    }
-
-    fun openCloudConnection(url: URL): HttpURLConnection {
-        try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            if (cm != null) {
-                // Route cloud AI/STT requests over an interface with validated internet or mobile data
-                val internetNet = cm.allNetworks.firstOrNull { net ->
-                    val caps = cm.getNetworkCapabilities(net)
-                    caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                            (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ||
-                             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))
-                }
-                if (internetNet != null) {
-                    return internetNet.openConnection(url) as HttpURLConnection
-                }
-            }
-        } catch (_: Exception) {}
-        return url.openConnection() as HttpURLConnection
-    }
-
     init {
         loadFacts()
         loadHistory()
@@ -170,7 +120,7 @@ class CompanionRepository(private val context: Context) {
     fun getGatewayUrl(): String {
         val saved = prefs.getString("gateway_url", "")?.trim() ?: ""
         if (saved.isNotBlank() && !saved.contains("blindsightpage.vercel.app") && !saved.contains("blindsightai.vercel.app")) return saved
-        return ""
+        return "http://192.168.4.1:5000"
     }
 
     fun setGatewayUrl(url: String) {
@@ -202,14 +152,12 @@ class CompanionRepository(private val context: Context) {
             list.add("$urlWithScheme/capture")
             list.add(urlWithScheme)
         } else {
-            // Port omitted: probe Python Hub (:5000) and direct ESP32-CAM (:80 / :8080)
+            // Port omitted: probe Python Hub (:5000) and direct ESP32-CAM
             list.add("$urlWithScheme:5000/health")
             list.add("$urlWithScheme:5000/api/health")
             list.add("$urlWithScheme:5000/api/latest-frame")
             list.add("$urlWithScheme:5000/latest_frame")
             list.add("$urlWithScheme/capture")
-            list.add("$urlWithScheme:8080/capture")
-            list.add("$urlWithScheme:8080/health")
             list.add("$urlWithScheme/health")
             list.add("$urlWithScheme:5000")
             list.add(urlWithScheme)
@@ -244,45 +192,38 @@ class CompanionRepository(private val context: Context) {
         subnets.add("192.168.0.")  // Common LAN
         subnets.add("192.168.29.") // JioFiber / Airtel
         subnets.add("172.20.10.")  // iOS Personal Hotspot
-        subnets.add("127.0.0.")    // Local loopback virtual testing
-        subnets.add("127.0.4.")    // Virtual SoftAP
         return subnets.toList()
     }
 
     suspend fun autoDiscoverGlasses(): String? = withContext(Dispatchers.IO) {
-        // 1. Probe mDNS, AP, and virtual IP / emulator loopback endpoints first
+        // 1. Probe 192.168.4.1 (ESP blindsight-setup / Pi AP) first with fast timeout
         val priorityEndpoints = listOf(
-            "http://blindsight.local:5000/health",
-            "http://blindsight.local/capture",
-            "http://blindsight.local:8080/capture",
             "http://192.168.4.1:5000/health",
             "http://192.168.4.1/capture",
-            "http://192.168.4.1:8080/capture",
-            "http://192.168.4.1:5000/api/latest-frame",
-            "http://10.0.2.2:5000/health",
-            "http://10.0.2.2:8080/capture",
-            "http://127.0.0.1:5000/health",
-            "http://127.0.0.1:8080/capture",
-            "http://127.0.0.1/capture"
+            "http://192.168.4.1/",
+            "http://192.168.4.1:5000",
+            "http://192.168.4.1:5000/api/latest-frame"
         )
         for (ep in priorityEndpoints) {
             try {
                 val url = URL(ep)
-                val conn = openHardwareConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 800
                 conn.readTimeout = 800
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("User-Agent", "BlindSight-Android/1.0.0")
                 try {
                     if (conn.responseCode in 200..399) {
-                        val base = if (ep.contains(":5000")) {
-                            ep.substringBefore("/health").substringBefore("/api/latest-frame")
-                        } else if (ep.contains(":8080")) {
-                            ep.substringBefore("/capture")
-                        } else {
-                            ep.substringBefore("/capture")
-                        }
+                        val base = if (ep.contains(":5000")) "http://192.168.4.1:5000" else "http://192.168.4.1"
                         setGatewayUrl(base)
+                        addDiscoveredDevice(
+                            com.example.data.model.NearbyDiscoveredDevice(
+                                name = "BlindSight Setup (192.168.4.1)",
+                                identifier = "192.168.4.1",
+                                targetUrl = base,
+                                medium = com.example.data.model.DiscoveryMedium.HOTSPOT_SUBNET
+                            )
+                        )
                         _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
                         return@withContext base
                     }
@@ -303,7 +244,6 @@ class CompanionRepository(private val context: Context) {
                 val ip = "$prefix$suffix"
                 candidateUrls.add("http://$ip:5000/health")
                 candidateUrls.add("http://$ip/capture")
-                candidateUrls.add("http://$ip:8080/capture")
             }
         }
 
@@ -313,7 +253,7 @@ class CompanionRepository(private val context: Context) {
                 async {
                     try {
                         val url = URL(urlStr)
-                        val conn = openHardwareConnection(url)
+                        val conn = url.openConnection() as HttpURLConnection
                         conn.connectTimeout = 700
                         conn.readTimeout = 700
                         conn.requestMethod = "GET"
@@ -339,6 +279,14 @@ class CompanionRepository(private val context: Context) {
                     found.substringBefore("/capture")
                 }
                 setGatewayUrl(base)
+                addDiscoveredDevice(
+                    com.example.data.model.NearbyDiscoveredDevice(
+                        name = "BlindSight Hardware ($base)",
+                        identifier = base,
+                        targetUrl = base,
+                        medium = com.example.data.model.DiscoveryMedium.HOTSPOT_SUBNET
+                    )
+                )
                 _telemetry.value = _telemetry.value.copy(isHardwareConnected = true)
                 return@withContext base
             }
@@ -354,12 +302,14 @@ class CompanionRepository(private val context: Context) {
         }
         candidates.add("http://192.168.4.1:5000/health")
         candidates.add("http://192.168.4.1/capture")
+        candidates.add("http://192.168.4.1/")
+        candidates.add("http://192.168.4.1:5000")
         candidates.add("http://192.168.4.2/capture")
 
         for (endpoint in candidates) {
             try {
                 val url = URL(endpoint)
-                val conn = openHardwareConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 1500
                 conn.readTimeout = 1500
@@ -403,7 +353,7 @@ class CompanionRepository(private val context: Context) {
         for (endpoint in candidates) {
             try {
                 val url = URL(endpoint)
-                val conn = openHardwareConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 2500
                 conn.readTimeout = 3500
@@ -932,7 +882,7 @@ class CompanionRepository(private val context: Context) {
         for (m in models) {
             try {
                 val url = URL("https://api.groq.com/openai/v1/chat/completions")
-                val conn = openCloudConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Authorization", "Bearer $apiKey")
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -1003,7 +953,7 @@ class CompanionRepository(private val context: Context) {
             val twoHyphens = "--"
 
             val url = URL("https://api.groq.com/openai/v1/audio/transcriptions")
-            val conn = openCloudConnection(url)
+            val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Authorization", "Bearer $apiKey")
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
@@ -1093,9 +1043,8 @@ class CompanionRepository(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val candidateModels = listOf(
-            "gemini-1.5-flash",
-            "gemini-2.5-flash",
-            "gemini-flash-latest"
+            "gemini-2.0-flash",
+            "gemini-1.5-flash"
         )
 
         val envContext = locationWeatherHelper.getEnvironmentalContext()
@@ -1173,7 +1122,7 @@ class CompanionRepository(private val context: Context) {
         for (model in candidateModels) {
             try {
                 val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
-                val conn = openCloudConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.connectTimeout = 4000
@@ -1226,7 +1175,7 @@ class CompanionRepository(private val context: Context) {
 
         try {
             val url = URL("https://api.groq.com/openai/v1/chat/completions")
-            val conn = openCloudConnection(url)
+            val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Authorization", "Bearer $apiKey")
             conn.setRequestProperty("Content-Type", "application/json")

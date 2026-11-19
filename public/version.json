@@ -1,6 +1,6 @@
 {
-  "versionCode": 36,
+  "versionCode": 37,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 36: Eliminated background speech oscillation. Removed automatic connect triggers from background scan callbacks, removed Bluetooth wording in favor of 'Scanning for nearby BlindSight glasses', and tightened device filtering to authentic glasses hardware."
+  "releaseNotes": "BlindSight v1.0.0 Build 37: Reverted networking to solid Build 31 pure direct connection model. Removed manual IP text entry; added direct blindsight-setup one-tap connection (192.168.4.1) and embedded in-app ESP Wi-Fi Setup Portal (192.168.4.1) in Settings."
 }

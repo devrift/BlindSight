@@ -2,8 +2,6 @@ package com.example.service
 
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -45,24 +43,6 @@ class AppUpdateHelper(private val context: Context) {
     val currentVersionCode: Int = BuildConfig.VERSION_CODE
     val currentVersionName: String = BuildConfig.VERSION_NAME
 
-    private fun openCloudConnection(url: URL): HttpURLConnection {
-        try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            if (cm != null) {
-                val internetNet = cm.allNetworks.firstOrNull { net ->
-                    val caps = cm.getNetworkCapabilities(net)
-                    caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                            (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ||
-                             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))
-                }
-                if (internetNet != null) {
-                    return internetNet.openConnection(url) as HttpURLConnection
-                }
-            }
-        } catch (_: Exception) {}
-        return url.openConnection() as HttpURLConnection
-    }
-
     fun checkForUpdate(
         onResult: (UpdateInfo?) -> Unit,
         onError: ((String) -> Unit)? = null
@@ -70,7 +50,7 @@ class AppUpdateHelper(private val context: Context) {
         thread(name = "BlindSightUpdateCheck") {
             try {
                 val url = URL(versionUrl)
-                val conn = openCloudConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 4000
                 conn.readTimeout = 4000
                 conn.requestMethod = "GET"
@@ -148,7 +128,7 @@ class AppUpdateHelper(private val context: Context) {
         thread(name = "BlindSightApkDownload") {
             try {
                 val url = URL(info.apkUrl)
-                val conn = openCloudConnection(url)
+                val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 8000
                 conn.readTimeout = 30000
                 conn.requestMethod = "GET"
