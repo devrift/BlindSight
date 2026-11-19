@@ -16,7 +16,7 @@ android {
     applicationId = "com.blindsight.companion"
     minSdk = 26
     targetSdk = 36
-    versionCode = 34
+    versionCode = 35
     versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -539,7 +539,7 @@ fun SettingsDialog(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Auto-Detect Glasses on Hotspot",
+                        text = "Scan Nearby Glasses (Bluetooth / Hotspot / mDNS)",
                         color = VividCyan,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
@@ -548,7 +548,7 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Hotspot Mode: Your phone assigns a dynamic IP to the Pi/ESP (e.g. 192.168.43.x). Tap Auto-Detect to find it automatically. Use 192.168.4.1 only when connected to blindsight-setup Wi-Fi.",
+                    text = "Pairing Guide: Tap Scan to search Bluetooth nearbies, hotspot DHCP clients, and blindsight.local. When on Hotspot, your phone assigns a dynamic IP to the glasses. When on blindsight-setup Wi-Fi, use 192.168.4.1.",
                     fontSize = 11.sp,
                     color = textSecondary.copy(alpha = 0.85f),
                     lineHeight = 15.sp

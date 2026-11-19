@@ -216,17 +216,11 @@ fun BlindSightScreen(
                             .clip(RoundedCornerShape(18.dp))
                             .background(if (isGlassesConnected) ElectricCobalt.copy(alpha = 0.85f) else glassBg)
                             .border(1.dp, if (isGlassesConnected) VividCyan else LiquidGlassBorder, RoundedCornerShape(18.dp))
-                            .clickable {
-                                if (!isGlassesConnected) {
-                                    viewModel.autoScanGlasses()
-                                } else {
-                                    viewModel.speakHardwareStatus()
-                                }
-                            }
+                            .clickable { viewModel.speakHardwareStatus() }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                             .semantics {
                                 role = Role.Button
-                                contentDescription = if (isGlassesConnected) "Glasses connected." else "Glasses disconnected. Tap to scan nearby."
+                                contentDescription = if (isGlassesConnected) "Glasses connected." else "Glasses disconnected. Using phone fallback."
                             },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -238,7 +232,7 @@ fun BlindSightScreen(
                                 .background(if (isGlassesConnected) VividCyan else Color(0xFF64748B))
                         )
                         Text(
-                            text = if (isGlassesConnected) "Glasses" else "Glasses Off",
+                            text = if (isGlassesConnected) "Glasses Connected" else "Glasses Disconnected",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isGlassesConnected) Color.White else textSecondary,
@@ -380,111 +374,31 @@ fun BlindSightScreen(
                 }
             }
 
-            // =================================================================
-            // NEARBY GLASSES DISCOVERY CARD / SCAN BANNER
-            // =================================================================
+            // Subtle Disconnected Notice on Home Page
             AnimatedVisibility(
                 visible = !isGlassesConnected,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+                enter = fadeIn(),
+                exit = fadeOut()
             ) {
-                if (discoveredDevices.isNotEmpty()) {
-                    val topDevice = discoveredDevices.first()
-                    Row(
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 3.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isDark) Color(0xCC091E42) else Color(0xEEEDF5FF))
-                            .border(1.dp, VividCyan.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                            .clickable { viewModel.connectToDiscoveredDevice(topDevice) }
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "Nearby smart glasses detected: ${topDevice.name}, ${topDevice.identifier}. Tap to connect."
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Sensors,
-                                contentDescription = null,
-                                tint = VividCyan,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Column {
-                                Text(
-                                    text = topDevice.name,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${topDevice.identifier} • ${topDevice.rssi} dBm",
-                                    fontSize = 10.sp,
-                                    color = textSecondary,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Button(
-                            onClick = { viewModel.connectToDiscoveredDevice(topDevice) },
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricCobalt),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.height(28.dp)
-                        ) {
-                            Text("Connect", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 3.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isDark) Color(0x660A1934) else Color(0xEEF8FAFC))
-                            .border(1.dp, LiquidGlassBorder, RoundedCornerShape(16.dp))
-                            .clickable { viewModel.autoScanGlasses() }
-                            .padding(horizontal = 14.dp, vertical = 7.dp)
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "Smart glasses not connected. Tap to scan for nearby glasses."
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Sensors,
-                                contentDescription = null,
-                                tint = ElectricCobalt,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = "Glasses disconnected. Tap to find nearbies.",
-                                fontSize = 11.sp,
-                                color = textSecondary,
-                                maxLines = 1
-                            )
-                        }
-                        Text(
-                            text = "Scan",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = VividCyan
-                        )
-                    }
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF64748B))
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Glasses Disconnected",
+                        fontSize = 11.sp,
+                        color = textSecondary
+                    )
                 }
             }
 

@@ -1,6 +1,6 @@
 {
-  "versionCode": 34,
+  "versionCode": 35,
   "versionName": "1.0.0",
   "apkUrl": "https://blindsightai.vercel.app/BlindSight-v1.0.0.apk",
-  "releaseNotes": "BlindSight v1.0.0 Build 34: One-tap Nearby Glasses Discovery banner directly on Companion Screen. Expanded Espressif and Raspberry Pi Bluetooth MAC serial resolution, dual-stack subnet routing with hotspot isolation, and virtual IP test harness."
+  "releaseNotes": "BlindSight v1.0.0 Build 35: Streamlined clean home screen with minimalist Glasses Disconnected status. Integrated nearby Bluetooth BLE, hotspot DHCP, and mDNS discovery scanner directly under Smart Glasses IP settings."
 }
